@@ -164,7 +164,7 @@ namespace APIShared.Presentation
                     // Linked before Before runs: Finally still follows a throwing or disabling Before.
                     var args = last = new VisibleMapRenderEventArgs(map, left, right, top, bottom, zoom)
                         { Registration = snapshot[i], Previous = last };
-                    try { snapshot[i].Before?.Invoke(args); } catch (Exception error) { Report(snapshot[i], error); }
+                    try { snapshot[i].Before?.Invoke(args); } catch (Exception error) { Report(snapshot[i], "before", error); }
                 }
                 original(map, left, right, top, bottom, zoom);
             }
@@ -173,14 +173,19 @@ namespace APIShared.Presentation
                 while (last != null)
                 {
                     var args = last; last = args.Previous; args.Previous = null;
-                    try { args.Registration.Finally?.Invoke(args); } catch (Exception error) { Report(args.Registration, error); }
+                    try { args.Registration.Finally?.Invoke(args); } catch (Exception error) { Report(args.Registration, "finally", error); }
                 }
             }
         }
-        private static void Report(VisibleMapRenderRegistration registration, Exception error)
+        private static void Report(VisibleMapRenderRegistration registration, string phase, Exception error)
         {
-            if (Interlocked.Increment(ref registration.Failures) != 1) return;
-            NativeApiLog.Error(log, "Render callback failed: " + registration.Owner + "/" + registration.Id + ": " + error);
+            try
+            {
+                if (Interlocked.Increment(ref registration.Failures) != 1) return;
+                NativeApiLog.Error(log,
+                    $"Render callback failed: {registration.Owner}/{registration.Id} {phase}: {error.GetType().FullName}");
+            }
+            catch (Exception) { /* Diagnostics must not interrupt rendering or cleanup. */ }
         }
     }
 }

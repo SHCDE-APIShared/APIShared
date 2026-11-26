@@ -7,6 +7,88 @@ namespace APIShared.Core.Tests;
 public partial class VersionedSaveDataTests
 {
     [TestMethod]
+    public void RequiredAtomicPreparationPublishesItsRecursionGuardBeforeConsumerCapture()
+    {
+        var extender = new FakeExtender();
+        var context = new VersionedSaveContext(true, false, "test.sav");
+        bool nested = false;
+        int captures = 0;
+        var registration = extender.Registration("Mod.AtomicReentry", 1, 1, new[] { "state" }, writer =>
+        {
+            captures++;
+            if (!nested)
+            {
+                nested = true;
+                Assert.ThrowsExactly<InvalidOperationException>(() => extender.Registry.BeginAtomicSave(context));
+            }
+            writer.Write("state", new byte[] { 4 }); return true;
+        });
+        registration.RequireAtomicWrite = true;
+        var mod = extender.Register(registration);
+        var frozen = extender.Registry.BeginAtomicSave(context);
+        try
+        {
+            Assert.AreEqual(1, captures);
+            Assert.IsNotNull(extender.Save(mod));
+            VersionedSaveDataRegistry.RequireAtomicDelivered(frozen);
+        }
+        finally { extender.Registry.EndAtomicSave(frozen); }
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void RequiredAtomicProofCannotCrossLogicalContextOrAReplacementArchive(bool replaceArchive)
+    {
+        var extender = new FakeExtender();
+        var registration = extender.Registration("Mod.AtomicWindow", 1, 1, new[] { "state" }, writer =>
+        { writer.Write("state", new byte[] { 7 }); return true; });
+        registration.RequireAtomicWrite = true;
+        registration.Scope = VersionedSaveScope.SaveGamesAndMaps;
+        var mod = extender.Register(registration);
+        var context = new VersionedSaveContext(true, false, "test.sav");
+        var frozen = extender.Registry.BeginAtomicSave(context);
+        try
+        {
+            if (replaceArchive)
+            {
+                Assert.IsNotNull(extender.Save(mod));
+                // Delivery happened, but a later load/unload cannot authorize committing
+                // that previous world's native temporary file against this new epoch.
+                extender.Registry.Unload();
+            }
+            else
+                Assert.IsNull(mod.SaveCallback(new VersionedSaveContext(false, true, "other.map")),
+                    "Equal owner/identifier is not the exact logical atomic save context.");
+            Assert.ThrowsExactly<InvalidDataException>(() => VersionedSaveDataRegistry.RequireAtomicDelivered(frozen));
+        }
+        finally { extender.Registry.EndAtomicSave(frozen); }
+    }
+
+    [TestMethod]
+    public void RequiredAtomicCaptureRejectsAReplacedGenerationAndReleasesItsPreparationGuard()
+    {
+        var extender = new FakeExtender();
+        bool replace = true;
+        var registration = extender.Registration("Mod.AtomicCaptureEpoch", 1, 1, new[] { "state" }, writer =>
+        {
+            if (replace) { replace = false; extender.Registry.Unload(); }
+            writer.Write("state", new byte[] { 8 }); return true;
+        });
+        registration.RequireAtomicWrite = true;
+        var mod = extender.Register(registration);
+        var context = new VersionedSaveContext(true, false, "test.sav");
+        Assert.ThrowsExactly<InvalidDataException>(() => extender.Registry.BeginAtomicSave(context));
+        var frozen = extender.Registry.BeginAtomicSave(context);
+        try
+        {
+            Assert.IsNotNull(extender.Save(mod));
+            VersionedSaveDataRegistry.RequireAtomicDelivered(frozen);
+        }
+        finally { extender.Registry.EndAtomicSave(frozen); }
+    }
+
+    [TestMethod]
     public void ArchiveMissionAssociationReachesEveryOutcomeAndBothDeliveryPhases()
     {
         byte[] valid=SaveWith(1,1,new[]{"value"},new(){["value"]=new byte[]{1}});
@@ -103,6 +185,66 @@ public partial class VersionedSaveDataTests
         CollectionAssert.AreEqual(new byte[]{2},early[1].Entries["value"]);
         CollectionAssert.AreEqual(new byte[]{2},mod.Loads.Single().Entries["value"]);
         Assert.AreEqual(101L,early[0].MissionSessionId);
+    }
+
+    [TestMethod]
+    public void RequiredAtomicRecordFreezesOnceAndArchiveMustActuallyRequestIt()
+    {
+        var extender = new FakeExtender();
+        int calls = 0, value = 4;
+        var registration = extender.Registration("Mod.Atomic", 1, 1, new[] { "state" }, writer =>
+        { calls++; writer.Write("state", new byte[] { (byte)value }); return true; });
+        registration.RequireAtomicWrite = true;
+        var mod = extender.Register(registration);
+        Assert.IsNull(extender.Save(mod), "A required record cannot capture outside the protected writer.");
+        Assert.AreEqual(0, calls);
+        var frozen = extender.Registry.BeginAtomicSave(new VersionedSaveContext(true, false, "test.sav"));
+        try
+        {
+            Assert.AreEqual(1, calls);
+            Assert.ThrowsExactly<InvalidDataException>(() => VersionedSaveDataRegistry.RequireAtomicDelivered(frozen));
+            value = 9;
+            byte[] first = extender.Save(mod), second = extender.Save(mod);
+            Assert.AreEqual(1, calls, "SE serialization must reuse the pre-writer snapshot.");
+            CollectionAssert.AreEqual(first, second);
+            CollectionAssert.AreEqual(frozen.Records["Mod.Atomic"], first);
+            first[0] ^= 1;
+            CollectionAssert.AreEqual(frozen.Records["Mod.Atomic"], second, "Transport cannot mutate the frozen proof.");
+            VersionedSaveDataRegistry.RequireAtomicDelivered(frozen);
+            Assert.ThrowsExactly<InvalidOperationException>(() => extender.Registry.BeginAtomicSave(new VersionedSaveContext(true, false, "nested.sav")));
+        }
+        finally { extender.Registry.EndAtomicSave(frozen); }
+        Assert.IsNull(extender.Save(mod));
+        Assert.AreEqual(1, calls);
+    }
+
+    [TestMethod]
+    public void RequiredAtomicFailuresAndEditorScopeNeverReuseOldGameplaySnapshot()
+    {
+        var extender = new FakeExtender();
+        bool accept = false;
+        var registration = extender.Registration("Mod.AtomicFailure", 1, 1, new[] { "state" }, writer => accept);
+        registration.RequireAtomicWrite = true;
+        var mod = extender.Register(registration);
+        var gameplay = new VersionedSaveContext(true, false, "save.sav");
+        Assert.IsTrue(extender.Registry.RequiresAtomicWrite(gameplay));
+        Assert.IsFalse(extender.Registry.RequiresAtomicWrite(new VersionedSaveContext(false, true, "editor.map")));
+        Assert.ThrowsExactly<InvalidDataException>(() => extender.Registry.BeginAtomicSave(gameplay));
+        accept = true;
+        var frozen = extender.Registry.BeginAtomicSave(gameplay);
+        try
+        {
+            // The frozen logical save is save.sav; FakeExtender.Save deliberately
+            // defaults to test.sav. Drive the matching positive transport directly.
+            Assert.IsNotNull(mod.SaveCallback(gameplay));
+            VersionedSaveDataRegistry.RequireAtomicDelivered(frozen);
+        }
+        finally { extender.Registry.EndAtomicSave(frozen); }
+        // An unreadable newer record must fail a fresh required save, preserving its source bytes.
+        byte[] tooNew = SaveWith(2, 2, new[] { "state" }, new() { ["state"] = new byte[] { 2 } });
+        extender.LoadSave(tooNew, mod);
+        Assert.ThrowsExactly<InvalidDataException>(() => extender.Registry.BeginAtomicSave(gameplay));
+        Assert.IsTrue(mod.Handle.KeepsLoadedRecord);
     }
 
     [TestMethod]
@@ -976,7 +1118,7 @@ public partial class VersionedSaveDataTests
                 registration.CurrentVersion, registration.MinimumReaderVersion, registration.KnownEntries, registration.Capture,
                 load => { mod.Loads.Add(load); registration.Loaded(load); })
             { Scope = registration.Scope, LegacyReader = registration.LegacyReader,
-                SimulationRelevant = registration.SimulationRelevant, Prepared = registration.Prepared };
+                SimulationRelevant = registration.SimulationRelevant, RequireAtomicWrite = registration.RequireAtomicWrite, Prepared = registration.Prepared };
             foreach (var step in registration.Migrations) observed.AddMigration(step.Key, step.Value);
             pendingRegistration = mod;
             Assert.IsTrue(Registry.TryRegister(observed, out var handle, out string reason), reason);

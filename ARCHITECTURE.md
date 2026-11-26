@@ -227,6 +227,15 @@ spans. Ordered optional adjusters compose before OR-combined native safety. The
 shared service has no default gameplay policy; consumers own synchronized settings.
 See [AI market sell policies](docs/AI_MARKET_SELL.md).
 
+`Multiplayer/MultiplayerResyncEvents` owns common native repair notifications.
+`MultiplayerResyncData` adds bounded, versioned host records and the shared completion
+barrier. Its static runtime owns registration, native/Steam adapters and process
+lifetime; the internal `MultiplayerResyncDataSession` is the single production
+state machine, also instantiated by deterministic multi-peer tests with injected
+transport, clock and world facts. Consumer codecs, tile rules, purchase bookkeeping
+and the choice to reset rather than transfer state remain in each mod. See the
+[provider contract](docs/THIRD_PARTY_GUIDE.md#host-authoritative-mod-data-during-repair).
+
 `Economy/WorkerProductionModifiers` prepares base amounts, fixed percentages and
 per-level fear contributions together for mission admission. The native production
 owner consumes the prepared rules, and the shared save and multiplayer owners

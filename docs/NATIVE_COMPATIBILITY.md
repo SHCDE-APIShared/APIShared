@@ -156,3 +156,29 @@ Audio owns coordinated native source-capture entries and managed playback
 interception. See [bridge validation](AUDIO.md#native-bridge-validation) for the
 specific backend contract and [UpdateToNewDLL](../UpdateToNewDLL.md) for hashes,
 addresses and the feature update checklist.
+
+## Paired AI market observations
+
+`AiMarketEvents` owns the complete entries `3EC90/6`, `40740/12`,
+`29650/10` and `29700/9` on the audited image. These are purchase selection,
+recruitment demand generation, actual purchase and actual sale respectively.
+It does not hook controller `3F270`, which is modified by Fixes, or the shared
+price and sale-policy interiors. Both diagnostic consumers register with this
+owner; neither may install a second entry detour.
+
+The sale entry includes `TEST R9D,R9D; JS 2979F`. Preparation and publication
+validate the actual installed backend's relocated conditional destination,
+fallthrough continuation, pointer slot, padding and displaced span. The other
+three prologues replay equivalent non-RIP instructions; redundant REX prefixes may
+be normalized by the backend, so validation compares decoded instruction meaning.
+All handles acquire originals
+before the first patch, and publication permanently roots partial failures.
+
+Callback pairs preserve individual tokens through nested operations and logical
+disabling. An immutable observer snapshot and bounded stack-local tokens avoid
+managed allocation and shared-depth overflow. Native arguments, result and
+exception remain unchanged; completed callback pairs do not prove trade success.
+The process-local invocation identity is diagnostic only, never network state.
+`AiMarketEventsTests` executes all four real displaced entries on private native
+fixtures, both sale branches, nested tokens, callback failure, disable-in-flight
+and original exceptions. It does not prove the complete game's economy behavior.

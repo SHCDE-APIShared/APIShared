@@ -3,13 +3,130 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.60.2",
+  "Version": "0.73.4",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
   "Manifest": 1,
   "NetworkMode": 1,
   "SerpChangelog": [
+    {
+      "Version": "0.73.4",
+      "Changes": [
+        "Keep AI build steps, map rendering, lobby updates, and unit HUD interactions running when a mod callback fails and its exception cannot be formatted."
+      ]
+    },
+    {
+      "Version": "0.73.3",
+      "Changes": [
+        "Preserve early Vanilla multiplayer handshake packets consumed by the Script Extender's lobby receiver, including ordinary new-game and save-load starts without an in-game loading mod.",
+        "Bind bounded handshake delivery to the authenticated preparation, current participants and successfully loaded native world; discard failed or replaced buffers without changing Vanilla save eligibility or start acknowledgements."
+      ]
+    },
+    {
+      "Version": "0.73.2",
+      "Changes": [
+        "Avoid repeated ally-goods layout property writes when the live value is unchanged, while retaining ownership, foreign-content and viewport checks."
+      ]
+    },
+    {
+      "Version": "0.73.1",
+      "Changes": [
+        "Fix a multiplayer save load that could abort on a client when the host's release arrived after loading had already started.",
+        "If the ESC menu layout cannot be taken over (for example after a game update), the menu now stays fully Vanilla instead of mod-overridden buttons ignoring clicks."
+      ]
+    },
+    {
+      "Version": "0.73.0",
+      "Changes": [
+        "Add building actions and building panel presenters: mods can name the owner commands behind their building panel controls, and a mod that shows another player's building panel (for example a spectator tool) makes other mods' sections appear there and receives their actions."
+      ]
+    },
+    {
+      "Version": "0.72.1",
+      "Changes": [
+        "Finish multiplayer save preparation observers before coordinator progress, including reentrant load requests.",
+        "Keep later phase observers synchronous and prevent cancelled, replaced or failed continuations from affecting newer attempts."
+      ]
+    },
+    {
+      "Version": "0.72.0",
+      "Changes": [
+        "Add opt-in, consumer-defined ally goods frame presentations with explicit content padding, painted overflow and viewport metrics. Preserve original anchors, provider ordering and reversible opacity ownership without choosing a theme."
+      ]
+    },
+    {
+      "Version": "0.71.0",
+      "Changes": [
+        "Expose typed Ready/Waiting/Rejected lobby admission while retaining existing guard behavior and the original multiplayer save-load coordinator.",
+        "Add immutable, operation-bound multiplayer save preparation observations and provenance through acknowledgement, release, native admission and terminal cleanup.",
+        "Observe actual local lobby commands through the existing shared hook, allowing mods to respect manual Unready without competing hooks.",
+        "Revalidate save admission after observers and isolate stale terminal callbacks from replacement attempts."
+      ]
+    },
+    {
+      "Version": "0.70.0",
+      "Changes": [
+        "Validate a direct restart of a confirmed multiplayer map against its current mission and retained lobby."
+      ]
+    },
+    {
+      "Version": "0.69.0",
+      "Changes": [
+        "Add opt-in multiplayer repair for per-building state tables, shared Hunter prey history and the shared HP ledger."
+      ]
+    },
+    {
+      "Version": "0.68.0",
+      "Changes": [
+        "Add opt-in goods-frame placement, layout availability and shared compact footer controls for compatible Allies send-menu extensions. Existing section registrations keep their original root placement."
+      ]
+    },
+    {
+      "Version": "0.67.0",
+      "Changes": [
+        "Add opt-in early multiplayer resync capture for records that stay frozen through repair. Matching records can be confirmed while Vanilla is still resynchronizing."
+      ]
+    },
+    {
+      "Version": "0.66.0",
+      "Changes": [
+        "Add IngameMenuActions.TryRegisterVanillaSuppression so mods can conditionally hide original ESC buttons from both the main menu and Additional Mod Buttons."
+      ]
+    },
+    {
+      "Version": "0.65.0",
+      "Changes": [
+        "Add a shared multiplayer resync API for gameplay mods to restore private state from the host before play resumes.",
+        "Reuse matching records and transfer changed records over a bounded reliable channel."
+      ]
+    },
+    {
+      "Version": "0.64.0",
+      "Changes": [
+        "Add a general IngameMenuActions.TryOverrideVanillaAction API for controlling and handling existing Vanilla ESC actions without creating duplicate menu entries.",
+        "Keep original button labels, visibility and element identity; inactive overrides preserve Vanilla commands, with isolated provider and command failures."
+      ]
+    },
+    {
+      "Version": "0.63.0",
+      "Changes": [
+        "Allow explicitly requested ally transfers to suppress their Vanilla sender and recipient chat messages while preserving manual gifts, resource effects, receipt sounds and AI reactions."
+      ]
+    },
+    {
+      "Version": "0.62.1",
+      "Changes": [
+        "Restart the production-rule agreement when joining a different lobby, even when its rules are unchanged, so an early confirmation request cannot leave the lobby waiting indefinitely."
+      ]
+    },
+    {
+      "Version": "0.62.0",
+      "Changes": [
+        "Add a live construction material stock snapshot for an explicitly selected player.",
+        "Share quarry pile placement queries, native path-component refresh and multiplayer readiness proof evaluation."
+      ]
+    },
     {
       "Version": "0.60.2",
       "Changes": [

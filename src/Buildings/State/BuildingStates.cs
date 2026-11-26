@@ -23,7 +23,7 @@ namespace APIShared.Buildings
     /// the load thread before the mission starts.</para>
     /// <para>No tick, frame or polling work: requests run in their Chore, reads are memory reads.</para>
     /// </remarks>
-    public static class BuildingStates
+    public static partial class BuildingStates
     {
         internal const string SaveEntry = "values";
         private const int MaximumPayloadBytes = 1024;

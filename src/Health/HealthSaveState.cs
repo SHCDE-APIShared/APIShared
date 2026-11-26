@@ -19,7 +19,8 @@ namespace APIShared.Health
     {
         internal const int MaximumRecords = 16384;
         private const uint Magic = 0x31504841;
-        private const int Version = 1, HeaderBytes = 13, RecordBytes = 33;
+        private const int Version = 1;
+        internal const int HeaderBytes = 13, RecordBytes = 33;
         internal bool FullBasis, LegacyLords;
         internal readonly List<HealthRecord> Records = new List<HealthRecord>();
 

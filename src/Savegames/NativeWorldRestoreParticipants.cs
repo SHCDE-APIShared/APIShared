@@ -30,7 +30,7 @@ namespace APIShared.Savegames
                     Economy.WorkerProductionWorldSafety.Fault("Native world restore participant failed: " + error.Message);
                     return false;
                 }
-            return true;
+            return NativeWorldRestoreEvents.Restore();
         }
     }
 }

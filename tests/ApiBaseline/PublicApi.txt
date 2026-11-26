@@ -406,6 +406,29 @@ APIShared.Buildings.BuildMenuAvailabilityRule | public string OwnerGuid { get; }
 APIShared.Buildings.BuildMenuAvailabilityRule | public string RegistrationId { get; }
 APIShared.Buildings.BuildMenuAvailabilityRule | public void ClearAll()
 APIShared.Buildings.BuildMenuAvailabilityRule | public void SetEnabled(bool value)
+APIShared.Buildings.BuildingActionExecutor | public delegate bool APIShared.Buildings.BuildingActionExecutor(APIShared.Buildings.BuildingActionRequest request, out string reason)
+APIShared.Buildings.BuildingActionOptions | public sealed class APIShared.Buildings.BuildingActionOptions
+APIShared.Buildings.BuildingActionOptions | public .ctor(string ownerGuid, string actionId, System.Collections.Generic.IEnumerable<SHCDESE.Interop.eStructs> buildingTypes, APIShared.Buildings.BuildingActionExecutor execute)
+APIShared.Buildings.BuildingActionOptions | public APIShared.Buildings.BuildingActionExecutor Execute { get; }
+APIShared.Buildings.BuildingActionOptions | public System.Collections.Generic.IReadOnlyList<SHCDESE.Interop.eStructs> BuildingTypes { get; }
+APIShared.Buildings.BuildingActionOptions | public string ActionId { get; }
+APIShared.Buildings.BuildingActionOptions | public string OwnerGuid { get; }
+APIShared.Buildings.BuildingActionRequest | public sealed class APIShared.Buildings.BuildingActionRequest
+APIShared.Buildings.BuildingActionRequest | public .ctor(string actionOwnerGuid, string actionId, int actingPlayerId, int buildingId, uint buildingGlobalId, int argument)
+APIShared.Buildings.BuildingActionRequest | public int ActingPlayerId { get; }
+APIShared.Buildings.BuildingActionRequest | public int Argument { get; }
+APIShared.Buildings.BuildingActionRequest | public int BuildingId { get; }
+APIShared.Buildings.BuildingActionRequest | public override string ToString()
+APIShared.Buildings.BuildingActionRequest | public string ActionId { get; }
+APIShared.Buildings.BuildingActionRequest | public string ActionOwnerGuid { get; }
+APIShared.Buildings.BuildingActionRequest | public uint BuildingGlobalId { get; }
+APIShared.Buildings.BuildingActions | public static class APIShared.Buildings.BuildingActions
+APIShared.Buildings.BuildingActions | public static bool AppliesTo(string ownerGuid, string actionId, SHCDESE.Interop.eStructs buildingType)
+APIShared.Buildings.BuildingActions | public static bool IsRegistered(string ownerGuid, string actionId)
+APIShared.Buildings.BuildingActions | public static bool TryExecute(APIShared.Buildings.BuildingActionRequest request, out string reason)
+APIShared.Buildings.BuildingActions | public static bool TryGetActionByKey(int key, out string ownerGuid, out string actionId)
+APIShared.Buildings.BuildingActions | public static bool TryRegister(APIShared.Buildings.BuildingActionOptions options, out string reason)
+APIShared.Buildings.BuildingActions | public static int GetActionKey(string ownerGuid, string actionId)
 APIShared.Buildings.BuildingGeometry | public static class APIShared.Buildings.BuildingGeometry
 APIShared.Buildings.BuildingGeometry | public static bool TryGetSquareFootprintCenter(int beginX, int beginY, int gridSize, out int centerX, out int centerY)
 APIShared.Buildings.BuildingStateRegistration | public sealed class APIShared.Buildings.BuildingStateRegistration
@@ -422,6 +445,7 @@ APIShared.Buildings.BuildingStateTable | public APIShared.Networking.NetworkSend
 APIShared.Buildings.BuildingStateTable | public APIShared.Networking.NetworkSendResult RequestChangeForSameType(int buildingId, uint globalId, int valueIndex, byte value)
 APIShared.Buildings.BuildingStateTable | public bool AppliesTo(SHCDESE.Interop.eStructs buildingType)
 APIShared.Buildings.BuildingStateTable | public bool HasPendingRequest { get; }
+APIShared.Buildings.BuildingStateTable | public bool TryRegisterMultiplayerResync(out string reason)
 APIShared.Buildings.BuildingStateTable | public bool TrySetFromSimulation(int buildingId, uint globalId, int valueIndex, byte value)
 APIShared.Buildings.BuildingStateTable | public byte GetValue(int buildingId, uint globalId, int valueIndex)
 APIShared.Buildings.BuildingStateTable | public int Capacity { get; }
@@ -480,10 +504,18 @@ APIShared.Buildings.ConstructionCosts | public static bool IsAvailable { get; }
 APIShared.Buildings.ConstructionCosts | public static bool TryGetCurrent(APIShared.Buildings.ConstructionCostTarget target, out APIShared.Buildings.ConstructionCostValues values, out string reason)
 APIShared.Buildings.ConstructionCosts | public static bool TryGetDefault(APIShared.Buildings.ConstructionCostTarget target, out APIShared.Buildings.ConstructionCostValues values, out string reason)
 APIShared.Buildings.ConstructionCosts | public static bool TryGetDisplayCosts(APIShared.Buildings.ConstructionCostTarget target, out APIShared.Buildings.ConstructionCostValues values, out string reason)
+APIShared.Buildings.ConstructionCosts | public static bool TryGetPlayerMaterialStock(int playerId, out APIShared.Buildings.ConstructionMaterialStock stock, out string reason)
 APIShared.Buildings.ConstructionCosts | public static bool TrySetCurrent(APIShared.Buildings.ConstructionCostTarget target, SHCDESE.Interop.eGoods good, int amount, out string reason)
 APIShared.Buildings.ConstructionCosts | public static string UnavailableReason { get; }
 APIShared.Buildings.ConstructionDemolition | public static class APIShared.Buildings.ConstructionDemolition
 APIShared.Buildings.ConstructionDemolition | public static void RunSelfDemolition(int actor, System.Action operation)
+APIShared.Buildings.ConstructionMaterialStock | public struct APIShared.Buildings.ConstructionMaterialStock
+APIShared.Buildings.ConstructionMaterialStock | public int Gold { get; }
+APIShared.Buildings.ConstructionMaterialStock | public long GetAmount(SHCDESE.Interop.eGoods good)
+APIShared.Buildings.ConstructionMaterialStock | public uint Iron { get; }
+APIShared.Buildings.ConstructionMaterialStock | public uint Pitch { get; }
+APIShared.Buildings.ConstructionMaterialStock | public uint Stone { get; }
+APIShared.Buildings.ConstructionMaterialStock | public uint Wood { get; }
 APIShared.Buildings.ConstructionObjectIdentity | public struct APIShared.Buildings.ConstructionObjectIdentity : System.IEquatable<APIShared.Buildings.ConstructionObjectIdentity>
 APIShared.Buildings.ConstructionObjectIdentity | public .ctor(APIShared.Buildings.ConstructionObjectKind kind, int slot, uint globalId)
 APIShared.Buildings.ConstructionObjectIdentity | public APIShared.Buildings.ConstructionObjectKind Kind { get; }
@@ -544,6 +576,12 @@ APIShared.Buildings.HumanConstructionCostRegistration | public void SetCosts(API
 APIShared.Buildings.HumanConstructionCosts | public static class APIShared.Buildings.HumanConstructionCosts
 APIShared.Buildings.HumanConstructionCosts | public static bool TryGetEffectiveCosts(APIShared.Buildings.ConstructionCostTarget target, int playerId, out System.Collections.Generic.IReadOnlyDictionary<SHCDESE.Interop.eGoods, int> values)
 APIShared.Buildings.HumanConstructionCosts | public static bool TryRegister(string ownerGuid, string registrationId, string saveDataIdentifier, out APIShared.Buildings.HumanConstructionCostRegistration registration, out string reason)
+APIShared.Buildings.QuarryPilePlacement | public static class APIShared.Buildings.QuarryPilePlacement
+APIShared.Buildings.QuarryPilePlacement | public static bool InitialSearchAvailable { get; }
+APIShared.Buildings.QuarryPilePlacement | public static bool RelocationAvailable { get; }
+APIShared.Buildings.QuarryPilePlacement | public static bool TryFindInitialCandidate(int playerId, int quarryX, int quarryY, System.Func<int, int, bool> permits, out int pileX, out int pileY)
+APIShared.Buildings.QuarryPilePlacement | public static bool TryGetRelocationCandidate(int quarryX, int quarryY, int perimeterIndex, int placementTry, out int pileX, out int pileY)
+APIShared.Buildings.QuarryPilePlacement | public static bool TryWithInitialCandidateFilter(int playerId, int pileX, int pileY, System.Func<bool> placeQuarry)
 APIShared.Commands.GameActionAcceptedEventArgs | public sealed class APIShared.Commands.GameActionAcceptedEventArgs
 APIShared.Commands.GameActionAcceptedEventArgs | public Enums.GameActionCommand Command { get; }
 APIShared.Commands.GameActionAcceptedEventArgs | public int ActionState { get; }
@@ -616,6 +654,27 @@ APIShared.CoopAiStartRequest | public bool IsPreview { get; }
 APIShared.CoopAiStartRequest | public int CoopMission { get; }
 APIShared.CoopAiStartRequest | public int CoopTrail { get; }
 APIShared.CoopAiStartRequest | public long AttemptId { get; }
+APIShared.Economy.AiMarketBegin | public delegate long APIShared.Economy.AiMarketBegin(APIShared.Economy.AiMarketContext context)
+APIShared.Economy.AiMarketContext | public struct APIShared.Economy.AiMarketContext
+APIShared.Economy.AiMarketContext | public APIShared.Economy.AiMarketOperation Operation { get; }
+APIShared.Economy.AiMarketContext | public System.IntPtr ProfileRoot { get; }
+APIShared.Economy.AiMarketContext | public int GoodIndex { get; }
+APIShared.Economy.AiMarketContext | public int PlayerId { get; }
+APIShared.Economy.AiMarketContext | public int SignedAmount { get; }
+APIShared.Economy.AiMarketContext | public long InvocationId { get; }
+APIShared.Economy.AiMarketEnd | public delegate void APIShared.Economy.AiMarketEnd(APIShared.Economy.AiMarketContext context, long token, bool completed, int rawResult)
+APIShared.Economy.AiMarketEvents | public static class APIShared.Economy.AiMarketEvents
+APIShared.Economy.AiMarketEvents | public static bool CheckIntegrity()
+APIShared.Economy.AiMarketEvents | public static bool IsAvailable { get; }
+APIShared.Economy.AiMarketEvents | public static bool TryRegister(string ownerGuid, string registrationId, APIShared.Economy.AiMarketBegin begin, APIShared.Economy.AiMarketEnd end, out APIShared.Economy.AiMarketRegistration registration, out string diagnostic, int order = 0, System.Action<System.Exception> onFailure = null)
+APIShared.Economy.AiMarketEvents | public static string Diagnostic { get; }
+APIShared.Economy.AiMarketOperation | public enum APIShared.Economy.AiMarketOperation : int
+APIShared.Economy.AiMarketOperation | Buy = 2
+APIShared.Economy.AiMarketOperation | PurchaseDecision = 0
+APIShared.Economy.AiMarketOperation | Recruitment = 1
+APIShared.Economy.AiMarketOperation | Sell = 3
+APIShared.Economy.AiMarketRegistration | public sealed class APIShared.Economy.AiMarketRegistration
+APIShared.Economy.AiMarketRegistration | public void SetEnabled(bool enabled)
 APIShared.Economy.AiMarketSellPolicies | public static class APIShared.Economy.AiMarketSellPolicies
 APIShared.Economy.AiMarketSellPolicies | public static bool TryRegister(string ownerGuid, string registrationId, APIShared.Economy.AiMarketSellSafety safety, out APIShared.Economy.AiMarketSellRegistration registration, out string error, System.Action<APIShared.Economy.AiMarketSellReserveContext> reserveAdjuster = null, System.Action<APIShared.Economy.AiMarketSellQuantityContext> quantityAdjuster = null, int order = 0)
 APIShared.Economy.AiMarketSellQuantityContext | public sealed class APIShared.Economy.AiMarketSellQuantityContext
@@ -662,7 +721,9 @@ APIShared.Economy.AllyTransferPreEventArgs | public int RecipientPlayerId { get;
 APIShared.Economy.AllyTransferPreEventArgs | public int SenderPlayerId { get; }
 APIShared.Economy.AllyTransferRequest | public sealed class APIShared.Economy.AllyTransferRequest
 APIShared.Economy.AllyTransferRequest | public .ctor(int senderId, int recipientId, SHCDESE.Interop.eGoods good, int maximumAmount, int minimumSenderRemaining = 0, int maximumRecipientAmount = 2147483647)
+APIShared.Economy.AllyTransferRequest | public .ctor(int senderId, int recipientId, SHCDESE.Interop.eGoods good, int maximumAmount, int minimumSenderRemaining, int maximumRecipientAmount, bool showVanillaChatMessages)
 APIShared.Economy.AllyTransferRequest | public SHCDESE.Interop.eGoods Good { get; }
+APIShared.Economy.AllyTransferRequest | public bool ShowVanillaChatMessages { get; }
 APIShared.Economy.AllyTransferRequest | public int MaximumAmount { get; }
 APIShared.Economy.AllyTransferRequest | public int MaximumRecipientAmount { get; }
 APIShared.Economy.AllyTransferRequest | public int MinimumSenderRemaining { get; }
@@ -689,6 +750,7 @@ APIShared.Economy.AllyTransferStatus | Vetoed = 1
 APIShared.Economy.AllyTransfers | public static class APIShared.Economy.AllyTransfers
 APIShared.Economy.AllyTransfers | public const int MaximumTransferAmount = 32767
 APIShared.Economy.AllyTransfers | public static System.Collections.Generic.IReadOnlyList<SHCDESE.Interop.eGoods> SupportedGoods { get; }
+APIShared.Economy.AllyTransfers | public static bool CanSuppressVanillaChatMessages { get; }
 APIShared.Economy.AllyTransfers | public static bool IsAvailable { get; }
 APIShared.Economy.AllyTransfers | public static bool IsSupportedGood(SHCDESE.Interop.eGoods good)
 APIShared.Economy.AllyTransfers | public static bool TryExecute(APIShared.Economy.AllyTransferRequest request, out APIShared.Economy.AllyTransferResult result, out string reason)
@@ -1334,6 +1396,7 @@ APIShared.Health.HealthModifierHandle | public bool IsEnabled { get; }
 APIShared.Health.HealthModifierHandle | public void SetEnabled(bool value)
 APIShared.Health.HealthModifiers | public static class APIShared.Health.HealthModifiers
 APIShared.Health.HealthModifiers | public static bool IsAvailable { get; }
+APIShared.Health.HealthModifiers | public static bool TryEnableMultiplayerResync(out string reason)
 APIShared.Health.HealthModifiers | public static bool TryRegister(string ownerGuid, string registrationId, System.Func<APIShared.Health.HealthModifierContext, APIShared.Modifiers.ValueModifierContribution> provider, out APIShared.Health.HealthModifierHandle handle, out string reason, int order = 0)
 APIShared.Health.HealthModifiers | public static bool TryRegisterLegacyBasisProvider(string ownerGuid, string registrationId, System.Func<APIShared.Health.HealthLegacyBasis[]> provider, out string reason, int order = 0)
 APIShared.Health.HealthModifiers | public static string UnavailableReason { get; }
@@ -1527,6 +1590,14 @@ APIShared.Input.ModKeybinds | public static event System.Action Changed
 APIShared.Input.ModKeybinds | public static string Format(APIShared.Input.KeybindChord chord)
 APIShared.Input.ModKeybinds | public static void CancelCapture(APIShared.Input.ModKeybindRegistration registration)
 APIShared.Input.ModKeybinds | public static void NotifyBindingChanged()
+APIShared.Lobby.LobbyActionEvents | public static class APIShared.Lobby.LobbyActionEvents
+APIShared.Lobby.LobbyActionEvents | public static bool TryRegisterObserver(string ownerGuid, string registrationId, System.Action<APIShared.Lobby.LobbyActionNotification> observer, out string diagnostic, int order = 0)
+APIShared.Lobby.LobbyActionNotification | public sealed class APIShared.Lobby.LobbyActionNotification
+APIShared.Lobby.LobbyActionNotification | public bool OriginalInvoked { get; }
+APIShared.Lobby.LobbyActionNotification | public bool ReadyAfter { get; }
+APIShared.Lobby.LobbyActionNotification | public bool ReadyBefore { get; }
+APIShared.Lobby.LobbyActionNotification | public string Command { get; }
+APIShared.Lobby.LobbyActionNotification | public ulong LobbyId { get; }
 APIShared.Lobby.LobbyChatMessage | public sealed class APIShared.Lobby.LobbyChatMessage
 APIShared.Lobby.LobbyChatMessage | public bool IsSystemMessage { get; }
 APIShared.Lobby.LobbyChatMessage | public string Message { get; }
@@ -1536,12 +1607,26 @@ APIShared.Lobby.LobbyChatPresentation | public static bool IsAvailable { get; }
 APIShared.Lobby.LobbyChatPresentation | public static bool TryRegisterSystemMessageRule(string ownerGuid, string registrationId, System.Func<APIShared.Lobby.LobbyChatMessage, bool> rule, out string diagnostic)
 APIShared.Lobby.LobbyLaunchGuardContext | public sealed class APIShared.Lobby.LobbyLaunchGuardContext
 APIShared.Lobby.LobbyLaunchGuardContext | public APIShared.Lobby.LobbyLaunchOperation Operation { get; }
+APIShared.Lobby.LobbyLaunchGuardContext | public APIShared.Savegames.MultiplayerSavePreparationSnapshot PreparedSave { get; }
 APIShared.Lobby.LobbyLaunchGuardContext | public CrusaderDE.FRONT_Multiplayer Lobby { get; }
 APIShared.Lobby.LobbyLaunchGuardContext | public bool RequiresPeerAgreement { get; }
 APIShared.Lobby.LobbyLaunchGuardContext | public string Command { get; }
+APIShared.Lobby.LobbyLaunchGuardResult | public struct APIShared.Lobby.LobbyLaunchGuardResult
+APIShared.Lobby.LobbyLaunchGuardResult | public .ctor(APIShared.Lobby.LobbyLaunchGuardState state, string reason)
+APIShared.Lobby.LobbyLaunchGuardResult | public readonly APIShared.Lobby.LobbyLaunchGuardState State
+APIShared.Lobby.LobbyLaunchGuardResult | public readonly string Reason
+APIShared.Lobby.LobbyLaunchGuardResult | public static APIShared.Lobby.LobbyLaunchGuardResult Ready { get; }
+APIShared.Lobby.LobbyLaunchGuardResult | public static APIShared.Lobby.LobbyLaunchGuardResult Rejected(string reason)
+APIShared.Lobby.LobbyLaunchGuardResult | public static APIShared.Lobby.LobbyLaunchGuardResult Waiting(string reason)
+APIShared.Lobby.LobbyLaunchGuardState | public enum APIShared.Lobby.LobbyLaunchGuardState : int
+APIShared.Lobby.LobbyLaunchGuardState | Ready = 0
+APIShared.Lobby.LobbyLaunchGuardState | Rejected = 2
+APIShared.Lobby.LobbyLaunchGuardState | Waiting = 1
 APIShared.Lobby.LobbyLaunchGuards | public static class APIShared.Lobby.LobbyLaunchGuards
 APIShared.Lobby.LobbyLaunchGuards | public static bool IsAvailable { get; }
 APIShared.Lobby.LobbyLaunchGuards | public static bool TryRegister(string ownerGuid, string registrationId, System.Func<APIShared.Lobby.LobbyLaunchGuardContext, string> guard, out string diagnostic, int order = 0)
+APIShared.Lobby.LobbyLaunchGuards | public static bool TryRegisterReadiness(string ownerGuid, string registrationId, System.Func<APIShared.Lobby.LobbyLaunchGuardContext, APIShared.Lobby.LobbyLaunchGuardResult> guard, out string diagnostic)
+APIShared.Lobby.LobbyLaunchGuards | public static bool TryRegisterReadiness(string ownerGuid, string registrationId, System.Func<APIShared.Lobby.LobbyLaunchGuardContext, APIShared.Lobby.LobbyLaunchGuardResult> guard, out string diagnostic, int order)
 APIShared.Lobby.LobbyLaunchOperation | public enum APIShared.Lobby.LobbyLaunchOperation : int
 APIShared.Lobby.LobbyLaunchOperation | Ready = 0
 APIShared.Lobby.LobbyLaunchOperation | Start = 1
@@ -1549,6 +1634,7 @@ APIShared.Lobby.LobbyLaunchStatus | public static class APIShared.Lobby.LobbyLau
 APIShared.Lobby.LobbyLaunchStatus | public static bool IsAnnouncement(string chatText)
 APIShared.Lobby.LobbyLaunchStatus | public static bool IsAvailable { get; }
 APIShared.Lobby.LobbyLaunchStatus | public static bool TryRegisterProvider(string ownerGuid, string registrationId, System.Func<APIShared.Lobby.LobbyLaunchStatusQuery, System.Collections.Generic.IEnumerable<APIShared.Lobby.LobbyLaunchStatusItem>> provider, out string diagnostic)
+APIShared.Lobby.LobbyLaunchStatus | public static bool TryShowLocalSystemMessage(ulong lobbyId, string text)
 APIShared.Lobby.LobbyLaunchStatus | public static void ReportAttempt(string ownerGuid, APIShared.Lobby.LobbyLaunchOperation operation, APIShared.Lobby.LobbyLaunchStatusItem item)
 APIShared.Lobby.LobbyLaunchStatus | public static void RequestRefresh()
 APIShared.Lobby.LobbyLaunchStatusItem | public sealed class APIShared.Lobby.LobbyLaunchStatusItem
@@ -1692,6 +1778,7 @@ APIShared.MissionPlayStateReadyNotification | public APIShared.MissionContext Co
 APIShared.MissionPlayStateReadyNotification | public bool IsReplay { get; }
 APIShared.MissionRestart | public static class APIShared.MissionRestart
 APIShared.MissionRestart | public static bool IsInProgress { get; }
+APIShared.MissionRestart | public static bool TryValidateMultiplayerMap(EngineInterface.MultiplayerSetupData setup, FileHeader map, int coopTrail, int coopMission, out string reason)
 APIShared.MissionRestart | public static void Run(string ownerGuid, System.Action restart)
 APIShared.MissionStartKind | public enum APIShared.MissionStartKind : int
 APIShared.MissionStartKind | EditorCreated = 2
@@ -2364,6 +2451,16 @@ APIShared.Modifiers.ValueModifierKind | None = 0
 APIShared.Modifiers.ValueModifierStage | public enum APIShared.Modifiers.ValueModifierStage : int
 APIShared.Modifiers.ValueModifierStage | AfterFixedValue = 1
 APIShared.Modifiers.ValueModifierStage | BeforeFixedValue = 0
+APIShared.Multiplayer.MultiplayerResyncData | public static class APIShared.Multiplayer.MultiplayerResyncData
+APIShared.Multiplayer.MultiplayerResyncData | public static bool CheckIntegrity()
+APIShared.Multiplayer.MultiplayerResyncData | public static bool IsAvailable { get; }
+APIShared.Multiplayer.MultiplayerResyncData | public static bool TryRegister<TPrepared>(string ownerGuid, string recordId, int schemaVersion, int maximumBytes, System.Func<byte[]> capture, System.Func<System.ReadOnlyMemory<byte>, TPrepared> prepare, System.Action<TPrepared> commit, out string reason)
+APIShared.Multiplayer.MultiplayerResyncData | public static bool TryRegisterEarlyCapture<TPrepared>(string ownerGuid, string recordId, int schemaVersion, int maximumBytes, System.Func<byte[]> capture, System.Func<System.ReadOnlyMemory<byte>, TPrepared> prepare, System.Action<TPrepared> commit, out string reason)
+APIShared.Multiplayer.MultiplayerResyncEvents | public static class APIShared.Multiplayer.MultiplayerResyncEvents
+APIShared.Multiplayer.MultiplayerResyncEvents | public static bool CheckIntegrity()
+APIShared.Multiplayer.MultiplayerResyncEvents | public static bool IsAvailable { get; }
+APIShared.Multiplayer.MultiplayerResyncEvents | public static bool IsInProgress { get; }
+APIShared.Multiplayer.MultiplayerResyncEvents | public static bool TryRegister(string ownerGuid, string registrationId, System.Action started, System.Action completed, out string reason, int order = 0)
 APIShared.Multiplayer.SimulationAgreement | public static class APIShared.Multiplayer.SimulationAgreement
 APIShared.Multiplayer.SimulationAgreement | public static void Register(string ownerGuid, string featureId, bool required, System.Func<bool> isReady, System.Action<bool> apply)
 APIShared.Multiplayer.SimulationAgreement | public static void ReportFault(string message)
@@ -2699,6 +2796,16 @@ APIShared.Networking.ModNetworkClient | public APIShared.Networking.ChoreChannel
 APIShared.Networking.ModNetworkClient | public APIShared.Networking.MessageChannel<T> RegisterMessage<T>(string registrationId, System.Action<APIShared.Networking.NetworkMessage<T>> receive, APIShared.Networking.MessageChannelOptions<T> options = null) where T : class
 APIShared.Networking.ModNetworkClient | public bool TryPostPresentation(System.Action presentation)
 APIShared.Networking.ModNetworkClient | public string OwnerGuid { get; }
+APIShared.Networking.NativeReadinessProof | public sealed class APIShared.Networking.NativeReadinessProof
+APIShared.Networking.NativeReadinessProof | public .ctor()
+APIShared.Networking.NativeReadinessProof | public APIShared.Networking.NativeReadinessState Evaluate()
+APIShared.Networking.NativeReadinessProof | public bool TryAccept(ulong senderSteamId, string senderWorldNonce, string worldToken, long attempt, int commandId, int tick)
+APIShared.Networking.NativeReadinessProof | public void Begin(ulong localSteamId, string worldToken, long attempt, System.Collections.Generic.IEnumerable<System.Collections.Generic.KeyValuePair<ulong, string>> peers)
+APIShared.Networking.NativeReadinessProof | public void Clear()
+APIShared.Networking.NativeReadinessState | public enum APIShared.Networking.NativeReadinessState : int
+APIShared.Networking.NativeReadinessState | Mismatch = 2
+APIShared.Networking.NativeReadinessState | Pending = 0
+APIShared.Networking.NativeReadinessState | Ready = 1
 APIShared.Networking.NetworkMessage<T> | public sealed class APIShared.Networking.NetworkMessage<T> where T : class
 APIShared.Networking.NetworkMessage<T> | public T Packet { get; }
 APIShared.Networking.NetworkMessage<T> | public ulong SenderSteamId { get; }
@@ -2750,6 +2857,9 @@ APIShared.Patching.SafeIlHook | public string Id { get; }
 APIShared.Patching.SafeIlHook | public string OwnerGuid { get; }
 APIShared.Patching.SafeTranspiler | public static class APIShared.Patching.SafeTranspiler
 APIShared.Patching.SafeTranspiler | public static System.Collections.Generic.IEnumerable<HarmonyLib.CodeInstruction> Run(string ownerGuid, string id, System.Collections.Generic.IEnumerable<HarmonyLib.CodeInstruction> instructions, System.Func<System.Collections.Generic.IEnumerable<HarmonyLib.CodeInstruction>, System.Collections.Generic.IEnumerable<HarmonyLib.CodeInstruction>> transform, BepInEx.Logging.ManualLogSource log, System.Action<bool> outcome = null)
+APIShared.Pathfinding.PathComponentRefresh | public static class APIShared.Pathfinding.PathComponentRefresh
+APIShared.Pathfinding.PathComponentRefresh | public static bool IsAvailable { get; }
+APIShared.Pathfinding.PathComponentRefresh | public static bool TryRefresh(bool force, out bool rebuilt, out string reason)
 APIShared.Pathfinding.PathReachability | public static class APIShared.Pathfinding.PathReachability
 APIShared.Pathfinding.PathReachability | public static APIShared.Pathfinding.PathReachabilityResult BetweenComponents(int playerId, SHCDESE.Interop.Enums.PathConnectionQueryMode mode, int fromComponent, int toComponent)
 APIShared.Pathfinding.PathReachability | public static APIShared.Pathfinding.PathReachabilityResult BetweenTiles(int playerId, SHCDESE.Interop.Enums.PathConnectionQueryMode mode, int fromX, int fromY, int toX, int toY)
@@ -2901,6 +3011,33 @@ APIShared.PlayerPerspectiveChangeReason | Selected = 0
 APIShared.PlayerPerspectiveChangeReason | Uncertain = 2
 APIShared.Presentation.AllyGoodsAdornmentRegistration | public sealed class APIShared.Presentation.AllyGoodsAdornmentRegistration
 APIShared.Presentation.AllyGoodsAdornmentRegistration | public void RequestRefresh()
+APIShared.Presentation.AllyGoodsFooterRegistration | public sealed class APIShared.Presentation.AllyGoodsFooterRegistration
+APIShared.Presentation.AllyGoodsFooterRegistration | public void RequestContentRefresh()
+APIShared.Presentation.AllyGoodsFooterRegistration | public void SetEnabled(bool enabled)
+APIShared.Presentation.AllyGoodsFooterRegistration | public void SetVisible(bool visible)
+APIShared.Presentation.AllyGoodsFrameContext | public sealed class APIShared.Presentation.AllyGoodsFrameContext
+APIShared.Presentation.AllyGoodsFrameContext | public APIShared.Presentation.AllyGoodsPanelContext Selection { get; }
+APIShared.Presentation.AllyGoodsFrameContext | public Noesis.FrameworkElement Host { get; }
+APIShared.Presentation.AllyGoodsFrameContext | public Noesis.FrameworkElement OriginalFrame { get; }
+APIShared.Presentation.AllyGoodsFrameOptions | public sealed class APIShared.Presentation.AllyGoodsFrameOptions
+APIShared.Presentation.AllyGoodsFrameOptions | public .ctor(Noesis.Thickness contentPadding, Noesis.Thickness visualOverflow, float maximumExtensionHeight, float viewportMargin, float sectionSpacing)
+APIShared.Presentation.AllyGoodsFrameOptions | public Noesis.Thickness ContentPadding { get; }
+APIShared.Presentation.AllyGoodsFrameOptions | public Noesis.Thickness VisualOverflow { get; }
+APIShared.Presentation.AllyGoodsFrameOptions | public float MaximumExtensionHeight { get; }
+APIShared.Presentation.AllyGoodsFrameOptions | public float SectionSpacing { get; }
+APIShared.Presentation.AllyGoodsFrameOptions | public float ViewportMargin { get; }
+APIShared.Presentation.AllyGoodsFrameRegistration | public sealed class APIShared.Presentation.AllyGoodsFrameRegistration
+APIShared.Presentation.AllyGoodsFrameRegistration | public void RequestContentRefresh()
+APIShared.Presentation.AllyGoodsFrameRegistration | public void SetEnabled(bool enabled)
+APIShared.Presentation.AllyGoodsPanelAnchorRole | public enum APIShared.Presentation.AllyGoodsPanelAnchorRole : int
+APIShared.Presentation.AllyGoodsPanelAnchorRole | Footer = 2
+APIShared.Presentation.AllyGoodsPanelAnchorRole | FooterBackground = 3
+APIShared.Presentation.AllyGoodsPanelAnchorRole | GoodsFrame = 1
+APIShared.Presentation.AllyGoodsPanelAnchorRole | None = 0
+APIShared.Presentation.AllyGoodsPanelAnchors | public static class APIShared.Presentation.AllyGoodsPanelAnchors
+APIShared.Presentation.AllyGoodsPanelAnchors | public static APIShared.Presentation.AllyGoodsPanelAnchorRole GetRole(Noesis.DependencyObject element)
+APIShared.Presentation.AllyGoodsPanelAnchors | public static readonly Noesis.DependencyProperty RoleProperty
+APIShared.Presentation.AllyGoodsPanelAnchors | public static void SetRole(Noesis.DependencyObject element, APIShared.Presentation.AllyGoodsPanelAnchorRole role)
 APIShared.Presentation.AllyGoodsPanelContext | public sealed class APIShared.Presentation.AllyGoodsPanelContext
 APIShared.Presentation.AllyGoodsPanelContext | public SHCDESE.Interop.eGoods? Good { get; }
 APIShared.Presentation.AllyGoodsPanelContext | public bool HasSelection { get; }
@@ -2914,7 +3051,10 @@ APIShared.Presentation.AllyGoodsPanelContext | public int? Amount { get; }
 APIShared.Presentation.AllyGoodsPanelContext | public long PanelGeneration { get; }
 APIShared.Presentation.AllyGoodsPanelExtensions | public static class APIShared.Presentation.AllyGoodsPanelExtensions
 APIShared.Presentation.AllyGoodsPanelExtensions | public static bool TryGetContext(out APIShared.Presentation.AllyGoodsPanelContext context)
+APIShared.Presentation.AllyGoodsPanelExtensions | public static bool TryRegisterFooterControl(string ownerGuid, string registrationId, System.Func<APIShared.Presentation.AllyGoodsSectionContext, Noesis.FrameworkElement> factory, out APIShared.Presentation.AllyGoodsFooterRegistration registration, out string reason, int order = 0)
+APIShared.Presentation.AllyGoodsPanelExtensions | public static bool TryRegisterFramePresentation(string ownerGuid, string registrationId, System.Func<APIShared.Presentation.AllyGoodsFrameContext, Noesis.FrameworkElement> factory, APIShared.Presentation.AllyGoodsFrameOptions options, out APIShared.Presentation.AllyGoodsFrameRegistration registration, out string reason, int order = 0)
 APIShared.Presentation.AllyGoodsPanelExtensions | public static bool TryRegisterGoodsAdornment(string ownerGuid, string registrationId, System.Func<APIShared.Presentation.AllyGoodsSectionContext, SHCDESE.Interop.eGoods, Noesis.FrameworkElement> factory, out APIShared.Presentation.AllyGoodsAdornmentRegistration registration, out string reason, int order = 0)
+APIShared.Presentation.AllyGoodsPanelExtensions | public static bool TryRegisterSection(string ownerGuid, string registrationId, System.Func<APIShared.Presentation.AllyGoodsSectionContext, Noesis.FrameworkElement> factory, APIShared.Presentation.AllyGoodsSectionPlacement placement, out APIShared.Presentation.AllyGoodsSectionRegistration registration, out string reason, int order = 0)
 APIShared.Presentation.AllyGoodsPanelExtensions | public static bool TryRegisterSection(string ownerGuid, string registrationId, System.Func<APIShared.Presentation.AllyGoodsSectionContext, Noesis.FrameworkElement> factory, out APIShared.Presentation.AllyGoodsSectionRegistration registration, out string reason, int order = 0)
 APIShared.Presentation.AllyGoodsPanelExtensions | public static bool TrySubscribeContext(string ownerGuid, string registrationId, System.Action<APIShared.Presentation.AllyGoodsPanelContext> changed, out string reason, int order = 0)
 APIShared.Presentation.AllyGoodsPanelExtensions.HostBinding | public sealed class APIShared.Presentation.AllyGoodsPanelExtensions.HostBinding : SHCDESE.NoesisUtil.INoesisElementBindingAware
@@ -2922,7 +3062,12 @@ APIShared.Presentation.AllyGoodsPanelExtensions.HostBinding | public .ctor()
 APIShared.Presentation.AllyGoodsSectionContext | public sealed class APIShared.Presentation.AllyGoodsSectionContext
 APIShared.Presentation.AllyGoodsSectionContext | public APIShared.Presentation.AllyGoodsPanelContext Selection { get; }
 APIShared.Presentation.AllyGoodsSectionContext | public Noesis.FrameworkElement Host { get; }
+APIShared.Presentation.AllyGoodsSectionPlacement | public enum APIShared.Presentation.AllyGoodsSectionPlacement : int
+APIShared.Presentation.AllyGoodsSectionPlacement | GoodsDialogBottom = 1
+APIShared.Presentation.AllyGoodsSectionPlacement | PanelRootBottom = 0
 APIShared.Presentation.AllyGoodsSectionRegistration | public sealed class APIShared.Presentation.AllyGoodsSectionRegistration
+APIShared.Presentation.AllyGoodsSectionRegistration | public bool TryGetLayoutAvailability(out string reason)
+APIShared.Presentation.AllyGoodsSectionRegistration | public event System.Action LayoutAvailabilityChanged
 APIShared.Presentation.AllyGoodsSectionRegistration | public void RequestContentRefresh()
 APIShared.Presentation.AllyGoodsSectionRegistration | public void SetEnabled(bool enabled)
 APIShared.Presentation.AllyGoodsSectionRegistration | public void SetVisible(bool visible)
@@ -2944,15 +3089,29 @@ APIShared.Presentation.AllyPanelButtonPreEventArgs | public sealed class APIShar
 APIShared.Presentation.AllyPanelButtonPreEventArgs | public CrusaderDE.HUD_AlliesPanel Panel { get; }
 APIShared.Presentation.AllyPanelButtonPreEventArgs | public bool TryClaim(System.Action<APIShared.Presentation.AllyPanelButtonInvocation> execute)
 APIShared.Presentation.AllyPanelButtonPreEventArgs | public string Button { get; }
+APIShared.Presentation.BuildingPanelActionSubmit | public delegate bool APIShared.Presentation.BuildingPanelActionSubmit(APIShared.Buildings.BuildingActionRequest request, out string reason)
 APIShared.Presentation.BuildingPanelContext | public sealed class APIShared.Presentation.BuildingPanelContext
 APIShared.Presentation.BuildingPanelContext | public SHCDESE.Interop.eStructs BuildingType { get; }
+APIShared.Presentation.BuildingPanelContext | public bool CanActAsOwner { get; }
 APIShared.Presentation.BuildingPanelContext | public bool IsOwnedByLocalPlayer { get; }
+APIShared.Presentation.BuildingPanelContext | public bool IsPresented { get; }
+APIShared.Presentation.BuildingPanelContext | public int ActingPlayerId { get; }
 APIShared.Presentation.BuildingPanelContext | public int BuildingId { get; }
 APIShared.Presentation.BuildingPanelContext | public int LocalPlayerId { get; }
 APIShared.Presentation.BuildingPanelContext | public int OwnerPlayerId { get; }
 APIShared.Presentation.BuildingPanelContext | public int ViewedPlayerId { get; }
 APIShared.Presentation.BuildingPanelContext | public long PanelGeneration { get; }
+APIShared.Presentation.BuildingPanelContext | public string PresenterOwnerGuid { get; }
+APIShared.Presentation.BuildingPanelContext | public string PresenterRegistrationId { get; }
 APIShared.Presentation.BuildingPanelContext | public uint GlobalId { get; }
+APIShared.Presentation.BuildingPanelPresentationQuery | public delegate bool APIShared.Presentation.BuildingPanelPresentationQuery(out int buildingId, out int actingPlayerId)
+APIShared.Presentation.BuildingPanelPresenterOptions | public sealed class APIShared.Presentation.BuildingPanelPresenterOptions
+APIShared.Presentation.BuildingPanelPresenterOptions | public .ctor(string ownerGuid, string registrationId, APIShared.Presentation.BuildingPanelPresentationQuery query, APIShared.Presentation.BuildingPanelActionSubmit submit)
+APIShared.Presentation.BuildingPanelPresenterOptions | public APIShared.Presentation.BuildingPanelActionSubmit Submit { get; }
+APIShared.Presentation.BuildingPanelPresenterOptions | public APIShared.Presentation.BuildingPanelPresentationQuery Query { get; }
+APIShared.Presentation.BuildingPanelPresenterOptions | public int Order { get; set; }
+APIShared.Presentation.BuildingPanelPresenterOptions | public string OwnerGuid { get; }
+APIShared.Presentation.BuildingPanelPresenterOptions | public string RegistrationId { get; }
 APIShared.Presentation.BuildingPanelSectionEventArgs | public sealed class APIShared.Presentation.BuildingPanelSectionEventArgs
 APIShared.Presentation.BuildingPanelSectionEventArgs | public APIShared.Presentation.BuildingPanelContext Context { get; }
 APIShared.Presentation.BuildingPanelSectionEventArgs | public Noesis.FrameworkElement Content { get; }
@@ -2977,6 +3136,8 @@ APIShared.Presentation.BuildingPanelSectionRegistration | public string Registra
 APIShared.Presentation.BuildingPanelSections | public static class APIShared.Presentation.BuildingPanelSections
 APIShared.Presentation.BuildingPanelSections | public static bool TryGetContext(out APIShared.Presentation.BuildingPanelContext context)
 APIShared.Presentation.BuildingPanelSections | public static bool TryRegister(APIShared.Presentation.BuildingPanelSectionOptions options, out APIShared.Presentation.BuildingPanelSectionRegistration registration, out string reason)
+APIShared.Presentation.BuildingPanelSections | public static bool TryRegisterPresenter(APIShared.Presentation.BuildingPanelPresenterOptions options, out string reason)
+APIShared.Presentation.BuildingPanelSections | public static bool TrySubmitAction(APIShared.Presentation.BuildingPanelContext context, string actionOwnerGuid, string actionId, int argument, out string reason)
 APIShared.Presentation.BuildingTooltipContext | public sealed class APIShared.Presentation.BuildingTooltipContext
 APIShared.Presentation.BuildingTooltipContext | public .ctor(int buildingType, APIShared.Presentation.BuildingTooltipVariant variant, bool isSymbolHover)
 APIShared.Presentation.BuildingTooltipContext | public APIShared.Presentation.BuildingTooltipVariant Variant { get; }
@@ -3013,6 +3174,7 @@ APIShared.Presentation.IngameMenuActionInfo | public sealed class APIShared.Pres
 APIShared.Presentation.IngameMenuActionInfo | public APIShared.Presentation.IngameMenuActionState State { get; }
 APIShared.Presentation.IngameMenuActionInfo | public bool HasState { get; }
 APIShared.Presentation.IngameMenuActionInfo | public bool IsEffective { get; }
+APIShared.Presentation.IngameMenuActionInfo | public bool IsSuppressed { get; }
 APIShared.Presentation.IngameMenuActionInfo | public bool IsVanilla { get; }
 APIShared.Presentation.IngameMenuActionInfo | public string Id { get; }
 APIShared.Presentation.IngameMenuActionInfo | public string OwnerGuid { get; }
@@ -3034,8 +3196,10 @@ APIShared.Presentation.IngameMenuActionState | public string Text { get; }
 APIShared.Presentation.IngameMenuActionState | public string Tooltip { get; }
 APIShared.Presentation.IngameMenuActions | public static class APIShared.Presentation.IngameMenuActions
 APIShared.Presentation.IngameMenuActions | public static APIShared.Presentation.IngameMenuRowState GetRowState(APIShared.Presentation.IngameMenuRow row)
+APIShared.Presentation.IngameMenuActions | public static bool TryOverrideVanillaAction(string ownerGuid, string id, APIShared.Presentation.IngameMenuRow row, System.Func<bool?> enabled, System.Action execute, out APIShared.Presentation.IngameMenuActionRegistration registration, out string reason)
 APIShared.Presentation.IngameMenuActions | public static bool TryRegister(string ownerGuid, string id, System.Func<APIShared.Presentation.IngameMenuActionState> state, System.Action execute, APIShared.Presentation.IngameMenuActionOptions options, out APIShared.Presentation.IngameMenuActionRegistration registration, out string reason, int order = 0)
 APIShared.Presentation.IngameMenuActions | public static bool TryRegisterContent(string ownerGuid, string id, System.Func<APIShared.Presentation.IngameMenuActionState> state, System.Func<APIShared.Presentation.IngameMenuContentContext, Noesis.Control> createContent, APIShared.Presentation.IngameMenuActionOptions options, out APIShared.Presentation.IngameMenuActionRegistration registration, out string reason, int order = 0)
+APIShared.Presentation.IngameMenuActions | public static bool TryRegisterVanillaSuppression(string ownerGuid, string id, APIShared.Presentation.IngameMenuRow row, System.Func<bool> shouldSuppress, out string reason)
 APIShared.Presentation.IngameMenuActions | public static void Invalidate(string ownerGuid)
 APIShared.Presentation.IngameMenuContentContext | public sealed class APIShared.Presentation.IngameMenuContentContext
 APIShared.Presentation.IngameMenuContentContext | public Noesis.FrameworkElement Menu { get; }
@@ -3406,6 +3570,44 @@ APIShared.Savegames.ManagedSaveCompletion | public bool? Result { get; }
 APIShared.Savegames.ManagedSaveCompletion | public string Path { get; }
 APIShared.Savegames.ManagedSaveEvents | public static class APIShared.Savegames.ManagedSaveEvents
 APIShared.Savegames.ManagedSaveEvents | public static bool TryRegister(string ownerGuid, string registrationId, System.Func<APIShared.Savegames.ManagedSaveCall, object> begin, System.Action<APIShared.Savegames.ManagedSaveCompletion, object> end, out string reason, int order = 0)
+APIShared.Savegames.MultiplayerSavePreparation | public static class APIShared.Savegames.MultiplayerSavePreparation
+APIShared.Savegames.MultiplayerSavePreparation | public static APIShared.Savegames.MultiplayerSavePreparationSnapshot Current { get; }
+APIShared.Savegames.MultiplayerSavePreparation | public static bool TryRegisterObserver(string ownerGuid, string registrationId, System.Action<APIShared.Savegames.MultiplayerSavePreparationSnapshot> observer, out string diagnostic, bool replayCurrent = true, int order = 0)
+APIShared.Savegames.MultiplayerSavePreparationEndReason | public enum APIShared.Savegames.MultiplayerSavePreparationEndReason : int
+APIShared.Savegames.MultiplayerSavePreparationEndReason | Cancelled = 1
+APIShared.Savegames.MultiplayerSavePreparationEndReason | None = 0
+APIShared.Savegames.MultiplayerSavePreparationEndReason | Rejected = 4
+APIShared.Savegames.MultiplayerSavePreparationEndReason | Replaced = 2
+APIShared.Savegames.MultiplayerSavePreparationEndReason | ScopeFinished = 5
+APIShared.Savegames.MultiplayerSavePreparationEndReason | Timeout = 3
+APIShared.Savegames.MultiplayerSavePreparationPhase | public enum APIShared.Savegames.MultiplayerSavePreparationPhase : int
+APIShared.Savegames.MultiplayerSavePreparationPhase | Acknowledged = 1
+APIShared.Savegames.MultiplayerSavePreparationPhase | Ended = 4
+APIShared.Savegames.MultiplayerSavePreparationPhase | NativeLoading = 3
+APIShared.Savegames.MultiplayerSavePreparationPhase | Preparing = 0
+APIShared.Savegames.MultiplayerSavePreparationPhase | Released = 2
+APIShared.Savegames.MultiplayerSavePreparationSnapshot | public sealed class APIShared.Savegames.MultiplayerSavePreparationSnapshot
+APIShared.Savegames.MultiplayerSavePreparationSnapshot | public APIShared.Savegames.MultiplayerSavePreparationEndReason EndReason { get; }
+APIShared.Savegames.MultiplayerSavePreparationSnapshot | public APIShared.Savegames.MultiplayerSavePreparationPhase Phase { get; }
+APIShared.Savegames.MultiplayerSavePreparationSnapshot | public System.Collections.Generic.IReadOnlyList<ulong> HumanPeers { get; }
+APIShared.Savegames.MultiplayerSavePreparationSnapshot | public bool IsHost { get; }
+APIShared.Savegames.MultiplayerSavePreparationSnapshot | public int Checksum { get; }
+APIShared.Savegames.MultiplayerSavePreparationSnapshot | public int Time { get; }
+APIShared.Savegames.MultiplayerSavePreparationSnapshot | public long Revision { get; }
+APIShared.Savegames.MultiplayerSavePreparationSnapshot | public string Detail { get; }
+APIShared.Savegames.MultiplayerSavePreparationSnapshot | public string LocalHash { get; }
+APIShared.Savegames.MultiplayerSavePreparationSnapshot | public string LocalPath { get; }
+APIShared.Savegames.MultiplayerSavePreparationSnapshot | public string OperationId { get; }
+APIShared.Savegames.MultiplayerSavePreparationSnapshot | public string SaveName { get; }
+APIShared.Savegames.MultiplayerSavePreparationSnapshot | public ulong HostId { get; }
+APIShared.Savegames.MultiplayerSavePreparationSnapshot | public ulong LobbyId { get; }
+APIShared.Savegames.NativeWorldRestoreContext | public struct APIShared.Savegames.NativeWorldRestoreContext
+APIShared.Savegames.NativeWorldRestoreContext | public APIShared.MissionContext Mission { get; }
+APIShared.Savegames.NativeWorldRestoreContext | public long InvocationId { get; }
+APIShared.Savegames.NativeWorldRestoreEvents | public static class APIShared.Savegames.NativeWorldRestoreEvents
+APIShared.Savegames.NativeWorldRestoreEvents | public static bool IsAvailable { get; }
+APIShared.Savegames.NativeWorldRestoreEvents | public static bool TryRegister(string ownerGuid, string registrationId, System.Func<APIShared.Savegames.NativeWorldRestoreContext, bool> callback, out string reason, int order = 0)
+APIShared.Savegames.NativeWorldRestoreEvents | public static long CallbackFailures { get; }
 APIShared.Savegames.SaveLoadDialogCallbacks | public sealed class APIShared.Savegames.SaveLoadDialogCallbacks
 APIShared.Savegames.SaveLoadDialogCallbacks | public .ctor()
 APIShared.Savegames.SaveLoadDialogCallbacks | public System.Action<APIShared.Savegames.SaveLoadDialogContext, APIShared.Savegames.SaveLoadDialogOutcome> Closed { get; set; }
@@ -3434,6 +3636,7 @@ APIShared.Savegames.VersionedSaveContext | public bool IsMapEditorSave { get; }
 APIShared.Savegames.VersionedSaveContext | public bool IsSaveFile { get; }
 APIShared.Savegames.VersionedSaveContext | public string FilePath { get; }
 APIShared.Savegames.VersionedSaveData | public static class APIShared.Savegames.VersionedSaveData
+APIShared.Savegames.VersionedSaveData | public static bool IsAtomicWriteAvailable { get; }
 APIShared.Savegames.VersionedSaveData | public static bool TryRegister(APIShared.Savegames.VersionedSaveDataRegistration registration, out APIShared.Savegames.VersionedSaveDataHandle handle, out string reason)
 APIShared.Savegames.VersionedSaveData | public static int MaximumEntries { get; }
 APIShared.Savegames.VersionedSaveData | public static int MaximumEntryBytes { get; }
@@ -3454,6 +3657,7 @@ APIShared.Savegames.VersionedSaveDataRegistration | public APIShared.Savegames.V
 APIShared.Savegames.VersionedSaveDataRegistration | public System.Action<APIShared.Savegames.VersionedSaveLoad> Loaded { get; }
 APIShared.Savegames.VersionedSaveDataRegistration | public System.Action<APIShared.Savegames.VersionedSaveLoad> Prepared { get; set; }
 APIShared.Savegames.VersionedSaveDataRegistration | public System.Collections.Generic.IReadOnlyList<string> KnownEntries { get; }
+APIShared.Savegames.VersionedSaveDataRegistration | public bool RequireAtomicWrite { get; set; }
 APIShared.Savegames.VersionedSaveDataRegistration | public bool SimulationRelevant { get; set; }
 APIShared.Savegames.VersionedSaveDataRegistration | public int CurrentVersion { get; }
 APIShared.Savegames.VersionedSaveDataRegistration | public int MinimumReaderVersion { get; }
@@ -4051,6 +4255,7 @@ APIShared.Wildlife.HunterMeatYield | public int HunterUnitId { get; }
 APIShared.Wildlife.HunterMeatYield | public int PreyType { get; }
 APIShared.Wildlife.HunterMeatYield | public int VanillaBaseAmount { get; }
 APIShared.Wildlife.HunterMeatYieldEvents | public static class APIShared.Wildlife.HunterMeatYieldEvents
+APIShared.Wildlife.HunterMeatYieldEvents | public static bool TryEnableMultiplayerResync(out string reason)
 APIShared.Wildlife.HunterMeatYieldEvents | public static bool TryRegister(string ownerGuid, string registrationId, System.Action<APIShared.Wildlife.HunterMeatYield> handler, out string reason, int order = 0)
 APIShared.Wildlife.HunterTargetCandidate | public struct APIShared.Wildlife.HunterTargetCandidate
 APIShared.Wildlife.HunterTargetCandidate | public bool IsHuntable { get; }

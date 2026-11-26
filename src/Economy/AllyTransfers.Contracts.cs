@@ -8,10 +8,17 @@ namespace APIShared.Economy
         /// <summary>Creates immutable operation bounds. Amounts use the game's integer goods/gold units.</summary>
         public AllyTransferRequest(int senderId, int recipientId, eGoods good, int maximumAmount,
             int minimumSenderRemaining = 0, int maximumRecipientAmount = int.MaxValue)
+            : this(senderId, recipientId, good, maximumAmount, minimumSenderRemaining, maximumRecipientAmount, true)
+        { }
+        /// <summary>Creates immutable operation bounds and selects whether this invocation may produce Vanilla gift-chat rows.</summary>
+        /// <remarks>False requires <see cref="AllyTransfers.CanSuppressVanillaChatMessages"/>; otherwise the service rejects the request before game reads or mutation. Only this invocation's sender/recipient gift-chat rows are suppressed. Receipt speech, shared receipt timers, AI responses and resource effects retain Vanilla behavior. Transfer observers and nested foreign gifts do not inherit suppression.</remarks>
+        public AllyTransferRequest(int senderId, int recipientId, eGoods good, int maximumAmount,
+            int minimumSenderRemaining, int maximumRecipientAmount, bool showVanillaChatMessages)
         {
             SenderPlayerId = senderId; RecipientPlayerId = recipientId; Good = good;
             MaximumAmount = maximumAmount; MinimumSenderRemaining = minimumSenderRemaining;
             MaximumRecipientAmount = maximumRecipientAmount;
+            ShowVanillaChatMessages = showVanillaChatMessages;
         }
         /// <summary>One-based sender ID, independent of the local report viewpoint.</summary>
         public int SenderPlayerId { get; }
@@ -25,6 +32,8 @@ namespace APIShared.Economy
         public int MinimumSenderRemaining { get; }
         /// <summary>Nonnegative upper bound for the recipient's current TotalGoods balance after this operation.</summary>
         public int MaximumRecipientAmount { get; }
+        /// <summary>Whether this invocation may produce Vanilla sender/recipient gift-chat rows. Existing constructor calls default to true.</summary>
+        public bool ShowVanillaChatMessages { get; }
     }
 
     /// <summary>One current capacity observation; it reserves neither resources nor storage.</summary>

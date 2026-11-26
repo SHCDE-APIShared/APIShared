@@ -70,6 +70,7 @@ these stages while retaining their own safety and legacy contracts.
 
 `APIShared.Health.HealthModifiers` coordinates initialization-only unit/building
 HP, process-rooted policy handles, saved original bases and linked siege towers.
+From 0.69.0, `TryEnableMultiplayerResync` opts the shared HP ledger into repair.
 See [health lifetime, migration and safety](HEALTH.md).
 `APIShared.Economy.MarketPriceModifiers` composes native per-lot base prices,
 including Human/AI contextual policies. See [market composition](MARKET_PRICE_MODIFIERS.md).
@@ -305,6 +306,7 @@ Rounded fear coefficients and fixed contributions per signed level use [`Economy
 | `ModApiClient.TryGetMissionPlayStateReadiness` | First fresh PlayState after managed mission Start, without a loading/pause timeout; see [guide](THIRD_PARTY_GUIDE.md#current-mission-playstate-readiness) | Unity callbacks and ready replay; immutable session receipt; end/replacement invalidates Current; no HUD/identity/authority guarantee |
 | `ModApiClient.TryGetCoopAiStartImport` | Single owner of Vanilla's Coop Trail default-castle upload: imports provider plans (standard/community/historical castles or explicit candidates, optional custom AIC) per AI slot; startup member check ([guide](THIRD_PARTY_GUIDE.md#coop-trail-ai-start-import)) | Register on Unity thread; providers run once per Coop start attempt inside the native multiplayer initialization; contradicting plans abort the attempt; Vanilla unchanged without plans; process lifetime. The same object implements `ICoopAiStartPreviewCapability` for start-button checks; plans may confirm fewer candidates than they list (`ConfirmedCandidateCount`) |
 | `MissionRestart.Run(ownerGuid, action)` | Explicit same-mission restart encompassing preparation and loading; links replacement sessions for settings ownership | Unity thread, ready non-editor source; nested calls share one attempt; no persistence or settings transport |
+| `MissionRestart.TryValidateMultiplayerMap(setup, map, coopTrail, coopMission, out reason)` | Preflight for reloading the verified map of the current multiplayer mission in its retained lobby | Unity thread, on each peer before commit; the caller coordinates the restart |
 | `TryGetLobbyState` | Managed immutable multiplayer-lobby snapshots; startup member check | Register on Unity thread; immediate known-state replay; deterministic owner/ID ordering; process lifetime |
 | `TryGetPlayerDefeat` | Managed one-shot lord death and official loss transitions; `IPlayerDefeatStateCapability` current snapshots (0.24.0 or later) | Observation starts with the first subscriber. Transition callbacks never replay the baseline; state observers replay current snapshots, including loaded losses. No implicit UI dispatch; process lifetime |
 | `TryGetUnitHudPresentation` | Categories, image overrides, interactions, recruitment tickets and control groups; startup member check | Unity/Noesis presentation; owner-local IDs; ambiguity preserves Vanilla; logical activation extension; process lifetime |
@@ -323,7 +325,7 @@ Rounded fear coefficients and fixed contributions per signed level use [`Economy
 | `APIShared.Presentation.PresentationEvents` | Named HUD Pre/Post; parameter changes, veto and deferred replacement actions | Startup-thread registration; actual presentation caller thread; owner-private State; process lifetime |
 | `ModApiClient.Ui` | Owner-bound deferred Unity posts and coalesced before-render refresh demand | Managed initialization; pause-capable, thread-safe request/delay/cancel/continuous handles; [contract](THIRD_PARTY_GUIDE.md#deferred-unity-work-and-refresh-demand) |
 | `APIShared.Presentation.VisibleMapRenderEvents` | Ordered native render preparation and reverse cleanup, original exactly once, native dormant guard | Register after native library initialization; caller thread; [contract](THIRD_PARTY_GUIDE.md#shared-render-and-pause-menu-presentation) |
-| `APIShared.Presentation.IngameMenuActions` | Named two-slot ESC rows, inline custom controls (`TryRegisterContent`), explicit takeovers, cached occupancy, optional consumer-defined tooltips and a scrollable additional-actions page | Unity-thread registration/query/providers/commands; event-driven invalidation, permanent registrations; [contract](THIRD_PARTY_GUIDE.md#esc-menu-rows-and-additional-actions) |
+| `APIShared.Presentation.IngameMenuActions` | Named two-slot ESC rows, inline custom controls (`TryRegisterContent`), explicit takeovers, original-button overrides (`TryOverrideVanillaAction`) and conditional hiding on both pages (`TryRegisterVanillaSuppression`), cached occupancy, optional tooltips and a scrollable additional-actions page | Unity-thread registration/query/providers/commands; event-driven invalidation, permanent registrations; [contract](THIRD_PARTY_GUIDE.md#esc-menu-rows-and-additional-actions) |
 | `APIShared.Presentation.MissionOverEvents` | End-screen buttons, managed end state and game-over OST; ordered Pre/Accepted/Post with guarded at-most-once deferral | Caller thread; permanent hooks installed on demand; [contract](THIRD_PARTY_GUIDE.md#end-screen-presentation) |
 | `APIShared.Recruitment.RecruitmentRequestPolicy` | Pure recruitment ceilings and pending-reservation arithmetic | No hook or native affordability guarantee; consumers own reconciliation |
 | `APIShared.Recruitment.RecruitmentMaterialUi` | Shared European weapon-stock HUD bypass predicates | Validated 26-site IL contract; OR combination; process lifetime |
@@ -331,6 +333,9 @@ Rounded fear coefficients and fixed contributions per signed level use [`Economy
 | `APIShared.Presentation.TroopActionHud` | Shared Vanilla troop-action slots and automatic HUD pages; legacy host visibility/layout coordination | Unity thread; owner-local button IDs; logical activation; independent command/factory failures; process lifetime |
 | `APIShared.Economy.MarketPriceEvents` | Native buy/sell query Pre/Post and replacement totals | Register after LibraryLoaded initialization; audited image only; actual native caller thread; process lifetime |
 | `APIShared.Economy.AiMarketSellPolicies` | Final AI reserve and pre-booking quantity policies, OR-combined native safety | [Contract and example](AI_MARKET_SELL.md); initially disabled; native caller thread; process lifetime |
+| `APIShared.Economy.AiMarketEvents` | Paired native AI purchase-decision, recruitment, buy and sell observations (0.62.0) | Initially disabled registrations; nested caller-private numeric tokens; original exactly once; [guide](THIRD_PARTY_GUIDE.md#observing-ai-trade-and-recruitment) |
+| `APIShared.Multiplayer.MultiplayerResyncEvents` | Critical callbacks at the common executed Vanilla repair boundaries (0.62.0) | Engine-serialized native caller; process lifetime; participant failure is terminal; [guide](THIRD_PARTY_GUIDE.md#multiplayer-repair-boundaries) |
+| `APIShared.Savegames.NativeWorldRestoreEvents` | Ordered critical callbacks after raw native world restoration, before derived folds (0.62.0) | Engine monitor held; false or exception rejects restoration; [save guide](SAVE_DATA.md) |
 | `APIShared.Units.UnitSettledEvents` | Created, recruited, assigned and disbanded units once their native creation or type change has finished; value notifications | Startup registration; SE simulation-tick thread; trigger order, then order/owner/ID; first registration subscribes to SE; no replay; process lifetime |
 | `APIShared.NativeSites.NativeSiteRegistry` | Prefer a shared APIShared service; use the registry for hooks APIShared doesn't cover yet. Cooperative registry of CrusaderDE.dll native sites: register a span before hooking it (Exclusive, ChainableEntry, CallOnly, Observe), get an acceptance or a refusal naming the owner, query owner and mode by RVA or span. A refusal identifies a conflict without resolving it; an accepted overlap only means no byte overlap, not compatibility | Any thread; register at startup or install time; atomic groups; allocation-free snapshot queries; process lifetime, unregister only to roll back; sees only registered sites ([guide](NATIVE_SITES.md)) |
 | `APIShared.Savegames.VersionedSaveData` | Versioned per-mod save records over Script Extender `ModSaveDataAPI`: migration steps, unknown entries kept, documented load results | Register during startup; capture on the Extender's save thread; one load result per archive load in owner/identifier order; process lifetime |
@@ -355,6 +360,9 @@ See the [sender, thread and native prerequisites](THIRD_PARTY_GUIDE.md#authentic
 Register unconditionally on Unity after the Extender's built-in packet registration,
 in the same order on all peers. Explicit MessagePack formatters are required.
 
+`NativeReadinessProof` (0.61.0) evaluates whether the expected peers confirmed the
+same authenticated native command and tick. [Integration guide](THIRD_PARTY_GUIDE.md#native-readiness-proofs)
+
 Channel options accept logical activation, validation, payload limits and diagnostic
 callbacks; message options additionally accept a pure deep-copy callback. Messages
 can target the game, one 1-based player ID, active-lobby peers or a Steam ID.
@@ -376,6 +384,22 @@ See the [networking guide](THIRD_PARTY_GUIDE.md#multiplayer-actions-and-messages
 use each registered simulation feature before the native map load. Required features
 block unequal readiness. Optional features use the Vanilla path for the whole match
 unless every peer is ready. See the [registration contract](THIRD_PARTY_GUIDE.md#agreeing-on-simulation-features).
+
+`MultiplayerResyncEvents` (0.62.0) exposes common repair start/completion boundaries.
+It supplies no state transport: consumers decide whether to restore or deterministically
+reset their extra state. See [repair boundaries](THIRD_PARTY_GUIDE.md#multiplayer-repair-boundaries).
+
+`MultiplayerResyncData` (0.65.0) registers versioned simulation records for
+host-authoritative restoration before Vanilla releases a repair. Matching
+local records are reused and changed records are transferred in bounded
+windows. See [the provider contract](THIRD_PARTY_GUIDE.md#host-authoritative-mod-data-during-repair).
+
+`TryRegisterEarlyCapture` (0.67.0) opts a frozen record into early host
+capture. See [when to use early capture](THIRD_PARTY_GUIDE.md#early-capture-for-frozen-records).
+
+The [internal session](../src/Multiplayer/MultiplayerResyncDataSession.cs) owns
+the same repair state machine used by the native adapters and multi-peer tests.
+It has no consumer-specific record interpretation or reset policy.
 
 ## Source map
 
@@ -416,9 +440,12 @@ Member-level documentation is also shipped as `APIShared.xml` beside the DLL.
 | Route engine status | [RouteEngineInfo](../src/Pathfinding/Routes/RouteEngineInfo.cs) | Passive report; one engine at a time; diagnostics and option texts only. |
 | Route tile rules | [Rules and rule sets](../src/Pathfinding/Routes/RouteTileRules.cs) | Passive registry; route engines read effects and the change journal ([section](#route-tile-rules)) | [Hazard tiles](../examples/ThirdPartyMod/RouteTileRulesExample.cs) |
 | Coarse reachability | [PathReachability](../src/Pathfinding/Reachability/PathReachability.cs) | Query through Script Extender path components, no hook ([section](#reachability-and-line-of-sight)) | [Guide](PATHFINDING_RULES.md#asking-whether-a-place-is-reachable) |
+| Path-component refresh | [PathComponentRefresh](../src/Pathfinding/Reachability/PathComponentRefresh.cs) | Synchronous native refresh in an active world under the engine monitor (0.61.0) | [Guide](THIRD_PARTY_GUIDE.md#refreshing-path-components) |
 | Line of sight | [Contracts](../src/Sight/LineOfSightContracts.cs), [LineOfSight](../src/Sight/LineOfSight.cs), [sight-blocking buildings](../src/Sight/SightBlockingBuildings.cs) | [Native calls](../src/Sight/LineOfSightNative.cs), [height dispatch owner](../src/Sight/SightBlockingBuildingsNative.cs) | [Guide](LINE_OF_SIGHT.md) |
 | Building panel sections | [Contracts](../src/Presentation/BuildingPanel/BuildingPanelContracts.cs), [registration](../src/Presentation/BuildingPanel/BuildingPanelSections.cs) | [Registry and detection](../src/Presentation/BuildingPanel/BuildingPanelSectionRegistry.cs) | [Guide](BUILDING_PANELS.md) |
+| Building actions and panel presenters | [Contracts](../src/Buildings/Actions/BuildingActionContracts.cs), [BuildingActions](../src/Buildings/Actions/BuildingActions.cs), [presenters](../src/Presentation/BuildingPanel/BuildingPanelSections.cs) | [Action registry](../src/Buildings/Actions/BuildingActionRegistry.cs) | [Guide](BUILDING_PANELS.md#presenters-and-building-actions), since 0.73.0 |
 | Per-building state | [Contracts](../src/Buildings/State/BuildingStateContracts.cs), [registration](../src/Buildings/State/BuildingStates.cs) | [Native table](../src/Buildings/State/BuildingStateMemory.cs), [request Chore](../src/Buildings/State/BuildingStatePacket.cs) | [Guide](BUILDING_STATE.md) |
+| Host repair of private gameplay state | [Per-building state](BUILDING_STATE.md#usage), [butchered Hunter prey](HUNTING.md#missions-and-multiplayer) | [Resync contract](THIRD_PARTY_GUIDE.md#host-authoritative-mod-data-during-repair) | Optional, since 0.69.0 |
 | Build-menu availability | [Rules](../src/Buildings/BuildMenu/BuildMenuAvailability.cs) | [Native wrapper owner](../src/Buildings/BuildMenu/BuildMenuAvailabilityRuntime.cs) | [Guide](BUILD_MENU.md) |
 | Chicken population | [Modifiers](../src/Wildlife/ChickenPopulation.cs) | [Native bridge owner](../src/Wildlife/ChickenPopulationRuntime.cs) | [Guide](CHICKENS.md) |
 | Advanced path integration | [Assassin API](../src/Pathfinding/Assassin/AssassinPathAPI.cs), [attack control](../src/Pathfinding/Assassin/AssassinAttackControlAPI.cs), [gate policies](../src/Pathfinding/GateRoutes/EnemyGatePathPolicyBridge.cs), [bridge diagnostics](../src/Pathfinding/GateRoutes/EnemyBridgeDiagnosticBridge.cs), [temporary routes](../src/Pathfinding/GateRoutes/TemporaryGateRouteAcceptanceBridge.cs), [elevated moat state](../src/Pathfinding/Moat/ElevatedMoatAiState.cs) | Named native contracts and implementations beside each entry | — |
@@ -635,6 +662,13 @@ automatic loads use current supported settings, subject to saved mission/creator
 [`SaveLoadDialogEvents`](../src/Savegames/SaveLoadDialogEvents.cs) coordinates ordered,
 owner-bound dialog gates and preparation. Preparations can reject the current attempt
 with a player-facing reason. See [dialog integration](MOD_SETTINGS.md#loadsave-requester-integration).
+`APIShared.Savegames.MultiplayerSavePreparation` exposes immutable, owner-observed
+progress of the existing multiplayer load attempt. Typed
+`APIShared.Lobby.LobbyLaunchGuards.TryRegisterReadiness` callbacks distinguish pending
+requirements from invalid attempts; the coordinator alone releases a checked load.
+See [prepared-save lifetime and admission](SAVE_DATA.md#prepared-multiplayer-save-lifetime).
+`APIShared.Lobby.LobbyActionEvents` observes local lobby commands, including actual
+Ready-to-Unready transitions, without a competing hook or another invocation.
 Solo multiplayer needs only local readiness; Coop detection remains in the central
 mission mode service. See [settings integration](MOD_SETTINGS.md#external-settings-and-application-backends)
 and the adjacent save-restoration notes for personal-storage and timeout behavior.
@@ -1061,6 +1095,9 @@ announces deduplicated "please wait", "start blocked" and "ready" lobby messages
 players learn why Start is unavailable. The host is the only sender of automatic
 announcements; lobby members show their own entries locally unless an entry is marked
 `LobbyLaunchStatusScope.Lobby`. Consumers keep their checks and enforcement.
+`LobbyLaunchStatus.TryShowLocalSystemMessage(lobbyId, text)` also supports an
+informational line for the local player in the active Steam lobby. See the
+[lobby chat guide](THIRD_PARTY_GUIDE.md#local-lobby-system-messages).
 
 ## Lord statistic columns
 
@@ -1120,15 +1157,17 @@ taken from an AI group. Opt-in, simulation state, hash-bound. See the
 
 APIShared corrects selected Script Extender defects without consumer registration, for example
 save-only record persistence in synchronized saves and the classification of multiplayer
-save/editor loads. Its internal managed producer can pin a queried normal/editor
-save's first archive context; it exposes no public capture or native-write authority.
-See [Script Extender fixes](SCRIPT_EXTENDER_FIXES.md#internal-early-save-context).
+save/editor loads, and early Vanilla handshake preservation during prepared lobby
+starts. Its internal managed producer can pin a queried normal/editor save's first
+archive context; it exposes no public capture or native-write authority.
+See [Script Extender fixes](SCRIPT_EXTENDER_FIXES.md), including
+[the internal early save context](SCRIPT_EXTENDER_FIXES.md#internal-early-save-context).
 
 ## Ally gifts and the goods dialog
 
-`Economy.AllyTransfers` exposes synchronous bounded gifts and physical capacity observations. `AllyTransferEvents` observes the actual native transfer, including Vanilla Chores; managed GameAction completion does not acknowledge delivery. See [transfer contract](ALLY_TRANSFERS.md).
+`Economy.AllyTransfers` exposes synchronous bounded gifts, physical capacity observations, and optional per-request suppression of Vanilla gift chat messages. `AllyTransferEvents` observes the actual native transfer, including Vanilla Chores; managed GameAction completion does not acknowledge delivery. See [transfer contract](ALLY_TRANSFERS.md).
 
-`Presentation.AllyGoodsPanelExtensions` coordinates independent sections beneath the existing send-goods dialog, noninteractive per-ware icon markers and immutable selection contexts. See [dialog extension contract](ALLY_GOODS_PANEL.md).
+`Presentation.AllyGoodsPanelExtensions` coordinates sections below the visible goods frame or the legacy menu root, opt-in shared frame presentations with consumer-supplied decoration and metrics, compact footer controls with shared overflow, noninteractive per-ware icon markers and immutable selection contexts. Explicit layout roles preserve foreign controls; section registrations expose layout availability independently of gameplay authority. See [dialog extension contract](ALLY_GOODS_PANEL.md).
 
 ## Worker production bonus
 
@@ -1199,6 +1238,10 @@ Requires APIShared 0.54.0 or later. `APIShared.Presentation.BuildingPanelSection
 controls to Vanilla's building panels through one shared `HUD_Buildings` host and one open-building
 detection. A factory creates the control per HUD instance; `ShowWhen`, `Opened`, `Updated` and
 `Closed` run on Unity with an immutable `BuildingPanelContext`. See [building panels](BUILDING_PANELS.md).
+Since 0.73.0 a mod that shows another player's building panel registers a presenter, so every
+section works there too, and `APIShared.Buildings.BuildingActions` names a section's owner commands
+so that presenters and other mods can run them for the owner (see
+[presenters and building actions](BUILDING_PANELS.md#presenters-and-building-actions)).
 
 `APIShared.Buildings.BuildingStates` stores 1 to 12 small values per building identity (ID and
 GlobalId). Owners change values through one tick-synchronous authenticated Chore validated on every
@@ -1223,6 +1266,16 @@ indexed into either table. No existing SE cost method is patched. See
 [typed cost access](THIRD_PARTY_GUIDE.md#typed-construction-costs).
 
 Human-only extras, saved payments and exact refunds: [HumanConstructionCosts](HUMAN_CONSTRUCTION_COSTS.md). ConstructionRefundPolicies shares action percentages with optional mods. ConstructionDemolition attributes authenticated custom demolition.
+
+`ConstructionCosts.TryGetPlayerMaterialStock` (0.61.0) snapshots the five live materials
+for an explicit player under the game engine monitor. Its `ConstructionMaterialStock`
+keeps the four physical stocks unsigned and gold signed. Combine it with the live cost
+row for simulation checks independent of the local HUD. [Integration guide](THIRD_PARTY_GUIDE.md#construction-material-stock-and-quarry-piles)
+
+`APIShared.Buildings.QuarryPilePlacement` (0.61.0) exposes the native candidate query for
+a new quarry, the indexed coordinates used by pile relocation, and a scoped filter for
+one synchronous quarry build. [Integration guide](THIRD_PARTY_GUIDE.md#construction-material-stock-and-quarry-piles)
+
 ## Managed assembly audit tool
 
 [AssemblyMetadata](../tools/AssemblyMetadata/README.md) is a game-independent
