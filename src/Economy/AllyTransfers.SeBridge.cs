@@ -20,8 +20,16 @@ namespace APIShared.Economy
         [ThreadStatic] private static int wrapperDepth;
         internal static bool HasServiceFrame => current != null;
         internal static bool IsInsideWrapper => wrapperDepth != 0;
-        internal void EnterWrapper() => wrapperDepth++;
-        internal void LeaveWrapper() => wrapperDepth--;
+        internal void EnterWrapper()
+        {
+            AllyTransferChatScope.EnterWrapper();
+            wrapperDepth++;
+        }
+        internal void LeaveWrapper()
+        {
+            try { wrapperDepth--; }
+            finally { AllyTransferChatScope.LeaveWrapper(); }
+        }
 
         internal AllyTransfersSeBridge(AllyTransferSeEntry entry, AllyTransferSeForward forward,
             AllyTransferEvents.ReadBalance read, Func<AllyTransferRequest, int, bool> admissible,
@@ -82,7 +90,7 @@ namespace APIShared.Economy
 
         private int InvokeObserved(Delegate original, int recipient, eGoods good, int amount, int sender, Frame frame, Frame surrounding)
         {
-            var call = new NativeInvocation(forward, original);
+            var call = new NativeInvocation(forward, original, frame != null && !frame.Request.ShowVanillaChatMessages);
             Func<bool> admission = frame == null ? (Func<bool>)null : () => admissible(frame.Request, frame.Amount);
             AllyTransferResult result = AllyTransferEvents.DispatchObserved(events, sender, recipient, (int)good,
                 amount, call.Call, read, frame != null || surrounding != null, admission);
@@ -102,14 +110,21 @@ namespace APIShared.Economy
         {
             private readonly AllyTransferSeForward forward;
             private readonly Delegate original;
+            private readonly bool suppressChat;
             internal readonly AllyTransfersNative.TransferCall Call;
             internal int ReturnValue;
             internal ExceptionDispatchInfo Failure;
-            internal NativeInvocation(AllyTransferSeForward forward, Delegate original)
-            { this.forward = forward; this.original = original; Call = Invoke; }
+            internal NativeInvocation(AllyTransferSeForward forward, Delegate original, bool suppressChat)
+            { this.forward = forward; this.original = original; this.suppressChat = suppressChat; Call = Invoke; }
             private void Invoke(int recipient, int good, int amount, int sender)
             {
-                try { ReturnValue = forward(original, recipient, (eGoods)good, amount, sender); }
+                // Only the admitted root primitive inherits the request. Neither event
+                // chain nor nested SE wrappers execute under its presentation choice.
+                try
+                {
+                    using (AllyTransferChatScope.Enter(suppressChat))
+                        ReturnValue = forward(original, recipient, (eGoods)good, amount, sender);
+                }
                 catch (Exception error) { Failure = ExceptionDispatchInfo.Capture(error); throw; }
             }
         }

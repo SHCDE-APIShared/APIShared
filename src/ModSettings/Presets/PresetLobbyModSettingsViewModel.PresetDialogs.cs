@@ -18,6 +18,7 @@ using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Runtime.CompilerServices;
+using System.Threading.Tasks;
 #if !API_SHARED_PRESET_TESTS
 using R3;
 using SHCDESE.EventAPI;
@@ -43,6 +44,21 @@ namespace APIShared.ModSettings
         public string System_PresetSaveText =>
             ResolveSettingsUiTextSafe("Common.PresetSave", APIShared.Localization.UiText.English("Common.PresetSave"));
 
+        /// <summary>Localized caption for opening the personal preset directory.</summary>
+        public string System_PresetFolderText =>
+            ResolveSettingsUiTextSafe("Common.PresetFolder", APIShared.Localization.UiText.English("Common.PresetFolder"));
+
+        /// <summary>Localized tooltip for opening the personal preset directory.</summary>
+        public string System_PresetFolderHelpText =>
+            ResolveSettingsUiTextSafe("Common.PresetFolderHelp", APIShared.Localization.UiText.English("Common.PresetFolderHelp"));
+
+        /// <summary>Use a collapsed XAML fallback so older APIShared builds hide the folder button.</summary>
+        public Visibility System_PresetFolderVisibility => Visibility.Visible;
+
+        /// <summary>On the Unity thread, creates and opens this mod's personal preset directory after registration.</summary>
+        /// <remarks>Leaves the dialog open and reports preparation or launch errors in the preset status.</remarks>
+        public RelayCommand System_OpenPresetFolderCommand { get; }
+
         /// <summary>Visibility of the current preset chooser.</summary>
         public Visibility System_PresetLoadPanelVisibility =>
             presetLoadPanelOpen ? Visibility.Visible : Visibility.Collapsed;
@@ -62,6 +78,7 @@ namespace APIShared.ModSettings
                 base.OnPropertyChanged(nameof(System_SelectedPresetLoadEntry));
                 base.OnPropertyChanged(nameof(System_CanDeleteSelectedPreset));
                 base.OnPropertyChanged(nameof(System_PresetDeleteVisibility));
+                base.OnPropertyChanged(nameof(System_CanSharePreset));
             }
         }
 
@@ -79,7 +96,7 @@ namespace APIShared.ModSettings
 
         /// <summary>Whether the selected row is a personal preset that may be deleted.</summary>
         public bool System_CanDeleteSelectedPreset =>
-            selectedPresetLoadEntry?.CanDelete == true;
+            CanChangePreset && selectedPresetLoadEntry?.CanDelete == true;
 
         /// <summary>Shows delete only for a selected personal preset.</summary>
         public Visibility System_PresetDeleteVisibility =>
@@ -309,6 +326,49 @@ namespace APIShared.ModSettings
         /// <summary>Localized XAML caption/help for Common.PresetStatusDismiss; English fallback: Close</summary>
         public string System_PresetStatusDismissText => ResolveSettingsUiTextSafe("Common.PresetStatusDismiss", APIShared.Localization.UiText.English("Common.PresetStatusDismiss"));
 
+        private bool presetFolderOpening;
+        private bool presetFolderError;
+        private int presetOperationStatusRevision;
+
+        private void OpenPresetFolder()
+        {
+            var controller = presetController;
+            if (controller == null || presetFolderOpening)
+                return;
+
+            presetFolderOpening = true;
+            _ = OpenPresetFolderAsync(controller, presetOperationStatusRevision);
+        }
+
+        private async Task OpenPresetFolderAsync(LobbyPresetController controller, int statusRevision)
+        {
+            Exception failure = null;
+            try
+            {
+                await PresetFolderLauncher.OpenAsync(controller.PreparePersonalPresetDirectory()).ConfigureAwait(false);
+            }
+            catch (Exception exception)
+            {
+                failure = exception;
+            }
+
+            UnityMainThreadDispatch.TryRunInlineOrEnqueue(() =>
+            {
+                presetFolderOpening = false;
+                if (failure != null)
+                    controller.LogPresetOperationFailure("open-folder", null, failure);
+
+                // Another preset action may have reported a newer status while the opener was running.
+                if (!ReferenceEquals(presetController, controller) || statusRevision != presetOperationStatusRevision)
+                    return;
+                if (failure != null)
+                    SetPresetStatus(ResolveSettingsUiTextSafe("Common.PresetFolderOpenFailed",
+                        APIShared.Localization.UiText.English("Common.PresetFolderOpenFailed")), true, folderError: true);
+                else if (presetFolderError)
+                    DismissPresetStatus();
+            });
+        }
+
         private void OpenPresetLoad()
         {
             if (presetLoadPanelOpen)
@@ -327,7 +387,7 @@ namespace APIShared.ModSettings
 
         private void ConfirmPresetLoad()
         {
-            if (selectedPresetLoadEntry?.Preset == null)
+            if (!CanChangePreset || selectedPresetLoadEntry?.Preset == null)
                 return;
 
             try
@@ -448,11 +508,15 @@ namespace APIShared.ModSettings
         {
             if (preset == null)
                 return;
+            // UI-only mode initialization also works before registration. Defaults and Player
+            // sources exist only after preparation, when derived selections can be materialized.
+            var modes = presetController != null ? presetController.GetPresetSaveModes(preset) :
+                preset.Settings.ToDictionary(entry => entry.Key, entry => entry.Value.Mode, StringComparer.Ordinal);
             foreach (PresetSaveSettingViewModel row in presetSaveSettings)
             {
-                if (preset.Settings.TryGetValue(row.PropertyName, out PublishedPresetSetting setting))
+                if (modes.TryGetValue(row.PropertyName, out PublishedPresetValueMode mode))
                 {
-                    row.SelectedModeIndex = (int)setting.Mode;
+                    row.SelectedModeIndex = (int)mode;
                 }
                 else
                 {
@@ -464,6 +528,7 @@ namespace APIShared.ModSettings
         private void RaisePresetDialogProperties()
         {
             base.OnPropertyChanged(nameof(System_PresetLoadPanelVisibility));
+            base.OnPropertyChanged(nameof(System_CanSharePreset));
             base.OnPropertyChanged(nameof(System_PresetSavePanelVisibility));
             base.OnPropertyChanged(nameof(System_PresetLoadEntries));
             base.OnPropertyChanged(nameof(System_SelectedPresetLoadEntry));
@@ -612,7 +677,7 @@ namespace APIShared.ModSettings
             string overwriteId = pendingOverwriteId;
             PresetSaveSelection[] selections = pendingOverwriteSelections;
             ClearPresetInlineConfirmation();
-            if (delete != null) CompletePresetDelete(delete);
+            if (delete != null && CanChangePreset) CompletePresetDelete(delete);
             else if (overwriteId != null) CompletePresetSave(overwriteId, selections ?? Array.Empty<PresetSaveSelection>(), true);
         }
 
@@ -633,8 +698,10 @@ namespace APIShared.ModSettings
             RaisePresetInlineProperties();
         }
 
-        private void SetPresetStatus(string message, bool failed)
+        private void SetPresetStatus(string message, bool failed, bool folderError = false)
         {
+            presetOperationStatusRevision++;
+            presetFolderError = folderError;
             presetOperationStatus = message ?? string.Empty;
             presetOperationFailed = failed;
             RaisePresetInlineProperties();

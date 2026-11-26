@@ -167,6 +167,11 @@ The neutral APIShared agreement coordinator uses the existing message transport
 to exchange protocol/native support, the exact launch-bundle commitment, wire
 mode and sidecar requirements/capabilities. A host/roster-bound challenge and
 receipts qualify a launch; profile changes immediately invalidate that approval.
+Republishing a matching receipt wakes a mission waiting to start, even if the
+lobby status remains Ready throughout the refresh.
+After native loading, a multiplayer mission with a pending receipt retries on
+Unity at most once per second. After 30 seconds it reports the failure and
+terminates the pending mission. The wait belongs to that mission generation.
 Prepared save/map admission also binds the selected production-record digest and required schema.
 Consumers do not implement a second per-player production-readiness protocol.
 Local launch rejections additionally advance `RejectedLocalLaunchSequence` with
@@ -234,8 +239,9 @@ permanent native entry with the exact SE stockpile primitive ABI, documented on
 the method. It is only for audited final-delivery sites, never arbitrary goods
 creation. With no enabled observer it forwards entirely natively. ImprovedHunters
 uses it in both permanent routes and calls `ConfirmExternalTannerAdapter` only
-after successful stub publication. If that plugin is absent APIShared owns the
-ordinary Tanner source itself; the two owners never patch the same span.
+after successful stub publication. APIShared decides at the first mission
+initialization, once every plugin has loaded: without that confirmation it installs
+the ordinary Tanner source itself; the two owners never patch the same span.
 
 The event is additive and does not change existing modifier registrations,
 Extender events, production arithmetic or saved production formats. Native source,
@@ -293,6 +299,9 @@ or native availability. Its protocol runs over the existing sender-authenticated
 `MessageChannel`; it is not an ExtraFeatures setting or `[SyncPerPlayer]` report.
 The current authenticated shared lobby snapshot supplies the human roster.
 Challenges and receipts bind the current host, lobby, roster and fresh nonce.
+Changing the authenticated lobby or roster starts a fresh exchange even when the
+rules are identical. A client that adopts the new lobby after an early challenge
+requests another challenge; old lobby tokens never qualify the new exchange.
 They compare native support, resolved launch-bundle digest, native/extended wire
 mode, sidecar capability and required schema, plus the selected archive's production
 record digest. Missing reports never mean an explicitly unavailable service.

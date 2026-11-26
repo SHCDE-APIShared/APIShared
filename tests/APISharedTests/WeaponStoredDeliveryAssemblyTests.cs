@@ -267,7 +267,11 @@ namespace APISharedTests
                 Assert.IsFalse(ProductionGoodsReceivedNativeRuntime.HasPublishedTannerSource(IntPtr.Zero));
                 Assert.IsFalse(ProductionGoodsReceivedNativeRuntime.HasPublishedTannerSource(fixture.Module + 16), "A different module cannot borrow the owner.");
                 fixture.WithOwner(null, fixture.Refused);
-                fixture.WithOwnerField("externalTanner", true, fixture.Refused);
+                fixture.WithTannerOwner(null, fixture.Refused);
+                fixture.WithTannerDecision("TannerPending", fixture.Refused);
+                fixture.WithTannerDecision("TannerExternal", fixture.Refused);
+                fixture.WithTannerDecision("TannerFailed", fixture.Refused);
+                fixture.WithFailedRootPublication(fixture.Refused);
                 fixture.WithOwnerField("tannerStubBytes", null, fixture.Refused);
                 fixture.WithUnpublishedRelay(fixture.Refused);
                 fixture.WithFailedPublication(fixture.Refused);
@@ -308,13 +312,17 @@ namespace APISharedTests
             private const int ImageBytes = 0x140000;
             private const BindingFlags PrivateInstance = BindingFlags.Instance | BindingFlags.NonPublic;
             private static readonly FieldInfo OwnerField = typeof(ProductionGoodsReceivedNativeRuntime).GetField("owner", BindingFlags.Static | BindingFlags.NonPublic);
-            private readonly object previousOwner;
+            private static readonly FieldInfo TannerOwnerField = typeof(ProductionGoodsReceivedNativeRuntime).GetField("tannerOwner", BindingFlags.Static | BindingFlags.NonPublic);
+            private static readonly FieldInfo TannerStateField = typeof(ProductionGoodsReceivedNativeRuntime).GetField("tannerState", BindingFlags.Static | BindingFlags.NonPublic);
+            private readonly object previousOwner, previousTannerOwner, previousTannerState;
+            private readonly ProductionGoodsReceivedNativeRuntime rootOwner;
+            private readonly bool opaqueContinuation;
             private readonly ProductionGoodsReceivedNativeRuntime owner;
             private readonly ProductionGoodsReceivedNativeDefinition.Site site;
             private readonly HookHandle<X64InlineHook>[] handles;
             private readonly HookHandle<X64InlineHook> handle;
             private readonly int index;
-            private readonly NativeHookPublicationState publication;
+            private readonly NativeHookPublicationState publication, rootPublication;
             private NativeHookPublicationTests.PublicationFixture publicationSnapshot;
             private ProductionGoodsReceivedNativeCode relay;
             private HookTransaction pending;
@@ -337,7 +345,10 @@ namespace APISharedTests
             internal TannerReceiptOwnerFixture(bool opaqueContinuation = false)
             {
                 RequireWindowsX64();
+                this.opaqueContinuation = opaqueContinuation;
                 previousOwner = OwnerField.GetValue(null);
+                previousTannerOwner = TannerOwnerField.GetValue(null);
+                previousTannerState = TannerStateField.GetValue(null);
                 Module = VirtualAlloc(IntPtr.Zero, (UIntPtr)ImageBytes, 0x3000, 0x04);
                 if (Module == IntPtr.Zero) throw new Win32Exception(Marshal.GetLastWin32Error(), "Tanner source fixture allocation failed.");
                 try
@@ -360,9 +371,14 @@ namespace APISharedTests
                         new[] { typeof(IntPtr), typeof(ScanRegion) }, null);
                     Assert.IsNotNull(contextConstructor, "The installed context must support its reviewed (IntPtr, ScanRegion) construction.");
                     var context = (CrusaderLibraryLoadContext)contextConstructor.Invoke(new object[] { Module, region });
-                    owner = (ProductionGoodsReceivedNativeRuntime)typeof(ProductionGoodsReceivedNativeRuntime).GetConstructors(PrivateInstance).Single()
-                        .Invoke(new object[] { context, null });
-                    Assert.IsFalse((bool)Field("externalTanner").GetValue(owner), "The offline fixture must not impersonate an ImprovedHunters owner.");
+                    var constructor = typeof(ProductionGoodsReceivedNativeRuntime).GetConstructor(PrivateInstance, null,
+                        new[] { typeof(CrusaderLibraryLoadContext), typeof(BepInEx.Logging.ManualLogSource), typeof(bool), typeof(ProductionGoodsReceivedNativeRuntime) }, null);
+                    Assert.IsNotNull(constructor);
+                    rootOwner = (ProductionGoodsReceivedNativeRuntime)constructor.Invoke(new object[] { context, null, false, null });
+                    owner = (ProductionGoodsReceivedNativeRuntime)constructor.Invoke(new object[] { context, null, true, rootOwner });
+                    Assert.AreSame(rootOwner, Field("adapterOwner").GetValue(owner));
+                    Assert.IsNull(Field("adapter").GetValue(owner), "The Tanner owner must borrow the startup owner's shared relay.");
+                    rootPublication = (NativeHookPublicationState)Field("publication").GetValue(rootOwner);
                     var sites = (ProductionGoodsReceivedNativeDefinition.Site[])Field("sites").GetValue(owner);
                     index = Array.FindIndex(sites, value => value.Name == "Tanner");
                     handles = (HookHandle<X64InlineHook>[])Field("handles").GetValue(owner);
@@ -371,7 +387,7 @@ namespace APISharedTests
                     publicationSnapshot = new NativeHookPublicationTests.PublicationFixture(publication);
                     relay = new ProductionGoodsReceivedNativeCode(a => ProductionGoodsReceivedNativeAssembly.Relay(a,
                         Address(Demand), Address(Module + 0x200), Address(Module) + WeaponProductionNativeDefinition.AddGoodRva));
-                    Field("adapter").SetValue(owner, relay);
+                    Field("adapter").SetValue(rootOwner, relay);
                     pending = new HookTransaction(region, null,
                         new HookTransactionOptions { InstallOnCommit = false, FailureMode = TransactionFailureMode.RollbackAndThrow, OwnsHooks = true,
                             Backend = new NativeDetourBackend(new NativeDetourOptions { SuspendThreadsDuringPatch = false }) },
@@ -384,20 +400,33 @@ namespace APISharedTests
                     hook = handle.Hook;
                     Invoke("Verify", index, false);
                     Invoke("PrepareTannerSource", index);
-                    OwnerField.SetValue(null, owner); ownerAssigned = true;
+                    ownerAssigned = true;
+                    OwnerField.SetValue(null, rootOwner);
+                    TannerOwnerField.SetValue(null, owner);
+                    TannerStateField.SetValue(null, Decision("TannerPending"));
                 }
                 catch { Dispose(); throw; }
             }
 
             internal void Publish()
             {
+                // Only root readiness is controlled. Non-Tanner source hooks are outside
+                // this fixture; the real Tanner jump, shared relay and attestation run below.
+                rootPublication.Complete();
                 relay.Publish();
                 NativeHookPublication.Enable(pending, committed, publication, owner, () => {
                     Invoke("Verify", index, true);
-                    Assert.IsFalse(PublishedSource, "Publishing is not Ready even after the source jump was written.");
-                    Assert.IsFalse(Compatible, "A partially published owner cannot replace the pristine-route guard.");
+                    Assert.AreEqual(!opaqueContinuation,
+                        (bool)typeof(ProductionGoodsReceivedNativeRuntime).GetMethod("TannerSourceMatches", PrivateInstance).Invoke(owner, null),
+                        "The complete shared relay must validate during Publishing without requiring Tanner Ready.");
+                    WithTannerDecision("TannerOwned", () => {
+                        Assert.IsFalse(PublishedSource, "Publishing is not Ready even after the source jump was written.");
+                        Assert.IsFalse(Compatible, "A partially published owner cannot replace the pristine-route guard.");
+                    });
                 });
                 Assert.IsTrue(publication.IsReady);
+                Assert.IsFalse(PublishedSource, "A Ready source cannot attest until the delayed ownership decision is complete.");
+                TannerStateField.SetValue(null, Decision("TannerOwned"));
             }
 
             internal void Refused()
@@ -405,6 +434,13 @@ namespace APISharedTests
 
             internal void WithOwner(object value, Action check)
             { object previous = OwnerField.GetValue(null); try { OwnerField.SetValue(null, value); check(); } finally { OwnerField.SetValue(null, previous); } }
+            internal void WithTannerOwner(object value, Action check)
+            { object previous = TannerOwnerField.GetValue(null); try { TannerOwnerField.SetValue(null, value); check(); } finally { TannerOwnerField.SetValue(null, previous); } }
+            private static object Decision(string name) => typeof(ProductionGoodsReceivedNativeRuntime).GetField(name, BindingFlags.Static | BindingFlags.NonPublic).GetRawConstantValue();
+            internal void WithTannerDecision(string name, Action check)
+            { object previous = TannerStateField.GetValue(null); try { TannerStateField.SetValue(null, Decision(name)); check(); } finally { TannerStateField.SetValue(null, previous); } }
+            internal void WithFailedRootPublication(Action check)
+            { using (var restore = new NativeHookPublicationTests.PublicationFixture(rootPublication)) { rootPublication.Fail(new InvalidOperationException("Controlled root receipt publication failure")); check(); } }
             internal void WithOwnerField(string name, object value, Action check)
             { var field = Field(name); object previous = field.GetValue(owner); try { field.SetValue(owner, value); check(); } finally { field.SetValue(owner, previous); } }
             internal void WithUnpublishedRelay(Action check)
@@ -449,7 +485,12 @@ namespace APISharedTests
             {
                 var failures = new List<Exception>();
                 Action<Action> attempt = action => { try { action(); } catch (Exception error) { failures.Add(error); } };
-                if (ownerAssigned) attempt(() => { OwnerField.SetValue(null, previousOwner); ownerAssigned = false; });
+                if (ownerAssigned) attempt(() => {
+                    OwnerField.SetValue(null, previousOwner);
+                    TannerOwnerField.SetValue(null, previousTannerOwner);
+                    TannerStateField.SetValue(null, previousTannerState);
+                    ownerAssigned = false;
+                });
                 attempt(() => publicationSnapshot?.Dispose());
                 attempt(() => replacementHook?.Dispose());
                 attempt(() => pending?.Dispose());

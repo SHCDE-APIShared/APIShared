@@ -39,6 +39,22 @@ namespace APIShared.ModSettings
         Dictionary<string, byte[]> System_MigrateMissionSnapshot(Dictionary<string, byte[]> snapshot);
     }
 
+    /// <summary>Optional conversion of selected stored values before missing settings receive defaults.</summary>
+    /// <remarks>Receives a detached, possibly partial dictionary after declared renames and source/Player
+    /// selection, before setters run. Key presence is significant: explicit null, empty and selected default
+    /// values are present; omitted values are absent. Keep every input key, and add only settings owned by
+    /// this endpoint. The caller validates the expanded selection and its authority before applying it.
+    /// The conversion must be deterministic, idempotent and independent of live settings, UI, files and game
+    /// state. Do not retain the input or buffers. Called synchronously on the caller's thread; exceptions or
+    /// null results reject that snapshot before its setters or persistence, without undoing earlier snapshots.
+    /// Personal storage, working/published presets and mission/save source preparation opt into this contract.
+    /// Existing IModSettingsSnapshotMigration remains a separate post-default mission conversion.</remarks>
+    public interface IModSettingsStoredSnapshotMigration
+    {
+        /// <summary>Converts selected stored properties while preserving explicit-value presence.</summary>
+        Dictionary<string, byte[]> System_MigrateStoredSnapshot(Dictionary<string, byte[]> snapshot);
+    }
+
     /// <summary>Extended endpoint for replacing an editable mission working copy without touching its source.</summary>
     public interface IModSettingsWorkingCopyEndpoint : IModSettingsPresetEndpoint
     {

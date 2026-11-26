@@ -22,9 +22,19 @@ try
                 .Where(call => SourceModel.Name(call) == "Enable")
                 .Select(call => new { Path = Path.GetFullPath(call.SyntaxTree.FilePath), Line = call.GetLocation().GetLineSpan().StartLinePosition.Line + 1 })));
             return 0;
+        case "construction-call-publications":
+            model.CheckHooks();
+            Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(model.ConstructionGoldCallAllowances()
+                .Select(call => new { Path = Path.GetFullPath(call.SyntaxTree.FilePath), Line = call.GetLocation().GetLineSpan().StartLinePosition.Line + 1 })));
+            return 0;
+        case "raw-call-publications":
+            model.CheckHooks();
+            Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(model.ConstructionGoldCallAllowances().Concat(model.ResyncDataCallAllowances())
+                .Select(call => new { Path = Path.GetFullPath(call.SyntaxTree.FilePath), Line = call.GetLocation().GetLineSpan().StartLinePosition.Line + 1 })));
+            return 0;
         case "lifecycle": model.CheckLifecycle(); break;
         case "interop":
-            var selected = model.Types.Where(t => t.Identifier.ValueText is "UnitAccess" or "UnitSettledScriptExtenderSource").Cast<Microsoft.CodeAnalysis.SyntaxNode>()
+            var selected = model.Types.Where(t => t.Identifier.ValueText is "UnitAccess" or "UnitSettledScriptExtenderSource" or "UnitIdentityRuntime").Cast<Microsoft.CodeAnalysis.SyntaxNode>()
                 .Concat(args.Skip(2).Select(path => Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree.ParseText(File.ReadAllText(path)).GetRoot())).ToArray();
             SourceModel.Require(selected.Length > 0, "No interop source owner was found.");
             var fields = selected.SelectMany(r => r.DescendantTokens()).Where(t => t.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.IdentifierToken) && t.ValueText.StartsWith("r_", StringComparison.Ordinal))
