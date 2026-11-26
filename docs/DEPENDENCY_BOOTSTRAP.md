@@ -15,7 +15,7 @@ asset inventory. A selected nested plugin may therefore be reported as missing.
 APIShared's ordinary Awake runs too late to correct this check. The independent
 `APIShared.DependencyBootstrap.dll` companion supplies the earlier entry point.
 
-This pair-gated companion does not repair a failed initial Workshop deployment.
+This pair-gated companion does not repair a failed initial Script Extender deployment of APIShared.
 The separate [Linux first-install patcher](WORKSHOP.md#linux-paths-and-first-install-repair)
 works without APIShared and has no dependency on this companion or its pair manifest.
 
@@ -46,12 +46,22 @@ Unrelated patchers are not removed. Unknown or unreadable patcher metadata refus
 this optional correction rather than guessing ownership.
 
 Create `BepInEx/config/APIShared.DependencyBootstrap.disabled` before starting to
-disable the companion. The switch is sampled once in Finish. Configuration changes
+disable the companion. New Workshop installations wait until the companion is active
+again. Recovery of an already interrupted installation still runs before plugins can
+load. The switch is sampled once in Finish. Configuration changes
 take effect on a complete restart. No hook is undone during Unity cleanup.
 
 ## Initialization and diagnostics
 
-Finish only attaches a static listener and initializes diagnostics. Runtime type
+Finish attaches a static listener and initializes diagnostics. Before that, Finish runs
+the [Workshop installation pass](WORKSHOP.md#installation-preloader-swap), which
+recovers interrupted swaps and applies staged Workshop installations while nothing in
+`BepInEx/plugins` is open yet. The pass holds a process-lifetime lease in the game
+directory. A second instance of that installation stops before mod discovery. Staged
+changes require active mode and an existing APIShared plugin directory. A recovery
+conflict stops the launch before it can load an incomplete installation. The
+`APIShared.WorkshopInstall` log source reports outcomes, along with the
+`_APIShared/I/result.txt` file consumed by the APIShared plugin. Runtime type
 resolution, pair validation and hook preparation start at the synchronous BepInEx
 `Chainloader ready` message. Neither Initialize nor Start is called manually, and
 no BepInEx initialization flag is changed. Both transformed method copies are
@@ -106,7 +116,10 @@ The standalone project is `bootstrap/APIShared.DependencyBootstrap.csproj`, outs
 `src` and its runtime compile glob. Within `bootstrap/src`, `EarlyEntry` owns Finish
 and the one-shot ready listener; `DependencyCorrection` owns provider evaluation,
 local index replacement and their permanent hook owner; `Package` owns the fixed
-pair contract and activation decisions; `Diagnostics` owns hashes and bounded trace output. Hooks stay beside
+pair contract and activation decisions; `Diagnostics` owns hashes and bounded trace output; `Workshop`
+(`bootstrap/src/Workshop/WorkshopInstallPass.cs`) owns the Workshop installation pass and its
+log source and compiles the linked `src/Workshop/Install/WorkshopSafeInstall.cs` from the
+runtime tree unchanged. Hooks stay beside
 the correction they implement. Folder moves do not change assembly/type identity.
 
 Packaging helpers remain beside the existing Workshop/build helpers in `tools`;
@@ -121,8 +134,11 @@ into an isolated desktop executable: early type boundaries, listener behavior,
 real DMD transformations, stack/control-flow preservation, negative contracts,
 inventory rules, original SE comparisons and partial-copy pair checks.
 `Test-DependencyBootstrapPackage.ps1` exercises actual ZIP and manual-removal code
-against retained local fixtures; Core.Tests exercises the actual map validator.
+against a local fixture that it removes after each run, on success and on failure;
+Core.Tests exercises the actual map validator.
 No test invokes Chainloader.Start, installs runtime hooks, or starts Steam/the game.
+The Workshop installation pass is covered by the installation-core tests listed under
+[Workshop internal implementation](WORKSHOP.md#interrupted-update-regression).
 
 The transferred assembly's Windows installation, active Unity-Mono startup and
 orphan behavior passed the targeted acceptance above. Interrupted-copy behavior
@@ -143,4 +159,5 @@ active/orphan startup acceptance is described above.
 
 Native helper DLLs in patcher packages are distinguished by their PE/CLR header
 before managed assembly metadata is inspected. Invalid/unreadable images and
-renamed competing bootstraps still reject activation. The bootstrap creates no diagnostic files.
+renamed competing bootstraps still reject activation. The bootstrap creates no diagnostic files;
+the Workshop installation result file is installation state, not tracing.

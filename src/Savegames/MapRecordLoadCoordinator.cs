@@ -1,4 +1,5 @@
 using APIShared.Lobby;
+using APIShared.Maps;
 using APIShared.Localization;
 using APIShared.Networking;
 using APIShared.Savegames;
@@ -58,10 +59,48 @@ namespace APIShared
         private static NativeAdmissionTicket admission;
         private static Platform_Multiplayer.MPLobby rejectedNativeLobby;
         private static string rejectedNativePath;
-        private sealed class NativeAdmissionTicket
+        internal sealed class NativeAdmissionTicket
         {
             internal readonly string Path, Hash;
             internal NativeAdmissionTicket(string path, string hash) { Path = path; Hash = hash; }
+        }
+        internal static NativeAdmissionTicket CurrentAdmission =>
+            System.Threading.Volatile.Read(ref admission);
+        internal static bool HasPendingPreparation => pending != null;
+
+        // Read-only authority for the shared lobby-packet staging service. A published
+        // start can precede its P2P release; it still needs this authenticated proposal.
+        // This rare handshake query performs no archive/header or file access.
+        internal static bool TryGetLobbyPacketAdmission(out string token, out ulong lobbyId,
+            out ulong authenticatedHostId, out IReadOnlyList<ulong> humanPeers)
+        {
+            token = null; lobbyId = authenticatedHostId = 0; humanPeers = null;
+            if (!Internal.UnityMainThreadDispatch.IsMainThread || !initialized || pending == null) return false;
+            var proposal = pending;
+            var lobby = owner?.activeLobby;
+            if (lobby == null || !ReferenceEquals(lobby, Platform_Multiplayer.Instance?.activeLobby) ||
+                lobby.id.m_SteamID != proposal.Lobby || lobby.isHost != attemptHost ||
+                SteamMatchmaking.GetLobbyOwner(lobby.id).m_SteamID != hostId) return false;
+            try
+            {
+                ulong[] humans = Humans(lobby);
+                if (string.Join(",", humans) != proposal.Roster) return false;
+                token = proposal.Token; lobbyId = proposal.Lobby; authenticatedHostId = hostId;
+                humanPeers = Array.AsReadOnly(humans);
+                return true;
+            }
+            catch (InvalidOperationException) { return false; }
+        }
+
+        internal static bool MatchesFile(NativeAdmissionTicket ticket, string path)
+        {
+            if (ticket == null || string.IsNullOrEmpty(path)) return false;
+            try
+            {
+                return string.Equals(Path.GetFullPath(path), ticket.Path, StringComparison.OrdinalIgnoreCase) &&
+                    Hash(ticket.Path) == ticket.Hash;
+            }
+            catch { return false; }
         }
 
         internal static void Initialize(ManualLogSource logger)
@@ -243,7 +282,7 @@ namespace APIShared
                 var humans = Humans(lobby); ulong local = SteamUser.GetSteamID().m_SteamID;
                 hostId = SteamMatchmaking.GetLobbyOwner(lobby.id).m_SteamID;
                 if (hostId != local || !humans.Contains(local)) throw new InvalidOperationException("The local host is not the current lobby owner and member.");
-                localPath = Path.GetFullPath(Header(lobby).filePath);
+                localPath = PrepareLocalPath(lobby);
                 if (!File.Exists(localPath))
                     throw new FileNotFoundException(UiText.Get("LobbyLaunch.MapFileUnavailable", lobby.mapFileName));
                 localRecords = Capture(localPath, out localHash);
@@ -427,13 +466,24 @@ namespace APIShared
         {
             // Compare lobby metadata first; only the matching selection can resolve and capture its local file.
             if (localPath != null) return;
-            localPath = Path.GetFullPath(Header(lobby).filePath);
+            localPath = PrepareLocalPath(lobby);
             if (!File.Exists(localPath))
                 throw new FileNotFoundException(UiText.Get("LobbyLaunch.MapFileUnavailable", pending.SaveName));
             localRecords = Capture(localPath, out localHash);
             Economy.WorkerProductionAgreement.SetPreparedDataPath(localPath);
             string mismatch = SavegameRecordComparison.Describe(pending.Records, localRecords, LobbyReadinessSupport.PlayerName(SteamUser.GetSteamID().m_SteamID));
             if (mismatch != null) throw new InvalidDataException(mismatch);
+        }
+
+        private static string PrepareLocalPath(Platform_Multiplayer.MPLobby lobby)
+        {
+            string path = Header(lobby).filePath;
+            if (!lobby.coopTrailGame)
+            {
+                var decision = MapLoadPolicy.Evaluate(path);
+                if (decision.Rejection != null) throw new InvalidDataException(decision.Rejection);
+            }
+            return Path.GetFullPath(path);
         }
 
         private static void CheckFile()
@@ -563,8 +613,9 @@ namespace APIShared
             waitingReasonDirty = true;
         }
         private static void Schedule() => frameWork?.SetContinuous(pending != null && !loading);
-        internal static bool ValidateStart(string path, bool multiplayer)
+        internal static bool ValidateStart(string path, bool multiplayer, bool coop, out string alias)
         {
+            alias = null;
             if (!multiplayer) return true;
             if (!Internal.UnityMainThreadDispatch.IsMainThread)
             { Abort("Map readiness validation requires Unity's main thread."); return false; }
@@ -586,6 +637,12 @@ namespace APIShared
                 if (!Economy.WorkerProductionAgreement.TryPrepareSaveAdmission(localPath, out _, out string productionReason))
                     throw new InvalidOperationException(productionReason);
                 CheckFile();
+                if (!coop)
+                {
+                    var decision = MapLoadPolicy.Evaluate(path);
+                    if (decision.Rejection != null) throw new InvalidDataException(decision.Rejection);
+                    alias = decision.NativeFileName;
+                }
                 System.Threading.Volatile.Write(ref admission, new NativeAdmissionTicket(localPath, localHash));
                 loading = true; Schedule(); return true;
             }
@@ -605,13 +662,7 @@ namespace APIShared
         {
             if (!multiplayer) return true;
             var ticket = System.Threading.Volatile.Read(ref admission);
-            if (ticket == null) return false;
-            try
-            {
-                return string.Equals(Path.GetFullPath(path), ticket.Path, StringComparison.OrdinalIgnoreCase) &&
-                    Hash(ticket.Path) == ticket.Hash && ReferenceEquals(ticket, System.Threading.Volatile.Read(ref admission));
-            }
-            catch { return false; }
+            return MatchesFile(ticket, path) && ReferenceEquals(ticket, CurrentAdmission);
         }
         internal static bool CancelSelection()
         {
@@ -634,6 +685,14 @@ namespace APIShared
                 if (ReferenceEquals(pending, transaction)) Abort(reason, notify: true, phase: "native admission");
                 else ReportUnscoped(reason, transaction?.Token);
             })) ReportUnscoped(reason, transaction?.Token);
+        }
+
+        // An admitted start may still fail before the native loader is invoked. In that
+        // case no world owns the published GO and the host must withdraw it.
+        internal static void AbortBeforeMapLoad(string reason)
+        {
+            if (Internal.UnityMainThreadDispatch.IsMainThread) loading = false;
+            Abort(reason);
         }
 
         private static void ReportUnscoped(string reason, string token) => LobbyLaunchStatus.ReportPreparationBlocked(log, reason,

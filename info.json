@@ -3,13 +3,260 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.51.0",
+  "Version": "0.73.4",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
   "Manifest": 1,
   "NetworkMode": 1,
   "SerpChangelog": [
+    {
+      "Version": "0.73.4",
+      "Changes": [
+        "Keep AI build steps, map rendering, lobby updates, and unit HUD interactions running when a mod callback fails and its exception cannot be formatted."
+      ]
+    },
+    {
+      "Version": "0.73.3",
+      "Changes": [
+        "Preserve early Vanilla multiplayer handshake packets consumed by the Script Extender's lobby receiver, including ordinary new-game and save-load starts without an in-game loading mod.",
+        "Bind bounded handshake delivery to the authenticated preparation, current participants and successfully loaded native world; discard failed or replaced buffers without changing Vanilla save eligibility or start acknowledgements."
+      ]
+    },
+    {
+      "Version": "0.73.2",
+      "Changes": [
+        "Avoid repeated ally-goods layout property writes when the live value is unchanged, while retaining ownership, foreign-content and viewport checks."
+      ]
+    },
+    {
+      "Version": "0.73.1",
+      "Changes": [
+        "Fix a multiplayer save load that could abort on a client when the host's release arrived after loading had already started.",
+        "If the ESC menu layout cannot be taken over (for example after a game update), the menu now stays fully Vanilla instead of mod-overridden buttons ignoring clicks."
+      ]
+    },
+    {
+      "Version": "0.73.0",
+      "Changes": [
+        "Add building actions and building panel presenters: mods can name the owner commands behind their building panel controls, and a mod that shows another player's building panel (for example a spectator tool) makes other mods' sections appear there and receives their actions."
+      ]
+    },
+    {
+      "Version": "0.72.1",
+      "Changes": [
+        "Finish multiplayer save preparation observers before coordinator progress, including reentrant load requests.",
+        "Keep later phase observers synchronous and prevent cancelled, replaced or failed continuations from affecting newer attempts."
+      ]
+    },
+    {
+      "Version": "0.72.0",
+      "Changes": [
+        "Add opt-in, consumer-defined ally goods frame presentations with explicit content padding, painted overflow and viewport metrics. Preserve original anchors, provider ordering and reversible opacity ownership without choosing a theme."
+      ]
+    },
+    {
+      "Version": "0.71.0",
+      "Changes": [
+        "Expose typed Ready/Waiting/Rejected lobby admission while retaining existing guard behavior and the original multiplayer save-load coordinator.",
+        "Add immutable, operation-bound multiplayer save preparation observations and provenance through acknowledgement, release, native admission and terminal cleanup.",
+        "Observe actual local lobby commands through the existing shared hook, allowing mods to respect manual Unready without competing hooks.",
+        "Revalidate save admission after observers and isolate stale terminal callbacks from replacement attempts."
+      ]
+    },
+    {
+      "Version": "0.70.0",
+      "Changes": [
+        "Validate a direct restart of a confirmed multiplayer map against its current mission and retained lobby."
+      ]
+    },
+    {
+      "Version": "0.69.0",
+      "Changes": [
+        "Add opt-in multiplayer repair for per-building state tables, shared Hunter prey history and the shared HP ledger."
+      ]
+    },
+    {
+      "Version": "0.68.0",
+      "Changes": [
+        "Add opt-in goods-frame placement, layout availability and shared compact footer controls for compatible Allies send-menu extensions. Existing section registrations keep their original root placement."
+      ]
+    },
+    {
+      "Version": "0.67.0",
+      "Changes": [
+        "Add opt-in early multiplayer resync capture for records that stay frozen through repair. Matching records can be confirmed while Vanilla is still resynchronizing."
+      ]
+    },
+    {
+      "Version": "0.66.0",
+      "Changes": [
+        "Add IngameMenuActions.TryRegisterVanillaSuppression so mods can conditionally hide original ESC buttons from both the main menu and Additional Mod Buttons."
+      ]
+    },
+    {
+      "Version": "0.65.0",
+      "Changes": [
+        "Add a shared multiplayer resync API for gameplay mods to restore private state from the host before play resumes.",
+        "Reuse matching records and transfer changed records over a bounded reliable channel."
+      ]
+    },
+    {
+      "Version": "0.64.0",
+      "Changes": [
+        "Add a general IngameMenuActions.TryOverrideVanillaAction API for controlling and handling existing Vanilla ESC actions without creating duplicate menu entries.",
+        "Keep original button labels, visibility and element identity; inactive overrides preserve Vanilla commands, with isolated provider and command failures."
+      ]
+    },
+    {
+      "Version": "0.63.0",
+      "Changes": [
+        "Allow explicitly requested ally transfers to suppress their Vanilla sender and recipient chat messages while preserving manual gifts, resource effects, receipt sounds and AI reactions."
+      ]
+    },
+    {
+      "Version": "0.62.1",
+      "Changes": [
+        "Restart the production-rule agreement when joining a different lobby, even when its rules are unchanged, so an early confirmation request cannot leave the lobby waiting indefinitely."
+      ]
+    },
+    {
+      "Version": "0.62.0",
+      "Changes": [
+        "Add a live construction material stock snapshot for an explicitly selected player.",
+        "Share quarry pile placement queries, native path-component refresh and multiplayer readiness proof evaluation."
+      ]
+    },
+    {
+      "Version": "0.60.2",
+      "Changes": [
+        "Skip Workshop startup offers that would replace a newer local or receipted package with an older release, including repair offers.",
+        "Show the installed package version in Workshop Mod Options and identify a manual replacement with an older Workshop release as a downgrade."
+      ]
+    },
+    {
+      "Version": "0.60.1",
+      "Changes": [
+        "Add an opt-in map load policy for mods to supply a short native filename or report a local path limit without changing the selected map."
+      ]
+    },
+    {
+      "Version": "0.60.0",
+      "Changes": [
+        "Add shared input queries and list mod shortcuts at the bottom of the game's Hotkeys list."
+      ]
+    },
+    {
+      "Version": "0.59.1",
+      "Changes": [
+        "Fix multiplayer starts that could leave the host on a black map even after the players agreed on production rules.",
+        "Retry failed production-rule confirmations during multiplayer startup without freezing the game. If the agreement is still missing after 30 seconds, show the reason and cancel the start.",
+        "Keep multiplayer save loading in preparation while simulation confirmations are still arriving. Conflicting rules still cancel the load, and the game checks the agreement again before loading."
+      ]
+    },
+    {
+      "Version": "0.59.0",
+      "Changes": [
+        "Building state tables can opt in to synchronized owner requests for all buildings of the selected type."
+      ]
+    },
+    {
+      "Version": "0.58.3",
+      "Changes": [
+        "Show the specific reason when a mod asks the load/save dialog to wait. Multiplayer save diagnostics distinguish simulation-record hashes from the settings fingerprint."
+      ]
+    },
+    {
+      "Version": "0.58.2",
+      "Changes": [
+        "Check which simulation fixes each player can run before starting a multiplayer match. Optional features turn off for everyone when a player cannot run them, and incompatible fixes are reported before the match starts."
+      ]
+    },
+    {
+      "Version": "0.58.1",
+      "Changes": [
+        "Fix the troop panel returning to an earlier page when Vanilla counts fewer entries than the extended HUD, keeping later pages with your lord or custom unit categories reachable."
+      ]
+    },
+    {
+      "Version": "0.58.0",
+      "Changes": [
+        "Share saved presets with other players in the multiplayer lobby. An offer appears in the chat area and recipients can save a personal copy under a name they choose.",
+        "Preset offers retry briefly until the receiving player confirms receipt. The sender is told when some or all players do not confirm.",
+        "Open the personal preset folder from a preset dialog on Windows or Linux under Proton."
+      ]
+    },
+    {
+      "Version": "0.57.0",
+      "Changes": [
+        "Workshop packages can no longer end up half installed: APIShared prepares a complete, verified copy while you play and installs it at the next game start, before any mod is loaded, by swapping whole mod folders. If the game or the PC is interrupted at any moment, the next start finishes or undoes the installation. The game is no longer closed for an installation, and the external updater window is gone.",
+        "Mod authors can list player files and folders (for example settings) in apishared-keep.txt: they are kept across updates, can be replaced once on purpose with a reset number, and can optionally survive an uninstall ('persist'). Everything else in a mod folder is replaced, so files a mod no longer ships, and whole folders it no longer ships, are removed for players too.",
+        "If an installation by the former updater was interrupted, APIShared offers a clean installation of the affected package at startup until its files are complete again; the former updater's leftover folders are removed.",
+        "If APIShared's preloader (BepInEx/patchers/APIShared.DependencyBootstrap.dll) is missing or disabled, APIShared no longer offers or prepares installations that would never be applied, and says why.",
+        "External mod managers can take Workshop packages over with BepInEx/config/APIShared.ModManager.json: APIShared then never installs, updates, repairs, removes or offers those packages, and discards changes prepared for them earlier.",
+        "Subscribing to a Workshop package is enough: if APIShared has not installed it yet, the startup question now offers its installation (Mod Options → Workshop remains available, and the startup offers can be switched off per package).",
+        "The Workshop question at game start, and the hint of package bootstraps that APIShared is missing, open in front of the game with a visible, free mouse cursor and no longer block other programs.",
+        "Mod Options: the first Workshop button is now 'Check Workshop version…', because it only shows what would change; nothing is installed before you confirm.",
+        "For mod authors: WorkshopClient.ApplyAsync now only stages the change (AwaitingRestart = installed at the next start) and no longer closes the game; it throws when the preloader is unavailable. RemovedFiles lists every file of the affected mod folders that the new version neither ships nor keeps.",
+        "AI troop admission: a troop that cannot walk to its group's current destination (for example a horseman on a wall) now joins every AI group like the AI's own recruits instead of being rejected and removed; before, only castle defense did this."
+      ]
+    },
+    {
+      "Version": "0.56.1",
+      "Changes": [
+        "Conflicts with other mods that change the same spot in the game's code are now detected: the affected APIShared service stays off instead of overwriting the other mod's change, and the log names the conflict. Spots that a mod loaded later overwrites are reported in the log at each game start.",
+        "Keep WaitForTicks sampling native map time while the simulation runs ticks back-to-back; each frame's poll now waits up to 10 ms for the engine monitor instead of starving until the test deadline.",
+        "AI troop admission now also works for existing castle defense, defense patrol, home moat, economy protection and intervention groups whose current order is unknown, for example after loading a save: the unit joins like one of the AI's own recruits, and the AI orders the group on its next regular turn. Other roles still reject such groups explicitly.",
+        "Admitting several troops into the same new AI group (for example harassment or siege groups) no longer rejects every troop after the first: the first troop's starting order now counts as the group's order until the AI commands the group.",
+        "Process many AI troop admissions at once (for example several units placed in one go) without rescanning every already assigned unit.",
+        "AI castle defense admission now sends new troops where the AI itself would (the keep door for mounted units, the guarding position only when the troop can reach it, otherwise the keep), lets a troop that cannot walk to its group's spot join like the AI's own recruits instead of failing, no longer blocks the following troops after one failed placement, and the role is no longer offered for spearmen, macemen and Arabian horse archers when the AI's settings leave no group for them.",
+        "After loading a save, AI troops can again join harassment groups and the AI's siege groups like the AI's own recruits instead of being rejected (during a siege the troop follows its group at the AI's next order; in some siege phases that order only comes with the next phase or the retreat), and spearmen can join castle defense again (APIShared read the AI's group limit from the wrong place).",
+        "Fix the troop panel's page arrows being hard to click: the troop selection area raised for APIShared's buttons covered them except for a few pixels."
+      ]
+    },
+    {
+      "Version": "0.56.0",
+      "Changes": [
+        "Preserve legacy setting values before defaults are merged across presets, missions and saved games; explicit new choices remain authoritative.",
+        "Reject completed construction commands and isolate nested spawn callbacks so free objects do not receive construction charges or payment receipts.",
+        "Keep independent resource gifts intact when applying negative gold refunds, including nested callbacks."
+      ]
+    },
+    {
+      "Version": "0.55.0",
+      "Changes": [
+        "Add typed ConstructionCosts targets with checked native/visual table bounds and centralized mapper, gate, garden, pond and stationary-engine aliases.",
+        "Add general Human-only construction extras with authoritative payment reservations, saved actual-payment receipts and same-owner demolition refunds, including native float/integer refund arithmetic and signed gold offsets.",
+        "Correct the Extender refund interceptor to use its authoritative final ID/percentage context; distinguish marking removal from terminal slot release with verified semantic native contracts."
+      ]
+    },
+    {
+      "Version": "0.54.0",
+      "Changes": [
+        "Add PathReachability: coarse reachability between units, tiles and path components through Vanilla's player-aware path connection layers.",
+        "Add LineOfSight: Vanilla's own line-of-sight test between world points, units and tile viewpoints, with Vanilla's two visibility rules.",
+        "Add SightBlockingBuildings: building types that Vanilla exempts from sight checks (such as the Hunter's hut) can block sight like ordinary buildings.",
+        "Add BuildingPanelSections: shared host and detection for mod sections in Vanilla's building panels, with Unity-thread Opened/Updated/Closed callbacks.",
+        "Add BuildingStates: owner-bound per-building values with synchronized owner requests, versioned save records and a stable native layout.",
+        "Add minimum corpse lifetimes for huntable rabbits, camels and chickens (HuntablePreyDefinition.WithMinimumCorpseLifetime).",
+        "Add BuildMenuAvailability: allow or veto build-menu entries for the local player relative to Vanilla's decision.",
+        "Add ChickenPopulationModifiers: staged modifiers for Vanilla's chicken target per player.",
+        "Fixed: the Tanner production receipt source is now decided at the first mission initialization. Before, APIShared always occupied it because ImprovedHunters loads after APIShared, which kept ImprovedHunters' Tannery meat feature from installing."
+      ]
+    },
+    {
+      "Version": "0.53.0",
+      "Changes": [
+        "Allow weighted Assassin pathfinders to exclude stockpile wall flags from climb-only reconstruction while preserving ordinary connections. Existing consumers retain their previous behavior unless they opt in."
+      ]
+    },
+    {
+      "Version": "0.52.0",
+      "Changes": [
+        "Add confirmed production-delivery receipts with final goods, accepted quantities and carrier/storage identities; exclude ingredients, starting goods and unrelated additions.",
+        "Activate receipt consumers before native simulation resumes and enforce required support for local saves and editor worlds as well as lobby starts."
+      ]
+    },
     {
       "Version": "0.51.0",
       "Changes": [

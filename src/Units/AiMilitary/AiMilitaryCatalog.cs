@@ -157,8 +157,19 @@ namespace APIShared.Units.AiMilitary
                 editor ? AiMilitaryReason.None : AiMilitaryReason.NoAiContext,
                 editor ? "Final AI/AIC validation occurs at map start." : "No initialized AI/AIC for this owner.");
             AiMilitaryReason problem = ValidateAic(role, type, in *aic);
-            return new AiMilitaryOption(role, area, problem == AiMilitaryReason.None, false, problem,
-                problem == AiMilitaryReason.None ? string.Empty : "The configured AIC type or physical group window does not support this assignment.");
+            if (problem != AiMilitaryReason.None)
+                return new AiMilitaryOption(role, area, false, false, problem,
+                    "The configured AIC type or physical group window does not support this assignment.");
+            // Exactly the deterministic 2BC40 failure (AiCastleDefenseTables): admission would only be
+            // rejected, while Vanilla's own 291F0 would put such a recruit into tribe 0.
+            if (role == AiMilitaryRole.CastleDefense &&
+                GamePlayerManagerAPI.Instance.TryGetPlayerResourcesById(player, out GamePlayerResources* resources) && resources != null &&
+                Native.AiCastleDefenseTables.TryGetMobileWindowClass((int)type, out int cls) &&
+                Native.AiCastleDefenseTables.IsDefenseWindowClosed(resources->r_AIDefensivePositionCountsByClass.r_Counts[cls], aic->max_mobile_groups))
+                return new AiMilitaryOption(role, area, false, false, AiMilitaryReason.InvalidGroupCount,
+                    "Vanilla's castle-defense allocator has no group for this type: the AIV has positions for its class " + cls +
+                    " but the AIC max_mobile_groups is " + aic->max_mobile_groups + ".");
+            return new AiMilitaryOption(role, area, true, false, AiMilitaryReason.None, string.Empty);
         }
 
         internal static AiMilitaryReason ValidateAic(AiMilitaryRole role, eChimps type, in InternalAIC aic)

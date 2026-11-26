@@ -2,9 +2,11 @@
   <PropertyGroup><TargetFramework>net10.0</TargetFramework><AllowUnsafeBlocks>true</AllowUnsafeBlocks><ImplicitUsings>enable</ImplicitUsings></PropertyGroup>
   <ItemGroup>
     <Compile Include="../../src/Modifiers/*.cs" Link="Production/Modifiers/%(Filename)%(Extension)" />
+    <Compile Include="../../src/Multiplayer/SimulationAgreementPolicy.cs" Link="Production/SimulationAgreementPolicy.cs" />
     <Compile Include="../../src/Workshop/Proton/WinePathInterop.cs" Link="Production/Proton/WinePathInterop.cs" />
     <Compile Include="../../src/Workshop/Proton/ProtonPaths.cs" Link="Production/Proton/ProtonPaths.cs" />
     <Compile Include="../../src/Workshop/Proton/ProtonProcess.cs" Link="Production/Proton/ProtonProcess.cs" />
+    <Compile Include="../../src/ModSettings/Presets/PresetFolderLauncher.cs" Link="Production/Presets/PresetFolderLauncher.cs" />
     <Compile Include="../../src/Presentation/UiWork/UiWorkContracts.cs" Link="Production/UiWorkContracts.cs" />
     <Compile Include="../../src/Presentation/UiWork/UiWorkScheduler.cs" Link="Production/UiWorkScheduler.cs" />
     <Compile Include="../../src/ModSettings/UI/SharedToolTipSizing.cs" Link="Production/SharedToolTipSizing.cs" />
@@ -12,6 +14,7 @@
     <Compile Include="../../src/Presentation/Tooltips/PopupPixelScale.cs" Link="Production/PopupPixelScale.cs" />
     <Compile Include="../../src/Presentation/IngameMenu/IngameMenuContracts.cs" Link="Production/IngameMenuContracts.cs" />
     <Compile Include="../../src/Presentation/IngameMenu/IngameMenuRegistry.cs" Link="Production/IngameMenuRegistry.cs" />
+    <Compile Include="../../src/Presentation/IngameMenu/VanillaMenuOverrides.cs" Link="Production/VanillaMenuOverrides.cs" />
     <Compile Include="../../src/Presentation/IngameMenu/IngameMenuActions.View.cs" Link="Production/IngameMenuActions.View.cs" />
     <Compile Include="../../src/Presentation/IngameMenu/IngameMenuTooltips.cs" Link="Production/IngameMenuTooltips.cs" />
     <Compile Include="../../src/Localization/TextCatalog.cs" Link="Localization/TextCatalog.cs" />
@@ -39,22 +42,19 @@
     <Compile Include="../../src/Workshop/WorkshopInventory.cs" Link="Production/WorkshopInventory.cs" />
     <Compile Include="../../src/Workshop/WorkshopDiagnostics.cs" Link="Production/WorkshopDiagnostics.cs" />
     <Compile Include="../../src/Workshop/WorkshopLocalState.cs" Link="Production/WorkshopLocalState.cs" />
-    <Compile Include="../../src/Workshop/WorkshopApplyCoordinator.cs" Link="Production/WorkshopApplyCoordinator.cs" />
     <Compile Include="../../src/Workshop/WorkshopDeletionManifest.cs" Link="Production/WorkshopDeletionManifest.cs" />
     <Compile Include="../../src/Workshop/WorkshopContracts.cs" Link="Production/WorkshopContracts.cs" />
     <Compile Include="../../src/Workshop/WorkshopPackageCodec.cs" Link="Production/WorkshopPackageCodec.cs" />
     <Compile Include="../../src/Workshop/WorkshopPaths.cs" Link="Production/WorkshopPaths.cs" />
     <Compile Include="../../src/Workshop/WorkshopInstallation.cs" Link="Production/WorkshopInstallation.cs" />
+    <Compile Include="../../src/Workshop/WorkshopStaging.cs" Link="Production/WorkshopStaging.cs" />
+    <Compile Include="../../src/Workshop/Install/WorkshopSafeInstall.cs" Link="Production/WorkshopSafeInstall.cs" />
+    <Compile Include="../../src/Workshop/Install/WorkshopBatchInstall.cs" Link="Production/WorkshopBatchInstall.cs" />
+    <Compile Include="../../src/Workshop/WorkshopManagerPolicy.cs" Link="Production/WorkshopManagerPolicy.cs" />
     <Compile Include="../../src/Workshop/WorkshopBatch.cs" Link="Production/WorkshopBatch.cs" />
     <Compile Include="../../src/Workshop/WorkshopInstalledVersions.cs" Link="Production/WorkshopInstalledVersions.cs" />
     <Compile Include="../../src/Workshop/WorkshopStartupSummary.cs" Link="Production/WorkshopStartupSummary.cs" />
     <Compile Include="../../src/Workshop/WorkshopStartupGate.cs" Link="Production/WorkshopStartupGate.cs" />
-    <Compile Include="../../src/Workshop/WorkshopUpdaterActivity.cs" Link="Production/WorkshopUpdaterActivity.cs" />
-    <Compile Include="../../src/Workshop/WorkshopUpdaterReadiness.cs" Link="Production/WorkshopUpdaterReadiness.cs" />
-    <Compile Include="../../src/Workshop/WorkshopTransaction.cs" Link="Production/WorkshopTransaction.cs" />
-    <Compile Include="../../src/Workshop/WorkshopRecovery.cs" Link="Production/WorkshopRecovery.cs" />
-    <Compile Include="../../src/Workshop/WorkshopRepairPlanner.cs" Link="Production/WorkshopRepairPlanner.cs" />
-    <Compile Include="../../src/Workshop/WorkshopMaintenance.cs" Link="Production/WorkshopMaintenance.cs" />
     <Compile Include="../../src/Workshop/WorkshopPublishing.cs" Link="Production/WorkshopPublishing.cs" />
     <Compile Include="../../src/Workshop/WorkshopBootstrapValidation.cs" Link="Production/WorkshopBootstrapValidation.cs" />
     <Compile Include="../../src/Workshop/WorkshopMapArchive.cs" Link="Production/WorkshopMapArchive.cs" />
@@ -64,6 +64,7 @@
     <Compile Include="../../src/Networking/NetworkPacketContracts.cs" Link="Production/NetworkPacketContracts.cs" />
     <Compile Include="../../src/Networking/ChoreSendPolicy.cs" Link="Production/ChoreSendPolicy.cs" />
     <Compile Include="../../src/Networking/PacketReceivePolicy.cs" Link="Production/PacketReceivePolicy.cs" />
+    <Compile Include="../../src/Networking/NativeReadinessProof.cs" Link="Production/NativeReadinessProof.cs" />
 
     <Compile Include="../../src/Core/Events/InterceptionEvent.cs" Link="Production/InterceptionEvent.cs" />
     <Compile Include="../../src/Core/Events/OrderedRegistrations.cs" Link="Production/OrderedRegistrations.cs" />
@@ -109,8 +110,5 @@
   <ItemGroup Condition="!Exists('$(ExtenderDir)/ICSharpCode.SharpZipLib.dll')">
     <PackageReference Include="SharpZipLib" />
   </ItemGroup>
-  <ItemGroup><Content Include="../../Workshop/workshop-updater.ps1" Link="Fixtures/workshop-updater.ps1" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
-  <ItemGroup><Content Include="../../Workshop/workshop-maintenance.ps1" Link="Fixtures/workshop-maintenance.ps1" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
-  <ItemGroup><Content Include="../../Workshop/workshop-updater.sh;../../Workshop/workshop-maintenance.sh" Link="Fixtures/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
   <ItemGroup><Content Include="../../Patches/Assets/GUI/XAML/IngameUIScreens.xaml" Link="Fixtures/IngameUIScreens.xaml" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
 </Project>

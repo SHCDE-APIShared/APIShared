@@ -85,6 +85,15 @@ namespace APISharedTests
         }
         private static bool IsAuditedAiObservationPointer(Type owner, string member, Type actual)
         {
+            // The market broker forwards the unmodified first argument for this synchronous
+            // pair only. AiMarketEventsTests executes all four audited ABIs and unchanged
+            // arguments; consumers validate the profile base before dereferencing it.
+            if (owner == typeof(APIShared.Economy.AiMarketContext) &&
+                (member == "ProfileRoot" || member == "get_ProfileRoot"))
+            {
+                Assert(actual == typeof(IntPtr), "audited immediate AI market profile pointer");
+                return true;
+            }
             // These two immutable native observations deliberately expose only the invocation's
             // manager for immediate diagnostic copying. They expose no invocation/ownership API.
             // Exact member/type exceptions retain the general native-pointer prohibition.

@@ -24,10 +24,17 @@ namespace APIShared.ModSettings
         internal void LoadInitialSettings()
         {
             if (initialSettingsLoaded) return;
-            initialSettingsLoaded = true;
-            if (persistedProperties.Length == 0 || dynamicProvider != null) return;
-            if (!storage.TryRead(out Dictionary<string, byte[]> initial)) return;
+            if (persistedProperties.Length == 0 || dynamicProvider != null)
+            { initialSettingsLoaded = true; return; }
+            if (!storage.TryRead(out Dictionary<string, byte[]> initial))
+            { initialSettingsLoaded = true; return; }
             initial = ModSettingsMigration.ApplyRenames(settingsType, initial);
+            if (owner.SettingsTarget is IModSettingsStoredSnapshotMigration)
+                initial = MigrateStoredSelection(initial.Where(entry => !IsPresetEnvelopeKey(entry.Key))
+                    .ToDictionary(entry => entry.Key, entry => entry.Value, StringComparer.Ordinal));
+            // A rejected converter remains retryable by Activate and must never turn a valid
+            // legacy file into a successful defaults-only rewrite after the registration catch.
+            initialSettingsLoaded = true;
             bool previousApplying = applying;
             applying = true;
             try
@@ -107,6 +114,23 @@ namespace APIShared.ModSettings
                     storage.BackupCorruptFile();
                     if (needsRelocation) legacyMigrationPending = true;
                     payload = null;
+                }
+            }
+
+            // Conversion errors are not corrupt metadata. Keep this outside the decoding catch,
+            // and before exporting old slots or filling missing properties with defaults.
+            if (payload != null && loadedSchemaVersion > 0)
+            {
+                if (loadedSchemaVersion == SchemaVersion)
+                {
+                    var migrated = MigrateStoredSelection(preset1);
+                    needsRewrite |= !StoredSelectionsEqual(preset1, migrated);
+                    preset1 = migrated;
+                }
+                else
+                {
+                    legacyPreset1 = MigrateStoredSelection(legacyPreset1);
+                    if (legacyPreset2 != null) legacyPreset2 = MigrateStoredSelection(legacyPreset2);
                 }
             }
 
@@ -299,6 +323,32 @@ namespace APIShared.ModSettings
             // Stored snapshots keep the property names of the mod version that wrote them.
             return ModSettingsMigration.ApplyRenames(settingsType,
                 MessagePackSerializer.Deserialize<Dictionary<string, byte[]>>(bytes));
+        }
+
+        private static bool IsPresetEnvelopeKey(string key) => key == SchemaVersionKey || key == ActivePresetKey ||
+            key == Preset1Key || key == Preset2Key || key == PublishedPresetKey || key == CurrentSettingsKey ||
+            key == BasedOnPresetKey || key == PresetDirtyKey || key == LegacyPresetImportCompletedKey;
+
+        private static bool StoredSelectionsEqual(Dictionary<string, byte[]> left, Dictionary<string, byte[]> right) =>
+            left.Count == right.Count && left.All(entry => right.TryGetValue(entry.Key, out var bytes) &&
+                (entry.Value == null ? bytes == null : bytes != null && entry.Value.SequenceEqual(bytes)));
+
+        // Shared by partial working/published selections and raw personal storage. Validate
+        // the expanded selection before its first setter; existing unknown/retired keys survive.
+        private Dictionary<string, byte[]> MigrateStoredSelection(Dictionary<string, byte[]> selected)
+        {
+            if (!(owner.SettingsTarget is IModSettingsStoredSnapshotMigration)) return selected;
+            var migrated = ModSettingsMigration.MigrateRawStoredSnapshot(owner.SettingsTarget, selected);
+            foreach (var entry in migrated)
+            {
+                if (!persistedPropertiesByName.TryGetValue(entry.Key, out var property))
+                {
+                    if (!selected.ContainsKey(entry.Key)) throw new InvalidDataException("Migration added an unknown setting: " + entry.Key);
+                    continue;
+                }
+                if (entry.Value != null) MessagePackSerializer.Deserialize(property.PropertyType, entry.Value);
+            }
+            return migrated;
         }
 
     }

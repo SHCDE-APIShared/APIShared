@@ -3,6 +3,7 @@ using System.Reflection;
 using APIShared.Events;
 using APIShared.Internal;
 using APIShared.Localization;
+using APIShared.Maps;
 using BepInEx.Logging;
 using CrusaderDE;
 
@@ -16,6 +17,7 @@ namespace APIShared.Lobby
         {
             Lobby = lobby; Command = command; Operation = operation;
             RequiresPeerAgreement = requiresPeerAgreement;
+            PreparedSave = command == "HostLoadGame" ? Savegames.MultiplayerSavePreparation.Current : null;
         }
         /// <summary>Exact live lobby receiver during a button callback; null for prepared HostLoadGame admission.
         /// Use a non-null receiver only during the synchronous callback.</summary>
@@ -29,6 +31,9 @@ namespace APIShared.Lobby
         /// Ready/ReadyLock, prepared saves with multiple humans, and missing/unknown button-receiver
         /// evidence return true. Captured synchronously before guards; in-game MP flags are not used.</summary>
         public bool RequiresPeerAgreement { get; }
+        /// <summary>Immutable identity of the current SDK-owned save attempt; null for ordinary
+        /// buttons. Local file hashes identify this peer's checked file and are not peer checksums.</summary>
+        public Savegames.MultiplayerSavePreparationSnapshot PreparedSave { get; }
     }
 
     /// <summary>Shared pre-launch admission for gameplay capabilities whose peers must agree before Ready/Start.</summary>
@@ -67,6 +72,24 @@ namespace APIShared.Lobby
             return Registry.TryRegister(ownerGuid, registrationId, guard, out diagnostic, order);
         }
 
+        /// <summary>Registers a typed Ready/Waiting/Rejected guard. Waiting is retried by the
+        /// existing prepared-save coordinator; ordinary button attempts remain blocked until ready.
+        /// Registration requires Unity, is owner-bound and lives until process exit.</summary>
+        public static bool TryRegisterReadiness(string ownerGuid, string registrationId,
+            Func<LobbyLaunchGuardContext, LobbyLaunchGuardResult> guard, out string diagnostic)
+            => TryRegisterReadiness(ownerGuid, registrationId, guard, out diagnostic, 0);
+
+        /// <summary>Registers a typed guard with deterministic priority, then ordinal owner/ID order.</summary>
+        public static bool TryRegisterReadiness(string ownerGuid, string registrationId,
+            Func<LobbyLaunchGuardContext, LobbyLaunchGuardResult> guard, out string diagnostic, int order)
+        {
+            if (!UnityMainThreadDispatch.IsMainThread)
+            { diagnostic = "Lobby launch guards must register on the initialized Unity thread."; return false; }
+            return Registry.TryRegisterReadiness(ownerGuid, registrationId, guard, out diagnostic, order);
+        }
+
+        internal static void EnsureActionObservation() => Install();
+
         private static void Install()
         {
             if (installed) return;
@@ -95,20 +118,58 @@ namespace APIShared.Lobby
 
         private static void Dispatch(FRONT_Multiplayer self, string command)
         {
+            // Preserve the dormant path and its ordering; observe the existing hook rather
+            // than installing a competing ButtonClicked detour in another consumer.
+            if (!LobbyActionEvents.HasObservers) { DispatchCore(self, command); return; }
+            DispatchObserved(self, command);
+        }
+
+        private static void DispatchObserved(FRONT_Multiplayer self, string command)
+        {
+            bool before = !ReferenceEquals(self, null) && (bool)readyField.GetValue(self);
+            ulong lobbyId = self?.currentLobby?.identifier ?? 0;
+            bool invoked = false;
+            try { DispatchCore(self, command, () => invoked = true); }
+            finally
+            {
+                bool after = !ReferenceEquals(self, null) && (bool)readyField.GetValue(self);
+                LobbyActionEvents.Publish(new LobbyActionNotification(lobbyId, command, before, after, invoked));
+            }
+        }
+
+        private static void DispatchCore(FRONT_Multiplayer self, string command, Action invoking = null)
+        {
             if (!LobbyLaunchGuardRegistry.TryGetOperation(command, out LobbyLaunchOperation operation))
-            { Hook.Original(self, command); return; }
+            { invoking?.Invoke(); Hook.Original(self, command); return; }
             // Ready/ReadyLock are toggles: never trap a player in an already-ready/locked state.
             // These private fields are resolved and type-checked against the real loaded assembly at install.
             if (!LobbyLaunchGuardRegistry.ShouldCheck(command, (bool)readyField.GetValue(self),
                 (bool)lockedField.GetValue(self), (bool)closingField.GetValue(self)))
-            { Hook.Original(self, command); return; }
+            { invoking?.Invoke(); Hook.Original(self, command); return; }
             bool agreement = LobbyLaunchGuardRegistry.RequiresPeerAgreement(command,
                 !ReferenceEquals(self, null), FRONT_Multiplayer.skirmishGame,
                 !ReferenceEquals(self, null) && self.singlePlayerCoop);
+            // Production and other guards may open the selected file. Report a path
+            // rejection before they can replace it with a generic file-read error.
+            if (MapLoadPolicy.HasProvider && !ReferenceEquals(self, null) && command != "COOP_START" &&
+                !FRONT_Multiplayer.coopGame && !self.singlePlayerCoop && !self.trailMakerMode)
+            {
+                var header = LobbySelectedMapHeader.Read(self);
+                if (header != null && !header.missionMap && !header.skirmishMap)
+                {
+                    string rejection = MapLoadPolicy.Evaluate(header.filePath).Rejection;
+                    if (rejection != null)
+                    {
+                        if (agreement) Report(APISharedPlugin.PluginGuid, operation, rejection, null);
+                        else MissionLifecycleService.ReportLocalMapRejection(Log, rejection);
+                        return;
+                    }
+                }
+            }
             var decision = Registry.Evaluate(new LobbyLaunchGuardContext(self, command, operation, agreement));
             if (decision.Blocked)
             { Report(decision.Owner, operation, decision.Reason, decision.Detail); return; }
-            Hook.Original(self, command);
+            invoking?.Invoke(); Hook.Original(self, command);
         }
 
         // Called only by the existing save-readiness coordinator, after its fresh roster,
@@ -126,12 +187,50 @@ namespace APIShared.Lobby
         }
     }
 
+    /// <summary>Readiness of one admission participant. Waiting never means permission to start.</summary>
+    public enum LobbyLaunchGuardState
+    {
+        /// <summary>No outstanding prerequisite.</summary>
+        Ready,
+        /// <summary>An asynchronous prerequisite is still pending.</summary>
+        Waiting,
+        /// <summary>The attempt is invalid and must not start.</summary>
+        Rejected
+    }
+
+    /// <summary>Immutable admission result. Default means Ready; non-ready results require a player-facing reason.</summary>
+    public readonly struct LobbyLaunchGuardResult
+    {
+        /// <summary>Admission state.</summary>
+        public readonly LobbyLaunchGuardState State;
+        /// <summary>Player-facing explanation for Waiting or Rejected.</summary>
+        public readonly string Reason;
+        /// <summary>Creates a checked result; only defined states and nonempty blocking reasons are accepted.</summary>
+        public LobbyLaunchGuardResult(LobbyLaunchGuardState state, string reason)
+        {
+            if (state < LobbyLaunchGuardState.Ready || state > LobbyLaunchGuardState.Rejected)
+                throw new ArgumentOutOfRangeException(nameof(state));
+            if (state != LobbyLaunchGuardState.Ready && string.IsNullOrWhiteSpace(reason))
+                throw new ArgumentException("A non-ready result requires a reason.", nameof(reason));
+            State = state; Reason = reason;
+        }
+        /// <summary>No outstanding prerequisite.</summary>
+        public static LobbyLaunchGuardResult Ready => default;
+        /// <summary>A prerequisite can complete asynchronously within the existing attempt.</summary>
+        public static LobbyLaunchGuardResult Waiting(string reason) => new LobbyLaunchGuardResult(LobbyLaunchGuardState.Waiting, reason);
+        /// <summary>An invalid attempt must be rejected.</summary>
+        public static LobbyLaunchGuardResult Rejected(string reason) => new LobbyLaunchGuardResult(LobbyLaunchGuardState.Rejected, reason);
+    }
+
     internal readonly struct LobbyLaunchGuardDecision
     {
         internal readonly string Owner, Reason, Detail;
-        internal bool Blocked => !string.IsNullOrEmpty(Reason);
-        internal LobbyLaunchGuardDecision(string owner, string reason, string detail)
-        { Owner = owner; Reason = reason; Detail = detail; }
+        internal readonly LobbyLaunchGuardState State;
+        internal bool Blocked => State != LobbyLaunchGuardState.Ready;
+        internal bool Waiting => State == LobbyLaunchGuardState.Waiting;
+        internal LobbyLaunchGuardDecision(string owner, string reason, string detail,
+            LobbyLaunchGuardState state = LobbyLaunchGuardState.Rejected)
+        { Owner = owner; Reason = reason; Detail = detail; State = state; }
     }
 
     internal sealed class LobbyLaunchGuardRegistry
@@ -140,13 +239,25 @@ namespace APIShared.Lobby
         // fixtures. The flag is clear before either caller performs its admitted action.
         [ThreadStatic] private static bool dispatching;
         private readonly object sync = new object();
-        private readonly OwnedCallbacks<Func<LobbyLaunchGuardContext, string>> callbacks = new OwnedCallbacks<Func<LobbyLaunchGuardContext, string>>();
+        private readonly OwnedCallbacks<Func<LobbyLaunchGuardContext, LobbyLaunchGuardResult>> callbacks =
+            new OwnedCallbacks<Func<LobbyLaunchGuardContext, LobbyLaunchGuardResult>>();
         private readonly Action install;
         private readonly Func<string> failureText;
         internal LobbyLaunchGuardRegistry(Action install, Func<string> failureText)
         { this.install = install; this.failureText = failureText; }
         internal bool TryRegister(string owner, string id, Func<LobbyLaunchGuardContext, string> guard,
             out string diagnostic, int order = 0)
+        {
+            return TryRegisterReadiness(owner, id, guard == null ? null : context =>
+            {
+                string reason = guard(context);
+                return string.IsNullOrWhiteSpace(reason) ? default :
+                    new LobbyLaunchGuardResult(LobbyLaunchGuardState.Rejected, reason);
+            }, out diagnostic, order);
+        }
+
+        internal bool TryRegisterReadiness(string owner, string id,
+            Func<LobbyLaunchGuardContext, LobbyLaunchGuardResult> guard, out string diagnostic, int order = 0)
         {
             if (string.IsNullOrWhiteSpace(owner) || string.IsNullOrWhiteSpace(id) || guard == null)
             { diagnostic = "Owner GUID, registration ID and guard are required."; return false; }
@@ -168,15 +279,19 @@ namespace APIShared.Lobby
             dispatching = true;
             try
             {
+                LobbyLaunchGuardDecision waiting = default;
                 foreach (var item in callbacks.Snapshot)
                 {
-                    string reason;
-                    try { reason = item.Callback(context); }
+                    LobbyLaunchGuardResult result;
+                    try { result = item.Callback(context); }
                     catch (Exception error) { return new LobbyLaunchGuardDecision(item.Owner, failureText(), item.Id + ": " + error); }
-                    if (!string.IsNullOrWhiteSpace(reason))
-                        return new LobbyLaunchGuardDecision(item.Owner, reason, "guard=" + item.Id + "; command=" + context.Command);
+                    if (result.State == LobbyLaunchGuardState.Ready) continue;
+                    var decision = new LobbyLaunchGuardDecision(item.Owner, result.Reason,
+                        "guard=" + item.Id + "; command=" + context.Command, result.State);
+                    if (!decision.Waiting || context.Command != "HostLoadGame") return decision;
+                    if (!waiting.Waiting) waiting = decision;
                 }
-                return default;
+                return waiting;
             }
             finally { dispatching = false; }
         }

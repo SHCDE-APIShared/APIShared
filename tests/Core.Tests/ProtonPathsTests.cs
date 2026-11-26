@@ -259,6 +259,29 @@ public sealed class ProtonPathsTests
     }
 
     [TestMethod]
+    public void PresetFolderLaunchReportsHostFailureAndAllowsAnOpenFileManager()
+    {
+        string bash = LocalBash();
+        var host = new LocalBashHost();
+        var budget = TimeSpan.FromSeconds(30);
+        using (var failed = HostRun.Start(host, bash, new[] { "-c", "printf no-file-manager >&2; exit 4" }))
+        {
+            var error = Assert.ThrowsExactly<IOException>(() =>
+                APIShared.ModSettings.PresetFolderLauncher.ObserveHostLaunch(failed, budget));
+            StringAssert.Contains(error.Message, "exit 4");
+            StringAssert.Contains(error.Message, "no-file-manager");
+        }
+
+        using (var stillOpen = HostRun.Start(host, bash,
+            new[] { "-c", "sleep 2; exit 0" }))
+        {
+            // A short observation window simulates a GUI that lives past its startup window.
+            APIShared.ModSettings.PresetFolderLauncher.ObserveHostLaunch(stillOpen, TimeSpan.Zero);
+            Assert.AreEqual("", stillOpen.Wait(budget));
+        }
+    }
+
+    [TestMethod]
     public void UnfinishedHostRunsKeepTheirDirectoryAndFinishedRunsRemoveIt()
     {
         string bash = LocalBash();

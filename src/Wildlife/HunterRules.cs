@@ -96,6 +96,13 @@ namespace APIShared.Wildlife
     /// </remarks>
     public static class HunterMeatYieldEvents
     {
+        /// <summary>Enables host-authoritative repair of the shared butchered-prey history.</summary>
+        /// <remarks>Call during Unity startup before multiplayer admission on every peer that uses the
+        /// feature. Multiple consumers can enable the same record. Failure is independent of the save path;
+        /// check it before admitting a multiplayer feature that depends on this history.</remarks>
+        public static bool TryEnableMultiplayerResync(out string reason) =>
+            HuntablePreyRuntime.TryEnableMeatResync(out reason);
+
         /// <summary>Registers a handler. Returns false for invalid arguments, a duplicate identity, the wrong
         /// thread or unavailable Hunter sites.</summary>
         public static bool TryRegister(string ownerGuid, string registrationId, Action<HunterMeatYield> handler,

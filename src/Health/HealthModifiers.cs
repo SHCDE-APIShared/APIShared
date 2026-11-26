@@ -45,6 +45,12 @@ namespace APIShared.Health
         /// <summary>Failure reason, or an empty string when available.</summary>
         public static string UnavailableReason => HealthRuntime.UnavailableReason;
 
+        /// <summary>Enables the shared HP ledger during multiplayer repair, once per process (APIShared 0.69.0).</summary>
+        /// <remarks>Call on the Unity thread during LibraryLoaded, after native initialization and before
+        /// multiplayer admission. Consumers should require a successful result before enabling their MP
+        /// policy. Retained registrations and their settings must be consistent across peers.</remarks>
+        public static bool TryEnableMultiplayerResync(out string reason) => HealthRuntime.TryEnableMultiplayerResync(out reason);
+
         /// <summary>Registers an initially disabled policy; duplicate owner/local IDs are rejected.</summary>
         public static bool TryRegister(string ownerGuid, string registrationId,
             Func<HealthModifierContext, ValueModifierContribution> provider,
