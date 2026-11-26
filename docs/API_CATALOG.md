@@ -24,7 +24,9 @@ HP, process-rooted policy handles, saved original bases and linked siege towers.
 From 0.69.0, `TryEnableMultiplayerResync` opts the shared HP ledger into repair.
 See [health lifetime, migration and safety](HEALTH.md).
 `APIShared.Economy.MarketPriceModifiers` composes native per-lot base prices,
-including Human/AI contextual policies. See [market composition](MARKET_PRICE_MODIFIERS.md).
+including Human/AI contextual policies. `TryGetCompositionStatus` returns immutable
+provider/stage provenance, final bounds and a separately sampled current table value,
+without refreshing or evaluating providers. See [market composition and read-only status](MARKET_PRICE_MODIFIERS.md#read-only-composition-status).
 
 Local mapper-selection camera policies are available through
 `APIShared.Presentation.MapperSelectionCameraEvents`: ordered owner-bound Pre/Post

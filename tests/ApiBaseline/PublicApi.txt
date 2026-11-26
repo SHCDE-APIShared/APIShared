@@ -764,6 +764,28 @@ APIShared.Economy.FearPopularityRegistration | public void SetLevelContributions
 APIShared.Economy.FearPopularityRegistration | public void SetLevelModifiers(System.Collections.Generic.IReadOnlyDictionary<int, APIShared.Economy.PopularityModifierValues> contributions)
 APIShared.Economy.FearPopularityRegistration | public void SetMultiplier(decimal? multiplier)
 APIShared.Economy.FearPopularityRegistration | public void SetTargetedLevelContributions(System.Collections.Generic.IReadOnlyDictionary<int, APIShared.Economy.PopularityOverrideValues> contributions)
+APIShared.Economy.MarketPriceCompositionStatus | public sealed class APIShared.Economy.MarketPriceCompositionStatus
+APIShared.Economy.MarketPriceCompositionStatus | public APIShared.Economy.MarketPriceDirection Direction { get; }
+APIShared.Economy.MarketPriceCompositionStatus | public SHCDESE.Interop.eGoods Good { get; }
+APIShared.Economy.MarketPriceCompositionStatus | public System.Collections.Generic.IReadOnlyList<APIShared.Economy.MarketPriceContributionStatus> Contributions { get; }
+APIShared.Economy.MarketPriceCompositionStatus | public bool HasUnreconciledTableChange { get; }
+APIShared.Economy.MarketPriceCompositionStatus | public bool IsAIPlayer { get; }
+APIShared.Economy.MarketPriceCompositionStatus | public bool UsesSafetyBounds { get; }
+APIShared.Economy.MarketPriceCompositionStatus | public bool WasClamped { get; }
+APIShared.Economy.MarketPriceCompositionStatus | public int ComposedBasePrice { get; }
+APIShared.Economy.MarketPriceCompositionStatus | public int LastComposedTableBasePrice { get; }
+APIShared.Economy.MarketPriceCompositionStatus | public int MaximumBasePrice { get; }
+APIShared.Economy.MarketPriceCompositionStatus | public int MinimumBasePrice { get; }
+APIShared.Economy.MarketPriceCompositionStatus | public int ObservedTableBasePrice { get; }
+APIShared.Economy.MarketPriceCompositionStatus | public int OriginalBasePrice { get; }
+APIShared.Economy.MarketPriceCompositionStatus | public int? ForeignBasePrice { get; }
+APIShared.Economy.MarketPriceContributionStatus | public struct APIShared.Economy.MarketPriceContributionStatus
+APIShared.Economy.MarketPriceContributionStatus | public APIShared.Modifiers.ValueModifierContribution Contribution { get; }
+APIShared.Economy.MarketPriceContributionStatus | public bool ProviderFailed { get; }
+APIShared.Economy.MarketPriceContributionStatus | public bool SupersededByFixedValue { get; }
+APIShared.Economy.MarketPriceContributionStatus | public int Order { get; }
+APIShared.Economy.MarketPriceContributionStatus | public string OwnerGuid { get; }
+APIShared.Economy.MarketPriceContributionStatus | public string RegistrationId { get; }
 APIShared.Economy.MarketPriceDirection | public enum APIShared.Economy.MarketPriceDirection : int
 APIShared.Economy.MarketPriceDirection | Buy = 0
 APIShared.Economy.MarketPriceDirection | Sell = 1
@@ -780,6 +802,7 @@ APIShared.Economy.MarketPriceModifierContext | public int OriginalBasePrice { ge
 APIShared.Economy.MarketPriceModifierHandle | public sealed class APIShared.Economy.MarketPriceModifierHandle
 APIShared.Economy.MarketPriceModifierHandle | public void SetEnabled(bool enabled)
 APIShared.Economy.MarketPriceModifiers | public static class APIShared.Economy.MarketPriceModifiers
+APIShared.Economy.MarketPriceModifiers | public static bool TryGetCompositionStatus(SHCDESE.Interop.eGoods good, APIShared.Economy.MarketPriceDirection direction, bool isAIPlayer, out APIShared.Economy.MarketPriceCompositionStatus status, out string reason)
 APIShared.Economy.MarketPriceModifiers | public static bool TryRegister(string ownerGuid, string registrationId, System.Func<APIShared.Economy.MarketPriceModifierContext, APIShared.Modifiers.ValueModifierContribution> provider, out APIShared.Economy.MarketPriceModifierHandle handle, out string reason, int order = 0)
 APIShared.Economy.MarketPriceModifiers | public static long CallbackFailures { get; }
 APIShared.Economy.MarketPriceModifiers | public static void Refresh()

@@ -25,7 +25,8 @@ namespace APIShared.Economy
         private sealed class Cell
         {
             internal int Baseline, Foreign, Applied, AI;
-            internal bool HasForeign, Owned;
+            internal bool HasForeign, Owned, StatusReady;
+            internal MarketPriceCompositionTrace TableTrace, AITrace;
         }
         private readonly int goods;
         private readonly Func<int, bool, int> read, defaults;
@@ -63,19 +64,28 @@ namespace APIShared.Economy
             }
         }
 
-        internal void Refresh(Func<int, bool, bool, int, int?, MarketPriceResolution> resolve, Action<string> error)
+        internal void Refresh(Func<int, bool, bool, int, int?, MarketPriceResolution> resolve, Action<string> error) =>
+            Refresh((good, buying, ai, baseline, foreign, trace) => resolve(good, buying, ai, baseline, foreign), error);
+
+        internal void Refresh(Func<int, bool, bool, int, int?, MarketPriceCompositionTrace, MarketPriceResolution> resolve,
+            Action<string> error)
         {
             HasContextualPrices = false;
             for (int good = 0; good < goods; good++) for (int side = 0; side < 2; side++)
             {
                 bool buying = side == 0; var cell = cells[Index(good, buying)];
                 if (cell == null) continue;
+                // A failed latest reconciliation cannot lend an older explanation to current prices.
+                // This metadata does not change existing setter, ownership or recovery behavior.
+                cell.StatusReady = false;
+                if (cell.TableTrace == null) cell.TableTrace = new MarketPriceCompositionTrace();
+                if (cell.AITrace == null) cell.AITrace = new MarketPriceCompositionTrace();
                 try
                 {
                     int current = Observe(good, buying, cell);
                     int? foreign = cell.HasForeign ? cell.Foreign : (int?)null;
-                    MarketPriceResolution result = resolve(good, buying, false, cell.Baseline, foreign);
-                    MarketPriceResolution ai = resolve(good, buying, true, cell.Baseline, foreign);
+                    MarketPriceResolution result = resolve(good, buying, false, cell.Baseline, foreign, cell.TableTrace);
+                    MarketPriceResolution ai = resolve(good, buying, true, cell.Baseline, foreign, cell.AITrace);
                     cell.AI = ai.Price;
                     if (result.Price != current)
                     {
@@ -86,6 +96,7 @@ namespace APIShared.Economy
                     else if (!result.Own) cell.Owned = false;
                     cell.Applied = result.Price;
                     HasContextualPrices |= cell.AI != result.Price;
+                    cell.StatusReady = cell.TableTrace.Complete && cell.AITrace.Complete;
                 }
                 catch (Exception ex) { error?.Invoke("Market-price cell " + good + "/" + side + " failed: " + ex.Message); }
             }
@@ -98,6 +109,25 @@ namespace APIShared.Economy
             { cell.HasForeign = true; cell.Foreign = current; cell.Owned = false; cell.Applied = current; }
             return current;
         }
+        // Called under the same engine monitor as Refresh/Save/End. Read directly rather than
+        // Observe: a UI query must not classify foreign writes or mutate persistence/ownership.
+        internal bool TryGetCompositionStatus(int good, bool buying, bool ai,
+            out MarketPriceCompositionStatus status, out string reason)
+        {
+            status = null;
+            if (good < 0 || good >= goods)
+            { reason = "The native good is outside this price table."; return false; }
+            var cell = cells[Index(good, buying)];
+            if (cell == null || !cell.StatusReady)
+            { reason = "No completed current cell reconciliation is available."; return false; }
+            int current;
+            try { current = read(good, buying); }
+            catch (Exception ex)
+            { reason = "The current market table could not be read: " + ex.Message; return false; }
+            status = (ai ? cell.AITrace : cell.TableTrace).Snapshot(good, buying, ai, current, cell.TableTrace.Price);
+            reason = string.Empty; return true;
+        }
+
         internal int AppliedPrice(int good, bool buying) => cells[Index(good, buying)].Applied;
         internal int AIPrice(int good, bool buying) => cells[Index(good, buying)].AI;
 
