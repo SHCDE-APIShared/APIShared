@@ -20,7 +20,7 @@ namespace APIShared
 {
     internal sealed unsafe partial class UnitHudPresentationService
     {
-        private void RenderTroopCategories(HUD_Troops panel)
+        private void RenderTroopCategories(HUD_Troops panel, int requestedPage)
         {
             HudWorkBuffers buffers = RentHudBuffers();
             try
@@ -35,7 +35,7 @@ namespace APIShared
                 bool selectionComplete = TryCaptureSelectedUnits(selected, buffers.Seen);
                 List<DisplayEntry> entries = BuildEntries(selected, vanillaCounts, selectionComplete, UnitHudSurface.TroopSelection, buffers);
                 int pages = Math.Max(1, (entries.Count + TroopSlotCount - 1) / TroopSlotCount);
-                int page = Math.Max(0, Math.Min((int)CurrentPageField.GetValue(panel), pages - 1));
+                int page = Math.Max(0, Math.Min(requestedPage, pages - 1));
                 PagesField.SetValue(panel, pages);
                 CurrentPageField.SetValue(panel, page);
                 SelectedTypeCountField.SetValue(panel, entries.Count);
@@ -63,6 +63,8 @@ namespace APIShared
                         button.Tag = entry.Category.Key;
                         button.ToolTip = ResolveText(entry.Category, UnitHudTextKind.DisplayName);
                         if (button.IsMouseOver) ShowTroopHover(button, button.ToolTip as string);
+                        // Slots are reused: do not inherit the previous Vanilla portrait's vertical offset.
+                        positions[slot].Y = 0f;
                         host.RenderTransform = positions[slot];
                         ImageSource source = ResolveCategoryImage(entry.Category, UnitHudSurface.TroopSelection, panel);
                         ApplyTroopButtonImages(button, entry.Category, panel, source);

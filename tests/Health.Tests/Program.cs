@@ -1,5 +1,7 @@
 using System;
+using System.Linq;
 using APIShared.Health;
+using APIShared.Multiplayer;
 using APIShared.Modifiers;
 using SHCDESE.API;
 using SHCDESE.API.Components.SaveData;
@@ -148,7 +150,72 @@ internal static class Program
         state.Records.Add(state.Records[0]);rejected=false;try{state.Encode();}catch(InvalidOperationException){rejected=true;}Check(rejected,"duplicate archive IDs rejected");
         DormantHistory();
         DormantAndExcludedTowers();
+        RepairedReplacement();
         Console.WriteLine($"Health production-source fixture: {checks} checks passed.");
+    }
+
+    private static void RepairedReplacement()
+    {
+        Check(HealthModifiers.TryEnableMultiplayerResync(out _) && HealthModifiers.TryEnableMultiplayerResync(out _) &&
+            MultiplayerResyncData.Registrations == 1, "health repair is a shared opt-in");
+        Reset(); factor = 2;
+        World.Units[0] = Unit(10000, 5000, global: 10);
+        World.Units[1] = Unit(80, 40, global: 20);
+        World.Buildings[0] = Building(1000, 500, global: 110);
+        World.Start(); World.Tick();
+        World.Units[2] = Unit(200, global: 30);
+        World.Units[2].r_AliveState = AliveState.NeedsInit;
+        HealthNativeObserver.Callback(3);
+        GameUnit repairedUnit = World.Units[0], pendingUnit = World.Units[2];
+        GameBuilding repairedBuilding = World.Buildings[0];
+        int calls = policyCalls;
+        byte[] repair = MultiplayerResyncData.Capture();
+        Check(repair.Length <= MultiplayerResyncData.MaximumBytes && policyCalls == calls &&
+            World.Units[2].r_MaxHealth == 200, "late capture leaves pending work and native health unchanged");
+
+        Reset(); factor = 2;
+        World.Units[0] = Unit(70, 35, global: 7);
+        World.Units[1] = Unit(20, 10, global: 20);
+        World.Buildings[0] = Building(200, 100, global: 107);
+        World.Start(); World.Tick();
+        // Raw Vanilla repair replaces slot 1 without raising type initialization or spawn.
+        World.Units[0] = repairedUnit;
+        World.Buildings[0] = repairedBuilding;
+        World.Units[2] = pendingUnit;
+        World.Units[1] = Unit(50, 25, eChimps.CHIMP_TYPE_PEASANT, global: 20);
+        calls = policyCalls;
+        object prepared = MultiplayerResyncData.Prepare(repair);
+        Check(!HealthSaveState.Decode(Save()).Records.Any(record => record.Kind == HealthObjectKind.Unit && record.Id == 1),
+            "prepare has not published the replacement basis");
+        MultiplayerResyncData.Commit(prepared);
+        Check(policyCalls == calls && World.Units[0].r_MaxHealth == 20000 && World.Units[0].r_CurrentHealth == 10000 &&
+            World.Buildings[0].r_MaxHealth == 2000 && World.Buildings[0].r_CurrentHealth == 1000,
+            "capture, prepare and commit leave wounded native HP untouched");
+
+        World.Units[2].r_AliveState = AliveState.IsAlive;
+        World.Tick();
+        Check(World.Units[2].r_MaxHealth == 400, "repaired pending generation initializes once");
+        World.Tick();
+        Check(World.Units[2].r_MaxHealth == 400 && World.Units[1].r_MaxHealth == 50 &&
+            !HealthSaveState.Decode(Save()).Records.Any(record => record.Kind == HealthObjectKind.Unit && record.Id == 2),
+            "unmatched live identity inherits neither the old local basis nor the host basis");
+
+        byte[] archive = Save();
+        Check(SavedUnit(archive).Basis == 10000, "save stores the repaired unit's original host basis");
+        byte[] malformed = (byte[])repair.Clone();
+        malformed[0] = 255;
+        bool rejected = false;
+        try { MultiplayerResyncData.Prepare(malformed); }
+        catch (System.IO.InvalidDataException) { rejected = true; }
+        Check(rejected && SavedUnit(Save()).Basis == 10000, "invalid repair bytes cannot partially replace the live ledger");
+
+        Reset(); factor = 2;
+        World.Units[0] = repairedUnit;
+        World.Buildings[0] = repairedBuilding;
+        Load(archive); World.Tick();
+        Check(World.Units[0].r_MaxHealth == 20000 && World.Units[0].r_CurrentHealth == 10000 &&
+            World.Buildings[0].r_MaxHealth == 2000 && World.Buildings[0].r_CurrentHealth == 1000,
+            "wounded repaired replacements survive save and load without doubling HP again");
     }
 
     private static void DormantHistory()

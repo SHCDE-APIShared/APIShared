@@ -59,12 +59,15 @@ one optional confirmed selected-Lord callback. It caches no content. ExtendedDat
 retains Lord selection/transport authority and supplies the current verified source;
 its legacy facade adapts results. See [mod data access](docs/MOD_DATA.md).
 
-The separate `bootstrap` project implements the development-only
-[early dependency correction](docs/DEPENDENCY_BOOTSTRAP.md). It does not reference
+The separate `bootstrap` project implements the
+[early dependency correction](docs/DEPENDENCY_BOOTSTRAP.md) and runs the Workshop installation pass
+([safe installation](docs/WORKSHOP.md)) before the chainloader. It does not reference
 the main APIShared assembly; it binds the selected runtime by a validated package
 pair and owns its hooks for process lifetime. It is outside the runtime source glob. Its `src/EarlyEntry` contains the minimal
 listener entry, `src/DependencyCorrection` keeps provider policy and its hook owner
 together, `src/Package` owns pair validation, and `src/Diagnostics` owns tracing.
+`src/Workshop` runs the [Workshop installation pass](docs/WORKSHOP.md#installation-preloader-swap)
+from Finish with the source-linked `src/Workshop/Install/WorkshopSafeInstall.cs`.
 Package/build tools remain under `tools`; isolated tests live under
 `tests/DependencyBootstrap.Tests`. This assembly boundary is required by its earlier
 load phase; it is not a second public APIShared service runtime.
@@ -85,7 +88,7 @@ load phase; it is not a second public APIShared service runtime.
 | Audio | SFX and unit-voice presentation, audited source contexts, prepared voice resources and shared rule events |
 | Presentation | Shared UI presentation and grouped Lord-message audio, video and text replacement |
 | Economy | Shared market/production rules, exact output compilation, admission and validated native ownership |
-| Workshop | Steam publishing, receipt-based plans and separate post-exit transactions |
+| Workshop | Steam publishing, receipt-based plans, staging and the preloader installation swap at the next start |
 
 Participant inspection uses the existing lobby registrations and
 `ModSettingsApplication.Endpoints` snapshots. One discovery implementation supplies
@@ -146,6 +149,7 @@ src/
     GoodsWallet/                direct native gold and callback-free prepared virtual-stock publication
     WeaponProduction/           weapon workshop recipes, selection, batches and HUD
   Wildlife/                     herd runtime and huntable-prey registrations
+  Sight/                        Vanilla line-of-sight queries and sight-blocking building rules
   Missions/                     mission contracts, state and event relay
   Networking/                   owner-bound Chore, authenticated Chore and control-plane channels
   Simulation/                   native map ticks, mission clock and Peace Time reader
@@ -153,14 +157,17 @@ src/
     ViewIdentity/               shared player-view identity core, Save scope and runtime root
     Control/                    spectator input boundaries and the input-actor owner
   Workshop/                     package contracts, file policy, Steam callbacks and UI
+    Install/                    installation core shared with the preloader (staging, swap, recovery)
   Buildings/
     Repair/                     repair contracts and service
     Gatehouse/                  timing, origin and drawbridge coordination
     EnemyProximity/             enemy-unit proximity policies, registry and read-only native query
+    State/                      owner-bound per-building values, request Chore, save record and native layout
   Presentation/
     Events/                     named HUD Pre/Post publishers
     UiWork/                     owner-bound deferred Unity work and coalesced refreshes
     AllyGoods/                  ally goods-panel selection, extensions and adornments
+    BuildingPanel/              shared building-panel host, open-building detection and sections
     IngameMenu/                 in-game menu rows, actions and tooltips
     MapperCamera/               mapper camera bridge and selection-camera events
     VisibleMap/                 visible map render bounds and events
@@ -177,6 +184,7 @@ src/
     UI/                         search and tooltip presentation
     Internal/                   JSON parser and atomic file replacement
   Units/
+    Identity/                   exact owner-local troop variants, immutable views and versioned identity persistence
     Selection/                  unit access, local and marked unit selection
     AiMilitary/                 AI military placement, orders, quota and engineering provenance
     Commands/                   managed GameAction Pre/Accepted/Post contracts
@@ -196,8 +204,8 @@ Folder paths do not change C# namespaces or public API identity.
 
 `src/Workshop/Proton` owns internal Linux/Wine path and process helpers. The independent
 `proton-fix` project source-links those helpers without an APIShared runtime dependency.
-Its manual preloader owns the Extender installation correction; APIShared changes only
-its own updater. See [ownership and lifetime](docs/WORKSHOP.md#independent-linux-first-install-patcher).
+Its manual preloader owns the Extender installation correction. See
+[ownership and lifetime](docs/WORKSHOP.md#independent-linux-first-install-patcher).
 
 ## Deciding what belongs here
 
@@ -217,6 +225,15 @@ Economy/AiMarketSellPolicies separately owns final reserve and pre-booking quant
 spans. Ordered optional adjusters compose before OR-combined native safety. The
 shared service has no default gameplay policy; consumers own synchronized settings.
 See [AI market sell policies](docs/AI_MARKET_SELL.md).
+
+`Multiplayer/MultiplayerResyncEvents` owns common native repair notifications.
+`MultiplayerResyncData` adds bounded, versioned host records and the shared completion
+barrier. Its static runtime owns registration, native/Steam adapters and process
+lifetime; the internal `MultiplayerResyncDataSession` is the single production
+state machine, also instantiated by deterministic multi-peer tests with injected
+transport, clock and world facts. Consumer codecs, tile rules, purchase bookkeeping
+and the choice to reset rather than transfer state remain in each mod. See the
+[provider contract](docs/THIRD_PARTY_GUIDE.md#host-authoritative-mod-data-during-repair).
 
 `Economy/WorkerProductionModifiers` prepares base amounts, fixed percentages and
 per-level fear contributions together for mission admission. The native production
@@ -440,9 +457,11 @@ Audio owns shared playback interception, source attribution, native source event
 and clip lifetimes. Consumers own their sound policies; native-context availability
 is independent of managed playback. See [Audio](docs/AUDIO.md) for contracts, implementation and measurements.
 
-Workshop owns publishing, receipt-based plans and post-exit transactions. Its
-persistent staging integration cleans previous APIShared releases; foreign maps
-remain Extender-owned. See [Workshop](docs/WORKSHOP.md) for workflows and implementation.
+Workshop owns publishing, receipt-based plans and installation. Confirmed changes
+are staged during the session; `src/Workshop/Install` is source-linked into the
+dependency bootstrap, whose preloader swaps whole plugin folders at the next start
+before BepInEx loads plugins. Its persistent staging integration cleans previous
+APIShared releases; foreign maps remain Extender-owned. See [Workshop](docs/WORKSHOP.md) for workflows and implementation.
 
 The load/save requester is also owned by Savegames. Its process-rooted managed hooks
 capture choice availability before Vanilla hides the view. Per-request gates run before
@@ -476,6 +495,12 @@ settings; block coordination remains independent of native-copy availability.
 Simulation/PeaceTimeState reads validated mission state without a timer or event.
 Both are prepared before native API publication can run consumer readiness
 callbacks. See [enemy proximity](docs/ENEMY_PROXIMITY.md).
+
+Buildings/State owns per-building value tables: one request Chore for all tables, one versioned
+record per table and a fixed native layout. Presentation/BuildingPanel owns the single
+`HUD_Buildings` section host and the open-building detection. Consumers own the meaning of the
+values, their controls, texts and activation. See [building state](docs/BUILDING_STATE.md) and
+[building panel sections](docs/BUILDING_PANELS.md).
 
 Players owns the player-view identity, the original-spectator and eliminated-participant
 views and spectator input control; consumers own their selection UI, activation and the

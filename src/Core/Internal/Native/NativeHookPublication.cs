@@ -29,6 +29,15 @@ namespace APIShared
             if (transaction.Options.InstallOnCommit)
                 throw new InvalidOperationException("Commit already wrote these patches; create the transaction with InstallOnCommit = false.");
             if (publication == null) throw new ArgumentNullException(nameof(publication));
+            // Foreign patches inside any prepared span refuse the whole candidate before Begin, so it
+            // stays unpublished and the owner's RollbackUnpublished still disposes it and its claim. A
+            // started publication keeps Begin's existing failure/replay behavior.
+            string feature = null;
+            if (NativeForeignPatchGuard.IsBound && !publication.HasStarted)
+            {
+                feature = NativeForeignPatchGuard.FeatureOf(transaction, callbackOwner, validate);
+                NativeForeignPatchGuard.RequireUnpatched(result.Installed, feature);
+            }
             publication.Begin(transaction, result, callbackOwner);
             try
             {
@@ -42,6 +51,8 @@ namespace APIShared
                 publication.Fail(error);
                 throw;
             }
+            // Only a fully validated publication is watched; Watch never throws.
+            if (feature != null) NativeForeignPatchGuard.Watch(result.Installed, feature);
         }
     }
 

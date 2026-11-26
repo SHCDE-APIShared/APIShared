@@ -152,6 +152,7 @@ namespace APIShared.ModSettings
                         else snapshot = MissionModSettingsPreparation.CopySnapshot(item.Value.System_CreateDisabledMissionPresetSnapshot());
                         if (entry != null && !materialized)
                         {
+                            var selected = new Dictionary<string, byte[]>(StringComparer.Ordinal);
                             if (!current || backend)
                             {
                                 // Resolve Player from owned values on a local/host model.
@@ -161,15 +162,16 @@ namespace APIShared.ModSettings
                                     ? playerModel.System_CreatePlayerMissionPresetSnapshot() : null;
                                 foreach (string name in entry.PlayerSettings ?? Array.Empty<string>())
                                     if (properties.TryGetValue(name, out PropertyInfo property))
-                                        snapshot[name] = own != null && own.TryGetValue(name, out byte[] playerBytes)
+                                        selected[name] = own != null && own.TryGetValue(name, out byte[] playerBytes)
                                             ? (byte[])playerBytes.Clone()
                                             : MessagePackSerializer.Serialize(property.PropertyType, property.GetValue(item.Value));
                             }
                             if (entry.Overrides != null)
                                 foreach (var setting in entry.Overrides)
                                     if (properties.TryGetValue(setting.Key, out PropertyInfo property))
-                                        snapshot[setting.Key] = MessagePackSerializer.Serialize(property.PropertyType,
+                                        selected[setting.Key] = MessagePackSerializer.Serialize(property.PropertyType,
                                             ModSettingsPresetJson.ConvertValue(setting.Value, property.PropertyType));
+                            MissionModSettingsPreparation.OverlaySelectedSnapshot(item.Value, snapshot, selected, properties);
                         }
                         if (!materialized)
                         {
@@ -186,7 +188,8 @@ namespace APIShared.ModSettings
                         // Root ownership before any mutation, including an Enter which changes state and then throws.
                         active.Add(item.Item1, item.Item2);
                         if (item.Item2 is IModSettingsMissionSourceEndpoint source) source.System_SetExplicitMissionSettings(item.Item4);
-                        item.Item2.System_EnterMissionPreset(item.Item3, label, editable);
+                        using (ModSettingsMigration.PrepareMissionEntry(item.Item2))
+                            item.Item2.System_EnterMissionPreset(item.Item3, label, editable);
                         ModSettingsApplication.RestorePreparedSources(item.Item1);
                     }
                     hasPreparedContext = true;

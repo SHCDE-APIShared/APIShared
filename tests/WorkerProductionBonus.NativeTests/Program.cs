@@ -72,7 +72,12 @@ internal static partial class Program
                 TestHunterSites();
                 TestHunterOwnerGates();
                 TestHerdFlightGates();
+                TestCorpseLifetimeSites();
+                TestMapperAvailability();
+                TestChickenTarget();
+                TestSightBuildingDispatch();
                 TestWeaponProductionAdapters();
+                TestProductionReceiptNative();
                 TestWeaponStoredDelivery();
             }
             finally { VirtualFree(image, UIntPtr.Zero, 0x8000); }

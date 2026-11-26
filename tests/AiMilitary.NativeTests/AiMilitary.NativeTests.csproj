@@ -17,5 +17,6 @@
     <Compile Include="../../src/Units/AiMilitary/Engineering/AiBuildProvenance.cs" Link="Production/AiBuildProvenance.cs" />
     <Compile Include="../../src/Core/NativeSites/NativeIndirectEntry.cs" Link="Production/NativeIndirectEntry.cs" />
     <Compile Include="../../src/Units/AiMilitary/Native/AiObserverDemandGate.cs" Link="Production/AiObserverDemandGate.cs" />
+    <Compile Include="../../src/Units/AiMilitary/Native/AiCastleDefenseTables.cs" Link="Production/AiCastleDefenseTables.cs" />
   </ItemGroup>
 </Project>

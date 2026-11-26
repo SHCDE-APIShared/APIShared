@@ -19,4 +19,6 @@ $info=[ordered]@{GUID=$Guid;Author='Workshop publisher';Name=$Name+' Workshop bo
 foreach ($name in @('TextCatalog.cs','UiText.cs','GameLocale.cs')) {
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot ('../src/Localization/'+$name)) -Destination (Join-Path $Directory 'Localization')
 }
+# The bootstrap's prompt uses APIShared's native message box (compiled with the Localization sources).
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot '../src/Presentation/NativeMessageBox.cs') -Destination (Join-Path $Directory 'Localization')
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot '../Locales') -Destination (Join-Path $Directory 'Locales') -Recurse

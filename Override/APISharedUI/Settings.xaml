@@ -56,6 +56,12 @@
       </Button.ToolTip>
     </Button>
     <TextBlock Text="{Binding PendingMessage}" Foreground="#FFF2D48A" TextWrapping="Wrap" Margin="0,8,0,0"/>
+    <Button Content="{Binding WithdrawLabel}" Command="{Binding WithdrawCommand}" Visibility="{Binding WithdrawVisibility}"
+            HorizontalAlignment="Left" Padding="12,4" Margin="0,4,0,4" ToolTipService.ShowDuration="60000">
+      <Button.ToolTip>
+        <ToolTip Style="{StaticResource ModSettingsToolTipStyle}" apiui:SharedToolTipSizing.Enabled="True" Content="{Binding WithdrawHelp}"/>
+      </Button.ToolTip>
+    </Button>
     <TextBlock Text="{Binding Message}" Foreground="#FFF2D48A" TextWrapping="Wrap"/>
     <Border Visibility="{Binding PreviewVisibility}" BorderBrush="#FFF2D48A" BorderThickness="1" Padding="10" Margin="0,8,0,0">
       <StackPanel>

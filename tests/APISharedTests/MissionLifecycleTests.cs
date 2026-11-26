@@ -11,6 +11,24 @@ namespace APISharedTests
     public sealed class MissionLifecycleTests
     {
         [TestMethod]
+        public void MultiplayerRestartOnlyIgnoresRotationsRewrittenByVanilla()
+        {
+            var setup = new EngineInterface.MultiplayerSetupData();
+            var overwrittenSlots = new[] { 2 };
+            string source = MissionLifecycleService.MultiplayerRestartSetupIdentity(setup, overwrittenSlots);
+            string coop = MissionLifecycleService.MultiplayerRestartSetupIdentity(setup, Array.Empty<int>());
+
+            setup.preferredAIVs[1] = -3;
+            Assert.AreEqual(source, MissionLifecycleService.MultiplayerRestartSetupIdentity(setup, overwrittenSlots));
+            Assert.AreNotEqual(coop, MissionLifecycleService.MultiplayerRestartSetupIdentity(setup, Array.Empty<int>()));
+            setup.preferredAIVs[0] = -2;
+            Assert.AreNotEqual(source, MissionLifecycleService.MultiplayerRestartSetupIdentity(setup, overwrittenSlots));
+            setup.preferredAIVs[0] = 0;
+            setup.start_keep_location_order[1] = 3;
+            Assert.AreNotEqual(source, MissionLifecycleService.MultiplayerRestartSetupIdentity(setup, overwrittenSlots));
+        }
+
+        [TestMethod]
         public void NativeAdmissionAbortUnwindsTheWholeStartAndDoesNotHideUnrelatedExceptions()
         {
             int originalCalls = 0, postLoadCalls = 0;

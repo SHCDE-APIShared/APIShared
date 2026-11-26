@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -25,6 +26,8 @@ namespace APIShared.Economy
         private static WorkerProductionLaunchBundle frozenBundle;
         private static WorkerProductionLaunchBundle observedBundleReference;
         private static WorkerProductionAgreementDescriptor frozenDescriptor;
+        private static RestartAgreement restartApproval;
+        private static string startingDigest, admittedDigest;
         private static WeaponProductionCatalog frozenWeaponCatalog;
         // Huntable prey shares this mission owner and its peer agreement; it has no save record.
         private static Wildlife.HuntablePreyCatalog frozenHuntingCatalog;
@@ -37,6 +40,27 @@ namespace APIShared.Economy
         private static long session;
         private static IntPtr auditedImage;
         private static bool initialized,restored,worldNativeLoaded;
+        // This means the common mission admission/run fence is registered, not that
+        // optional production features or their native cohorts are available.
+        internal static bool HasLifecycleOwner => initialized;
+        internal sealed class RestartAgreement
+        {
+            internal readonly string StartingDigest, AdmittedDigest;
+            internal RestartAgreement(string startingDigest, string admittedDigest)
+            { StartingDigest = startingDigest; AdmittedDigest = admittedDigest; }
+        }
+
+        internal static bool TryCaptureRestartApproval(long sourceSession, out RestartAgreement approval)
+        {
+            approval=null;
+            if(!initialized)return true;
+            if(session!=sourceSession || !WorkerProductionWorldSafety.IsAdmitted ||
+                WorkerProductionWorldSafety.IsFaulted || admittedDigest==null)return false;
+            approval=new RestartAgreement(startingDigest,admittedDigest);
+            return true;
+        }
+        private static WorkerProductionAdmissionWait admissionWait;
+        private static bool retryingAdmission;
         internal static ulong CurrentCommonDenominator => Volatile.Read(ref activeRules)?.CommonDenominator ?? SavedCommonDenominator();
         internal static bool BaseAvailable => WorkerProductionBonusNativeRuntime.IsAvailable && WorkerProductionYieldContext.IsAvailable && WorkerProductionOutputNativeRuntime.IsAvailable &&
             WorkerProductionStateRuntime.IsAvailable && WorkerProductionWorldSafety.IsAvailable;
@@ -201,15 +225,106 @@ namespace APIShared.Economy
         }
         private static void AgreementChanged()
         {
-            if(session==0 || WorkerProductionWorldSafety.IsAdmitted || WorkerProductionWorldSafety.IsFaulted)return;
+            // Refresh publishes intermediate states synchronously. Evaluate the final result once.
+            if(retryingAdmission || session==0 || WorkerProductionWorldSafety.IsAdmitted || WorkerProductionWorldSafety.IsFaulted)return;
             lock(WorkerProductionWorldSafety.EngineGate)
             {
                 var context=MissionLifecycleService.ActiveContext;
                 if(context==null || context.SessionId!=session || context.Mode.Kind==GameModeKind.Unknown)return;
                 // Network completion does not release physics before NativeLoaded/Started.
                 if(!worldNativeLoaded)return;
-                if(!TryActivate(context.Mode,true,out string reason) && reason!=null)WorkerProductionWorldSafety.Fault(reason);
+                CompleteAdmission(context);
             }
+        }
+
+        private static void CompleteAdmission(MissionContext context)
+        {
+            if (WorkerProductionWorldSafety.IsAdmitted || WorkerProductionWorldSafety.IsFaulted)
+            { CancelAdmissionWait(); return; }
+            if (admissionWait?.Expired == true) { FailAdmissionTimeout(); return; }
+            try
+            {
+                if (TryActivate(context.Mode, true, out string reason))
+                {
+                    CancelAdmissionWait();
+                    return;
+                }
+                if (reason != null)
+                {
+                    CancelAdmissionWait();
+                    WorkerProductionWorldSafety.Fault(reason);
+                }
+                else if (context.Mode.IsRealMultiplayer && admissionWait == null)
+                {
+                    long expectedSession = context.SessionId;
+                    long generation = WorkerProductionWorldSafety.Generation;
+                    admissionWait = new WorkerProductionAdmissionWait(Stopwatch.GetTimestamp, ScheduleAdmissionCheck,
+                        () => CheckAdmission(expectedSession, generation, false),
+                        () => CheckAdmission(expectedSession, generation, true));
+                    admissionWait.Arm();
+                }
+            }
+            catch (Exception error)
+            {
+                CancelAdmissionWait();
+                WorkerProductionWorldSafety.Fault("Production admission failed: " + error.Message);
+            }
+        }
+
+        private static IDisposable ScheduleAdmissionCheck(Action check, TimeSpan delay)
+        {
+            // Use a separate one-shot timer for each scheduled callback. A queued callback
+            // remains bound to its wait object even if the mission ends before dispatch.
+            Action checkUnderGate = () =>
+            {
+                lock (WorkerProductionWorldSafety.EngineGate) check();
+            };
+            Timer timer = null;
+            timer = new Timer(_ =>
+            {
+                if (UnityMainThreadDispatch.TryEnqueue(checkUnderGate)) return;
+                try { timer.Change(TimeSpan.FromSeconds(1), Timeout.InfiniteTimeSpan); }
+                catch (ObjectDisposedException) { }
+            }, null, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
+            timer.Change(delay, Timeout.InfiniteTimeSpan);
+            return timer;
+        }
+
+        private static bool IsCurrentAdmission(MissionContext context, long expectedSession, long generation) =>
+            context?.SessionId == expectedSession && session == expectedSession &&
+            WorkerProductionWorldSafety.Generation == generation;
+
+        private static bool CheckAdmission(long expectedSession, long generation, bool expired)
+        {
+            var context = MissionLifecycleService.ActiveContext;
+            if (!IsCurrentAdmission(context, expectedSession, generation)) return false;
+            if (WorkerProductionWorldSafety.IsAdmitted || WorkerProductionWorldSafety.IsFaulted)
+            { CancelAdmissionWait(); return false; }
+            if (expired) { FailAdmissionTimeout(); return false; }
+            retryingAdmission = true;
+            try { WorkerProductionAgreement.RefreshAdmission(); }
+            finally { retryingAdmission = false; }
+            context = MissionLifecycleService.ActiveContext;
+            if (!IsCurrentAdmission(context, expectedSession, generation)) return false;
+            CompleteAdmission(context);
+            return admissionWait != null;
+        }
+
+        private static void FailAdmissionTimeout()
+        {
+            CancelAdmissionWait();
+            var result = WorkerProductionAgreement.Current;
+            string detail = WorkerProductionAgreement.LastSendFailure;
+            if (string.IsNullOrEmpty(detail)) detail = result.Diagnostic;
+            if (string.IsNullOrEmpty(detail)) detail = result.Ready ? "No matching peer receipt." : result.Code;
+            WorkerProductionWorldSafety.Fault("Multiplayer production agreement timed out after " +
+                WorkerProductionAdmissionWait.TimeoutSeconds + " seconds: " + detail, showMessage: true);
+        }
+
+        private static void CancelAdmissionWait()
+        {
+            admissionWait?.Cancel();
+            admissionWait = null;
         }
         private static void StateChanged()
         {
@@ -229,15 +344,19 @@ namespace APIShared.Economy
                     if(session!=note.Context.SessionId)Begin(note.Context);
                     if(WorkerProductionWorldSafety.IsFaulted)return;
                     if(note.Phase==MissionInitializationPhase.NativeLoaded)worldNativeLoaded=true;
-                    TryActivate(note.Context.Mode,worldNativeLoaded,out string reason);
-                    if(reason!=null)WorkerProductionWorldSafety.Fault(reason);
+                    if (worldNativeLoaded) CompleteAdmission(note.Context);
+                    else if (!TryActivate(note.Context.Mode,false,out string reason) && reason!=null)
+                        WorkerProductionWorldSafety.Fault(reason);
                 }
                 catch(Exception error) { WorkerProductionWorldSafety.Fault("Production initialization rejected: "+error.Message); }
             }
         }
         private static void Begin(MissionContext context)
         {
+            CancelAdmissionWait();
             session=context.SessionId;
+            restartApproval=MissionLifecycleService.RestartProductionApproval(session);
+            admittedDigest=null;
             worldNativeLoaded=false;
             WorkerProductionWorldSafety.Admit(session,true);
             WorkerProductionModifiers.ClearRuntimeFault();
@@ -260,6 +379,13 @@ namespace APIShared.Economy
             frozenDescriptor=CaptureDescriptor();frozenSelectionPath=selectedPath;
             if(!frozenBundle.CanStart || frozenDescriptor.LocalFailure!=null)
                 throw new InvalidOperationException("Production rules/save requirements are invalid: "+frozenDescriptor.LocalFailure);
+            startingDigest=frozenDescriptor.Digest();
+            // Reviewed 2026-11-24, intentionally kept: compare with the source's starting digest, not its admitted one.
+            // A provider value recommitted after the source's Begin would make this differ and refuse the restart;
+            // providers publish on settings changes, which are locked during missions. Refusing is fail-safe;
+            // accepting the admitted digest instead would weaken the agreement check.
+            if(restartApproval!=null && restartApproval.StartingDigest!=startingDigest)
+                throw new InvalidOperationException("The multiplayer restart production rules or map records differ from the confirmed source mission.");
             bool extended=frozenBundle.RequiresExtendedWire || selectedRequirement.RequiresExtended || frozenWeaponCatalog.HasOptions;
             if((extended || frozenBundle.NeedsFullBackend) && !BaseAvailable)throw new InvalidOperationException(BackendDiagnostic());
             Volatile.Write(ref activeRules,null);Volatile.Write(ref *(long*)configurationSlot,0);
@@ -273,6 +399,7 @@ namespace APIShared.Economy
             reason=null;
             if(mode.Kind==GameModeKind.Unknown)
             { if(requireKnown)reason="The loaded production mission mode is unknown.";return false; }
+            if(!ProductionGoodsReceived.ValidateAdmission(mode,out reason))return false;
             var status=WorkerProductionModifiers.Prepare(mode);var candidate=WorkerProductionModifiers.CurrentPrepared;
             if(!status.CanStart || candidate==null || !WorkerProductionModifiers.IsCandidateInBundle(frozenBundle,mode,candidate))
             { reason="The actual production rules do not match the prepared launch bundle.";return false; }
@@ -280,21 +407,33 @@ namespace APIShared.Economy
             if(storedOutputReason != null) { reason=storedOutputReason;return false; }
             if(mode.IsRealMultiplayer)
             {
-                string receipt=WorkerProductionAgreement.ApprovedDescriptorDigest;
+                // The first startup may recommit a legacy provider at a later initialization
+                // checkpoint. Require the same early and final rules without a fresh lobby round.
+                string receipt=restartApproval==null ? WorkerProductionAgreement.ApprovedDescriptorDigest :
+                    requireKnown ? restartApproval.AdmittedDigest : restartApproval.StartingDigest;
                 if(receipt.Length==0 || frozenDescriptor==null || receipt!=frozenDescriptor.Digest())
                 {
+                    if(restartApproval!=null)
+                    {
+                        if(requireKnown)reason="The multiplayer restart production rules differ from the admitted source mission.";
+                        return false;
+                    }
                     string code=WorkerProductionAgreement.Current.Code;
-                    if(code=="Pending" || code=="Roster" || code=="Unavailable" || code.Length==0)
-                    {WorkerProductionAgreement.RequestRefresh();return false;}
+                    if(code=="Pending" || code=="Roster" || code=="Unavailable" || code.Length==0)return false;
                     reason="The current multiplayer production rules have no matching peer receipt: "+code;return false;
                 }
             }
             if(!WorkerProductionModifiers.ActivatePrepared(candidate,out reason))return false;
             if (!WeaponProductionRuntime.Activate(mode.IsMapEditor || mode.AllowsCustomGameMods, out reason)) return false;
             Wildlife.HuntablePreyRuntime.Activate(mode.IsMapEditor || mode.AllowsCustomGameMods);
+            if(requireKnown&&!ProductionGoodsReceived.Admit(session,mode,out reason))return false;
             reason=null;
-            if(requireKnown)WorkerProductionWorldSafety.ConfirmPrepared(candidate.FixedBonusPercent!=50 || candidate.HasFearChanges ||
-                WorkerProductionStateStore.WorldMode==WorkerProductionWorldMode.Extended);
+            if(requireKnown)
+            {
+                WorkerProductionWorldSafety.ConfirmPrepared(candidate.FixedBonusPercent!=50 || candidate.HasFearChanges ||
+                    WorkerProductionStateStore.WorldMode==WorkerProductionWorldMode.Extended);
+                if(mode.IsRealMultiplayer)admittedDigest=frozenDescriptor.Digest();
+            }
             return true;
         }
         internal static bool ValidateRestoredState(out string reason)
@@ -362,8 +501,7 @@ namespace APIShared.Economy
                 if(WorkerProductionStateRuntime.IsAvailable)WorkerProductionStateRuntime.ValidateStarted(session);
                 worldNativeLoaded=true;
                 if(WorkerProductionWorldSafety.IsAdmitted)return;
-                if(!WorkerProductionWorldSafety.IsFaulted && !TryActivate(note.Context.Mode,true,out string reason) && reason!=null)
-                    WorkerProductionWorldSafety.Fault(reason);
+                if(!WorkerProductionWorldSafety.IsFaulted)CompleteAdmission(note.Context);
             }
         }
         private static void Ended(MissionLifecycleNotification note)
@@ -371,14 +509,16 @@ namespace APIShared.Economy
             if(session!=note.Context.SessionId)return;
             lock(WorkerProductionWorldSafety.EngineGate)
             {
+                CancelAdmissionWait();
                 bool nextPrepared=selectedPath!=null && !restored &&
                     !string.Equals(selectedPath,frozenSelectionPath,StringComparison.OrdinalIgnoreCase);
                 WorkerProductionWorldSafety.Retire();
+                ProductionGoodsReceived.EndMission(session);
                 WeaponProductionRuntime.EndWorld();
                 Wildlife.HuntablePreyRuntime.EndWorld();
                 if(WorkerProductionStateRuntime.IsAvailable)WorkerProductionStateRuntime.EndWorld(session);
                 else WorkerProductionStateStore.Clear();
-                session=0;restored=false;
+                session=0;restored=false;restartApproval=null;startingDigest=admittedDigest=null;
                 Volatile.Write(ref activeRules,null);Volatile.Write(ref *(long*)configurationSlot,0);
                 if(WorkerProductionBonusNativeRuntime.IsAvailable)WorkerProductionBonusNativeRuntime.PublishPercent(50);
                 frozenBundle=null;frozenDescriptor=null;frozenSelectionPath=null;frozenWeaponCatalog=null;frozenHuntingCatalog=null;

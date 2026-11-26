@@ -334,6 +334,13 @@ namespace APIShared.Savegames
         /// state. The comparison detects differences and repairs nothing. At most
         /// <see cref="VersionedSaveData.MaximumSimulationRecords"/> registrations may declare it.</summary>
         public bool SimulationRelevant { get; set; }
+        /// <summary>Opt-in required fresh record, default false. Register after native initialization;
+        /// registration is refused unless the protected atomic writer is available. Capture runs once
+        /// under the actual engine monitor before native file creation. Archive serialization reuses
+        /// those frozen bytes; omitted/stale records or write failures prevent destination replacement.
+        /// Capture is read-only with respect to simulation: do not issue gameplay calls. The callback
+        /// must not save, wait for another thread, or acquire the engine monitor while holding its own state lock. Acquire consumer locks only inside this callback.</summary>
+        public bool RequireAtomicWrite { get; set; }
 
         /// <summary>Adds the step that turns a <paramref name="fromVersion"/> record into a
         /// <paramref name="fromVersion"/> + 1 record. Steps run in ascending order up to the current

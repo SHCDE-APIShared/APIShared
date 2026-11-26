@@ -11,13 +11,16 @@ using APIShared.Savegames;
 internal static class Boundary
 {
     internal static Delegate MapHook, SaveHook, RefreshHook;
-    internal static int MapStarts, SaveStarts, Captures, Popups, StartWithdrawals;
-    internal static bool MainThread = true, Prepare = true, SendOk = true, SaveVeto;
+    internal static int MapStarts, SaveStarts, Captures, Popups, StartWithdrawals, SaveExchangeChecks;
+    internal static bool MainThread = true, Prepare = true, SendOk = true, SaveVeto, SaveGuardWaiting;
+    internal static bool MapAliasHookAvailable = true;
     internal static ulong Local = 2001, Host = 2001;
     internal static string Settings = "host-settings", Path;
     internal static FileHeader LookupHeader;
+    internal static Func<string, bool, APIShared.Maps.MapLoadDecision> DecideMapLoad;
     internal static Action DuringCapture, DuringPrepare;
     internal static IReadOnlyList<SavegameRecordDigest> Records = Array.Empty<SavegameRecordDigest>();
+    internal static IReadOnlyList<SavegameRecordDigest> SaveRecords = Array.Empty<SavegameRecordDigest>();
     internal static readonly Dictionary<Type, Action<object, ulong>> Receivers = new Dictionary<Type, Action<object, ulong>>();
     internal static readonly List<object> Sent = new List<object>();
     internal static readonly List<string> Logs = new List<string>();
@@ -37,6 +40,20 @@ internal static class Boundary
     internal static void Receive<T>(T packet, ulong sender) where T : class => Receivers[typeof(T)](packet, sender);
 }
 namespace BepInEx.Logging { public sealed class ManualLogSource { } }
+namespace APIShared.Maps
+{
+    public static partial class MapLoadPolicy
+    {
+        internal static bool CanAlias => Boundary.MapAliasHookAvailable;
+
+        private static bool TryInstallNativeAlias(out string diagnostic)
+        {
+            // The tests cover managed admission; IL installation belongs to the game boundary.
+            diagnostic = null;
+            return CanAlias;
+        }
+    }
+}
 namespace SHCDESE.API { internal sealed class Unused { } }
 namespace UnityEngine { internal sealed class Unused { } }
 namespace Steamworks
@@ -169,7 +186,18 @@ namespace APIShared.Economy
 }
 namespace APIShared.Lobby
 {
-    internal readonly struct LobbyLaunchGuardDecision { internal bool Blocked => Boundary.SaveVeto; internal string Reason => "fixture save veto"; }
+    internal enum LobbyLaunchGuardState { Ready, Waiting, Rejected }
+    internal readonly struct LobbyLaunchGuardResult
+    {
+        internal LobbyLaunchGuardState State => Boundary.SaveGuardWaiting ? LobbyLaunchGuardState.Waiting : LobbyLaunchGuardState.Ready;
+        internal string Reason => Boundary.SaveGuardWaiting ? "fixture simulation acknowledgement pending" : null;
+    }
+    internal readonly struct LobbyLaunchGuardDecision
+    {
+        internal bool Blocked => Boundary.SaveVeto || Waiting;
+        internal bool Waiting => !Boundary.SaveVeto && Boundary.SaveGuardWaiting;
+        internal string Reason => Waiting ? "fixture simulation acknowledgement pending" : "fixture save veto";
+    }
     internal static class LobbyLaunchStatus
     {
         internal static void ReportPreparationWaiting(BepInEx.Logging.ManualLogSource fallback, string text, string detail,
@@ -190,6 +218,14 @@ namespace APIShared.Lobby
     internal static class LobbyLaunchGuards
     {internal static LobbyLaunchGuardDecision EvaluatePreparedMultiplayerLoad(int humans)=>default;}
 }
+namespace APIShared.Multiplayer
+{
+    internal static class SimulationAgreement
+    {
+        internal static Lobby.LobbyLaunchGuardResult AdvancePreparedSaveExchange(ulong lobbyId)
+        { Boundary.SaveExchangeChecks++; return default; }
+    }
+}
 namespace APIShared.ModSettings { internal static class ModSettingsApplication { internal static bool PrepareLaunch() { Boundary.DuringPrepare?.Invoke(); return Boundary.Prepare; } } }
 namespace APIShared.Savegames
 {
@@ -197,7 +233,7 @@ namespace APIShared.Savegames
     {
         internal static IReadOnlyList<SavegameRecordDigest> CaptureMapSimulationDigests(string path)
         { Boundary.Captures++; Boundary.DuringCapture?.Invoke(); return Boundary.Records; }
-        internal static IReadOnlyList<SavegameRecordDigest> CaptureSimulationDigests(string path) => Array.Empty<SavegameRecordDigest>();
+        internal static IReadOnlyList<SavegameRecordDigest> CaptureSimulationDigests(string path) => Boundary.SaveRecords;
     }
 }
 namespace APIShared
