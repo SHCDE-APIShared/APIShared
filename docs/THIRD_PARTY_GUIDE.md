@@ -2525,6 +2525,12 @@ coordinates physical custom credit, native cargo debit and the critical save pai
 Registration ownership, Armory-only routing, current offline/editor admission and
 native accounting limits are in the [workshop guide](WEAPON_PRODUCTION.md#produce-a-registered-custom-good).
 
+For carry art or diagnostics, use `TryGetWorkerBatch` from an existing held-engine
+boundary to read the tracked worker's latched option and phase. It supplies no
+quantity or native-only inference. Follow the [identity, home and world lifetime
+limits](WEAPON_PRODUCTION.md#observe-a-workers-latched-batch) and the opt-in
+[compiled helper](../examples/ThirdPartyMod/CustomWorkshopExample.cs).
+
 ## Huntable prey
 
 Register further unit types for Vanilla Hunters with `HuntablePrey.TryRegister`

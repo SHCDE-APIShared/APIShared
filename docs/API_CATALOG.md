@@ -1228,6 +1228,10 @@ already-paid native-timed Armourer work to a legacy storage import; Ready and Ca
 need separate qualified adoption. See [the recipe contract and example](WEAPON_PRODUCTION.md)
 and [paid manufacturing adoption](WEAPON_PRODUCTION.md#adopt-an-already-paid-legacy-manufacturing-charge).
 
+`TryGetWorkerBatch` provides an immutable protected observation of an existing
+additional-recipe worker's latched option, phase and exact worker/home identities;
+see [workflow and lifetime limits](WEAPON_PRODUCTION.md#observe-a-workers-latched-batch).
+
 ## Huntable prey
 
 Requires APIShared 0.38.0 or later. `APIShared.Wildlife.HuntablePrey` registers additional unit types that Vanilla
