@@ -97,8 +97,9 @@ namespace APISharedTests
             private const BindingFlags Flags = BindingFlags.Static | BindingFlags.NonPublic;
             private readonly string[] names = { "engine", "registrations", "active", "frozen", "buildings", "workers" };
             private readonly object[] before;
-            private readonly string[] safetyNames = { "engineGate", "runBoundary", "session", "reason", "notificationQueued", "faultReported", "log", "adoptionAdmission" };
+            private readonly string[] safetyNames = { "engineGate", "session", "reason", "notificationQueued", "faultReported", "log", "adoptionAdmission" };
             private readonly object[] safetyBefore;
+            private readonly object runBoundaryBefore;
             private readonly byte[] safetyNative = new byte[32];
             private bool activated;
             internal ManufacturingOwnerScope()
@@ -111,10 +112,16 @@ namespace APISharedTests
                 Assert.AreEqual(0, ((System.Collections.IDictionary)before[5]).Count);
                 safetyBefore = new object[safetyNames.Length];
                 for (int i = 0; i < safetyNames.Length; i++) safetyBefore[i] = SafetyField(safetyNames[i]).GetValue(null);
+                runBoundaryBefore = RunBoundaryField.GetValue(RunPublication);
                 Marshal.Copy(WorkerProductionWorldSafety.NativeFaultAddress, safetyNative, 0, safetyNative.Length);
             }
             private static FieldInfo Field(string name) => typeof(WeaponProductionRuntime).GetField(name, Flags);
             internal static FieldInfo SafetyField(string name) => typeof(WorkerProductionWorldSafety).GetField(name, Flags);
+            // The run boundary is published by the shared run-publication owner (#96).
+            private static object RunPublication => SafetyField("runPublication").GetValue(null);
+            private static FieldInfo RunBoundaryField => typeof(WorkerProductionRunPublication).GetField("current",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+            internal static void SetRunBoundary(WorkerProductionRunGate boundary) => RunBoundaryField.SetValue(RunPublication, boundary);
             internal WeaponProductionRegistration Register(NativeStoredGood output)
             {
                 var definition = new WeaponProductionOptionDefinition(eStructs.STRUCT_ARMOURERS_WORKSHOP,
@@ -146,6 +153,7 @@ namespace APISharedTests
                 {
                     Marshal.Copy(safetyNative, 0, WorkerProductionWorldSafety.NativeFaultAddress, safetyNative.Length);
                     for (int i = 0; i < safetyNames.Length; i++) SafetyField(safetyNames[i]).SetValue(null, safetyBefore[i]);
+                    RunBoundaryField.SetValue(RunPublication, runBoundaryBefore);
                     for (int i = 0; i < names.Length; i++) Field(names[i]).SetValue(null, before[i]);
                 }
             }
@@ -425,7 +433,7 @@ namespace APISharedTests
             var boundary = new WorkerProductionRunGate(fixture.Gate, () => WorkerProductionWorldSafety.Generation,
                 () => WorkerProductionWorldSafety.Enabled, () => WorkerProductionWorldSafety.IsFaulted,
                 () => WorkerProductionWorldSafety.IsAdmitted, original, WorkerProductionWorldSafety.ObserveNativeFault);
-            ManufacturingOwnerScope.SafetyField("runBoundary").SetValue(null, boundary);
+            ManufacturingOwnerScope.SetRunBoundary(boundary);
             return boundary;
         }
 
