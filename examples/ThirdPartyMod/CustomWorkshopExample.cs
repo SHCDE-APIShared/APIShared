@@ -22,5 +22,18 @@ namespace ThirdPartyMod
             return WeaponProduction.TryRegister(client.OwnerGuid, "alternate-armour", definition,
                 out registration, out reason);
         }
+
+        // Opt-in read from an existing callback that already holds the actual engine monitor.
+        // Keep art/role policy in the consumer; a false read retains its ordinary presentation.
+        // This reads no quantity and must not become a second worker/cargo registry.
+        internal static bool TryReadCarrierForPresentation(int unitId, uint globalId, NativeStoredGood registeredOutput,
+            out WeaponProductionWorkerBatch batch)
+        {
+            batch = default;
+            if (registeredOutput == null || !WeaponProduction.TryGetWorkerBatch(unitId, globalId, out var observed) ||
+                observed.Phase != WeaponProductionBatchPhase.Cargo ||
+                !object.ReferenceEquals(observed.Option.StoredOutput, registeredOutput)) return false;
+            batch = observed; return true;
+        }
     }
 }

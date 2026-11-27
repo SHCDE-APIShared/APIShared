@@ -1187,6 +1187,9 @@ It supplies the building HUD, Shift selection, synchronized execution and saved
 production state. `WithStoredOutput` binds an owner-matching registered Armory good
 for offline/editor production, with atomic native cargo/custom-stock delivery and
 verified joint save capture. See [the recipe contract and example](WEAPON_PRODUCTION.md).
+`TryGetWorkerBatch` provides an immutable protected observation of an existing
+additional-recipe worker's latched option, phase and exact worker/home identities;
+see [workflow and lifetime limits](WEAPON_PRODUCTION.md#observe-a-workers-latched-batch).
 
 ## Huntable prey
 
