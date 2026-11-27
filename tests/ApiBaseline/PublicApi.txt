@@ -962,21 +962,19 @@ APIShared.Economy.WeaponProduction | public static class APIShared.Economy.Weapo
 APIShared.Economy.WeaponProduction | public static APIShared.Networking.NetworkSendResult RequestSelection(int buildingId, uint globalId, APIShared.Economy.WeaponProductionOptionId optionId, bool allOfType = false)
 APIShared.Economy.WeaponProduction | public static System.Collections.Generic.IReadOnlyList<APIShared.Economy.WeaponProductionOption> GetOptions(SHCDESE.Interop.eStructs buildingType)
 APIShared.Economy.WeaponProduction | public static bool TryGetSelection(int buildingId, uint globalId, out APIShared.Economy.WeaponProductionSelection selection)
-APIShared.Economy.WeaponProduction | public static bool TryPrepareManufacturingAdoption(string ownerGuid, APIShared.Savegames.CriticalSaveParticipant participant, APIShared.Savegames.VersionedSaveLoad load, APIShared.Economy.NativeStorageImportPlan storageImport, System.Collections.Generic.IReadOnlyList<APIShared.Economy.WeaponProductionPaidManufacturing> actors, out APIShared.Economy.WeaponProductionManufacturingAdoption adoption, out string reason)
-APIShared.Economy.WeaponProduction | public static bool TryRegister(string ownerGuid, string optionId, APIShared.Economy.WeaponProductionOptionDefinition definition, out APIShared.Economy.WeaponProductionRegistration registration, out string reason)
-APIShared.Economy.WeaponProduction | public static bool TrySetAiNextOption(int buildingId, uint globalId, APIShared.Economy.WeaponProductionOptionId optionId)
-APIShared.Economy.WeaponProductionManufacturingAdoption | public sealed class APIShared.Economy.WeaponProductionManufacturingAdoption
-APIShared.Economy.WeaponProductionManufacturingAdoption | public APIShared.Economy.NativeStorageImportPlan StorageImport { get; }
-APIShared.Economy.WeaponProductionManufacturingAdoption | public System.Collections.Generic.IReadOnlyList<APIShared.Economy.WeaponProductionPaidManufacturing> Actors { get; }
-APIShared.Economy.WeaponProductionManufacturingAdoption | public long MissionSessionId { get; }
-APIShared.Economy.WeaponProductionManufacturingAdoption | public string OwnerGuid { get; }
 APIShared.Economy.WeaponProduction | public static bool TryGetWorkerBatch(int unitId, uint globalId, out APIShared.Economy.WeaponProductionWorkerBatch batch)
+APIShared.Economy.WeaponProduction | public static bool TryPrepareManufacturingAdoption(string ownerGuid, APIShared.Savegames.CriticalSaveParticipant participant, APIShared.Savegames.VersionedSaveLoad load, APIShared.Economy.NativeStorageImportPlan storageImport, System.Collections.Generic.IReadOnlyList<APIShared.Economy.WeaponProductionPaidManufacturing> actors, out APIShared.Economy.WeaponProductionManufacturingAdoption adoption, out string reason)
 APIShared.Economy.WeaponProduction | public static bool TryRegister(string ownerGuid, string optionId, APIShared.Economy.WeaponProductionOptionDefinition definition, out APIShared.Economy.WeaponProductionRegistration registration, out string reason)
 APIShared.Economy.WeaponProduction | public static bool TrySetAiNextOption(int buildingId, uint globalId, APIShared.Economy.WeaponProductionOptionId optionId)
 APIShared.Economy.WeaponProductionBatchPhase | public enum APIShared.Economy.WeaponProductionBatchPhase : int
 APIShared.Economy.WeaponProductionBatchPhase | Cargo = 2
 APIShared.Economy.WeaponProductionBatchPhase | LocalProduct = 1
 APIShared.Economy.WeaponProductionBatchPhase | Manufacturing = 0
+APIShared.Economy.WeaponProductionManufacturingAdoption | public sealed class APIShared.Economy.WeaponProductionManufacturingAdoption
+APIShared.Economy.WeaponProductionManufacturingAdoption | public APIShared.Economy.NativeStorageImportPlan StorageImport { get; }
+APIShared.Economy.WeaponProductionManufacturingAdoption | public System.Collections.Generic.IReadOnlyList<APIShared.Economy.WeaponProductionPaidManufacturing> Actors { get; }
+APIShared.Economy.WeaponProductionManufacturingAdoption | public long MissionSessionId { get; }
+APIShared.Economy.WeaponProductionManufacturingAdoption | public string OwnerGuid { get; }
 APIShared.Economy.WeaponProductionOption | public sealed class APIShared.Economy.WeaponProductionOption
 APIShared.Economy.WeaponProductionOption | public APIShared.Economy.NativeStoredGood StoredOutput { get; }
 APIShared.Economy.WeaponProductionOption | public APIShared.Economy.WeaponProductionOptionId Id { get; }
