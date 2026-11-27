@@ -232,8 +232,9 @@ namespace APIShared.Savegames
             try
             {
                 if (args == null || args.Phase != EventHookPhase.Pre || ReferenceEquals(loadAttempt, args)) return;
+                long missionSessionId = MissionLifecycleService.ExecutingSessionId;
                 loadAttempt = args;
-                registry?.BeginLoad(args.LoadingEditorMap ? VersionedSaveLoadSource.EditorMap : VersionedSaveLoadSource.SaveGame, args.FileName);
+                registry?.BeginLoad(args.LoadingEditorMap ? VersionedSaveLoadSource.EditorMap : VersionedSaveLoadSource.SaveGame, args.FileName, missionSessionId);
             }
             catch (Exception ex) { Report(ex); }
         }
@@ -242,9 +243,10 @@ namespace APIShared.Savegames
             try
             {
                 if (args == null || args.Phase != EventHookPhase.Pre || ReferenceEquals(loadAttempt, args)) return;
+                long missionSessionId = MissionLifecycleService.ExecutingSessionId;
                 loadAttempt = args;
                 registry?.BeginLoad(args.bMultiplayerSave != 0 || SavegameLoadCoordinator.IsLoadingMultiplayerSave
-                    ? VersionedSaveLoadSource.MultiplayerSave : VersionedSaveLoadSource.MapToPlay, args.FileName);
+                    ? VersionedSaveLoadSource.MultiplayerSave : VersionedSaveLoadSource.MapToPlay, args.FileName, missionSessionId);
             }
             catch (Exception ex) { Report(ex); }
         }

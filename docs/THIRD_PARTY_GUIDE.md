@@ -1118,6 +1118,9 @@ is ready, and treat `NoRecord` as a new mission. Follow the
 [record-version migration policy](SAVE_DATA.md#record-version-migration-policy) when the
 format changes, and add a legacy reader when you keep an identifier that already holds data.
 See [Save data](SAVE_DATA.md) and the [compiled example](../examples/ThirdPartyMod/SaveDataExample.cs).
+Consumers coupling early `Prepared` state to mission lifecycle notifications can use
+`VersionedSaveLoad.MissionSessionId`; require the provider build exporting that getter
+and follow its [association contract](SAVE_DATA.md#associating-archive-callbacks-with-a-mission-attempt).
 Keeping an identifier and adding a legacy reader only decodes that record; it
 does not atomically transfer stock, cargo or authority to another service. The
 [internal provenance/capture protocol](SAVE_DATA.md#tracked-origins-and-enrolled-captures)
