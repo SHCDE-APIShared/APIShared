@@ -9,6 +9,12 @@ The service owns physical rows, its private ledger and matching save entries.
 Recipes, hauling, art, player authorization and command transport remain consumer
 responsibilities. Existing overlapping private capacity detours must be migrated.
 
+Use `NativeStorageClient.TryExchangeBatch` for an authorized lot spanning several
+stores; looping single-store exchanges cannot make the lot atomic. Retain the
+original snapshots and owner sequence for an in-world retry. See
+[batch bounds, capacity and replay](NATIVE_STORAGE.md#atomic-multi-store-exchanges).
+This supplies no legacy-ledger import or consumer-save cutover authority.
+
 ## External production cargo
 
 Use the existing `NativeStorageClient` cargo methods when an external producer

@@ -8,6 +8,10 @@ gold/stock exchanges and joint ledger/allocation persistence. No native goods ID
 recipe, art or hauling policy is invented. See [contracts and limits](NATIVE_STORAGE.md)
 and the [compiled example](../examples/ThirdPartyMod/NativeStorageExample.cs).
 
+`NativeStorageClient.TryExchangeBatch` atomically exchanges up to 64 physical
+rows and one player's gold, with bounded replay and joint pooled-capacity checks.
+See [atomic multi-store exchanges](NATIVE_STORAGE.md#atomic-multi-store-exchanges).
+
 ## External production cargo
 
 `NativeStorageClient.TryCreateCargo`, `TryGetCargo`, `TryDepositCargo` and
