@@ -3192,6 +3192,39 @@ APIShared.Presentation.BuildingPanelPresenterOptions | public APIShared.Presenta
 APIShared.Presentation.BuildingPanelPresenterOptions | public int Order { get; set; }
 APIShared.Presentation.BuildingPanelPresenterOptions | public string OwnerGuid { get; }
 APIShared.Presentation.BuildingPanelPresenterOptions | public string RegistrationId { get; }
+APIShared.Presentation.BuildingPanelRecruitmentAreaOptions | public sealed class APIShared.Presentation.BuildingPanelRecruitmentAreaOptions
+APIShared.Presentation.BuildingPanelRecruitmentAreaOptions | public .ctor(string ownerGuid, string variantId, System.Collections.Generic.IEnumerable<SHCDESE.Interop.eStructs> buildingTypes, System.Func<APIShared.Presentation.BuildingPanelSectionFactoryContext, Noesis.FrameworkElement> factory)
+APIShared.Presentation.BuildingPanelRecruitmentAreaOptions | public System.Action<APIShared.Presentation.BuildingPanelSectionEventArgs> Closed { get; set; }
+APIShared.Presentation.BuildingPanelRecruitmentAreaOptions | public System.Action<APIShared.Presentation.BuildingPanelSectionEventArgs> Opened { get; set; }
+APIShared.Presentation.BuildingPanelRecruitmentAreaOptions | public System.Action<APIShared.Presentation.BuildingPanelSectionEventArgs> Updated { get; set; }
+APIShared.Presentation.BuildingPanelRecruitmentAreaOptions | public System.Collections.Generic.IReadOnlyList<SHCDESE.Interop.eStructs> BuildingTypes { get; }
+APIShared.Presentation.BuildingPanelRecruitmentAreaOptions | public System.Func<APIShared.Presentation.BuildingPanelContext, bool> Selects { get; set; }
+APIShared.Presentation.BuildingPanelRecruitmentAreaOptions | public System.Func<APIShared.Presentation.BuildingPanelSectionFactoryContext, Noesis.FrameworkElement> Factory { get; }
+APIShared.Presentation.BuildingPanelRecruitmentAreaOptions | public string OwnerGuid { get; }
+APIShared.Presentation.BuildingPanelRecruitmentAreaOptions | public string VariantId { get; }
+APIShared.Presentation.BuildingPanelRecruitmentAreaRegistration | public sealed class APIShared.Presentation.BuildingPanelRecruitmentAreaRegistration
+APIShared.Presentation.BuildingPanelRecruitmentAreaRegistration | public APIShared.Presentation.BuildingPanelSectionEventArgs Current { get; }
+APIShared.Presentation.BuildingPanelRecruitmentAreaRegistration | public bool IsEnabled { get; }
+APIShared.Presentation.BuildingPanelRecruitmentAreaRegistration | public bool TryGetStatus(out APIShared.Presentation.BuildingPanelRecruitmentAreaStatus status, out string reason)
+APIShared.Presentation.BuildingPanelRecruitmentAreaRegistration | public string OwnerGuid { get; }
+APIShared.Presentation.BuildingPanelRecruitmentAreaRegistration | public string VariantId { get; }
+APIShared.Presentation.BuildingPanelRecruitmentAreaRegistration | public void SetEnabled(bool enabled)
+APIShared.Presentation.BuildingPanelRecruitmentAreaRival | public sealed class APIShared.Presentation.BuildingPanelRecruitmentAreaRival
+APIShared.Presentation.BuildingPanelRecruitmentAreaRival | public System.Collections.Generic.IReadOnlyList<SHCDESE.Interop.eStructs> SharedBuildingTypes { get; }
+APIShared.Presentation.BuildingPanelRecruitmentAreaRival | public bool HasSelector { get; }
+APIShared.Presentation.BuildingPanelRecruitmentAreaRival | public bool IsEnabled { get; }
+APIShared.Presentation.BuildingPanelRecruitmentAreaRival | public bool ObservedOverlap { get; }
+APIShared.Presentation.BuildingPanelRecruitmentAreaRival | public bool Precedes { get; }
+APIShared.Presentation.BuildingPanelRecruitmentAreaRival | public string OwnerGuid { get; }
+APIShared.Presentation.BuildingPanelRecruitmentAreaRival | public string VariantId { get; }
+APIShared.Presentation.BuildingPanelRecruitmentAreaStatus | public sealed class APIShared.Presentation.BuildingPanelRecruitmentAreaStatus
+APIShared.Presentation.BuildingPanelRecruitmentAreaStatus | public System.Collections.Generic.IReadOnlyList<APIShared.Presentation.BuildingPanelRecruitmentAreaRival> Rivals { get; }
+APIShared.Presentation.BuildingPanelRecruitmentAreaStatus | public System.Collections.Generic.IReadOnlyList<SHCDESE.Interop.eStructs> BuildingTypes { get; }
+APIShared.Presentation.BuildingPanelRecruitmentAreaStatus | public bool HasSelector { get; }
+APIShared.Presentation.BuildingPanelRecruitmentAreaStatus | public bool IsEnabled { get; }
+APIShared.Presentation.BuildingPanelRecruitmentAreaStatus | public bool IsShownNow { get; }
+APIShared.Presentation.BuildingPanelRecruitmentAreaStatus | public string OwnerGuid { get; }
+APIShared.Presentation.BuildingPanelRecruitmentAreaStatus | public string VariantId { get; }
 APIShared.Presentation.BuildingPanelSectionEventArgs | public sealed class APIShared.Presentation.BuildingPanelSectionEventArgs
 APIShared.Presentation.BuildingPanelSectionEventArgs | public APIShared.Presentation.BuildingPanelContext Context { get; }
 APIShared.Presentation.BuildingPanelSectionEventArgs | public Noesis.FrameworkElement Content { get; }
@@ -3215,8 +3248,10 @@ APIShared.Presentation.BuildingPanelSectionRegistration | public string OwnerGui
 APIShared.Presentation.BuildingPanelSectionRegistration | public string RegistrationId { get; }
 APIShared.Presentation.BuildingPanelSections | public static class APIShared.Presentation.BuildingPanelSections
 APIShared.Presentation.BuildingPanelSections | public static bool TryGetContext(out APIShared.Presentation.BuildingPanelContext context)
+APIShared.Presentation.BuildingPanelSections | public static bool TryGetRecruitmentAreaStatus(string ownerGuid, string variantId, out APIShared.Presentation.BuildingPanelRecruitmentAreaStatus status, out string reason)
 APIShared.Presentation.BuildingPanelSections | public static bool TryRegister(APIShared.Presentation.BuildingPanelSectionOptions options, out APIShared.Presentation.BuildingPanelSectionRegistration registration, out string reason)
 APIShared.Presentation.BuildingPanelSections | public static bool TryRegisterPresenter(APIShared.Presentation.BuildingPanelPresenterOptions options, out string reason)
+APIShared.Presentation.BuildingPanelSections | public static bool TryRegisterRecruitmentArea(APIShared.Presentation.BuildingPanelRecruitmentAreaOptions options, out APIShared.Presentation.BuildingPanelRecruitmentAreaRegistration registration, out string reason)
 APIShared.Presentation.BuildingPanelSections | public static bool TrySubmitAction(APIShared.Presentation.BuildingPanelContext context, string actionOwnerGuid, string actionId, int argument, out string reason)
 APIShared.Presentation.BuildingTooltipContext | public sealed class APIShared.Presentation.BuildingTooltipContext
 APIShared.Presentation.BuildingTooltipContext | public .ctor(int buildingType, APIShared.Presentation.BuildingTooltipVariant variant, bool isSymbolHover)

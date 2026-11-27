@@ -93,7 +93,7 @@ namespace APISharedTests
             {
                 var h = new Harness();
                 var specs = new (string Owner, string Id, bool Selector)[] { ("b.mod", "whole", false), ("z.mod", "garrison", true), ("a.mod", "fort", true) };
-                foreach (var spec in reversed ? specs.Reverse() : specs)
+                foreach (var spec in reversed ? Enumerable.Reverse(specs) : specs)
                     h.Add(spec.Owner, spec.Id, spec.Selector ? (Func<BuildingPanelContext, bool>)(c => true) : null);
                 CollectionAssert.AreEqual(new[] { "a.mod/fort", "z.mod/garrison", "b.mod/whole" },
                     h.Areas.Entries.Select(e => e.Owner + "/" + e.Id).ToArray(), "selector first, then owner GUID, then variant ID");
