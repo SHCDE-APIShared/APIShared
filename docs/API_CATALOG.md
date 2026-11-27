@@ -1314,3 +1314,12 @@ row for simulation checks independent of the local HUD. [Integration guide](THIR
 `APIShared.Buildings.QuarryPilePlacement` (0.61.0) exposes the native candidate query for
 a new quarry, the indexed coordinates used by pile relocation, and a scoped filter for
 one synchronous quarry build. [Integration guide](THIRD_PARTY_GUIDE.md#construction-material-stock-and-quarry-piles)
+
+## Managed assembly audit tool
+
+[AssemblyMetadata](../tools/AssemblyMetadata/README.md) is a game-independent
+.NET 10 developer CLI for hash-bound, bounded metadata and complete selected IL
+reports. Exact type/method filters do not expand to unrelated types or dependency
+assemblies. See its guide for fresh-output, no-resolution and resource contracts;
+[metadata evidence limits](NATIVE_COMPATIBILITY.md#inspecting-managed-dependencies)
+remain separate from runtime/backend qualification.

@@ -122,6 +122,17 @@ images or occupied entries fail closed. The helpers serve AI affordability, trad
 execution and ally valuations; replacements must preserve consistent policy across
 those callers. See [market query semantics](API_CATALOG.md#native-market-price-queries).
 
+## Inspecting managed dependencies
+
+The [bounded assembly metadata tool](../tools/AssemblyMetadata/README.md) reads
+hash-pinned managed PE bytes with exact type/method selection and complete IL,
+locals, field signatures, metadata tokens and exception regions. It requires no
+game installation, loads or executes no target assembly, refuses dependency
+resolution and fails rather than truncating reports that exceed its limits.
+Use the actual input SHA-256 and fresh JSON output as audit evidence. It is a
+new developer tool, with no runtime-plugin API or behavior changes; metadata
+inspection does not establish hook safety, native compatibility or gameplay
+acceptance. The tool guide owns its CLI, schema, resource bounds and tests.
 ## Updating support
 
 1. Identify the actual installed native image and Extender/backend versions.
