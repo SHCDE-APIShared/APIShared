@@ -76,6 +76,72 @@ applies to armoury deliveries. Meat deliveries continue to use ImprovedHunters'
 yield and storage rules. A duration override applies to the shared hide-working
 phase before either route is selected.
 
+## Produce a registered custom good
+
+Register an Armory good through `ModApiClient.NativeStorage` before the first
+mission, then bind that same owner's registered handle with `WithStoredOutput`:
+
+```csharp
+if (!api.NativeStorage.TryRegisterGood("alternate-armour", NativeStoragePool.Armory,
+        out var armour, out string reason)) { Log(reason); return; }
+var definition = new WeaponProductionOptionDefinition(
+    eStructs.STRUCT_ARMOURERS_WORKSHOP, eGoods.STORED_METAL_ARMOUR,
+    eGoods.STORED_METAL_ARMOUR, localizedName, baseAmount: 2, workTicks: 60)
+    .WithIngredientAmount(1)
+    .WithStoredOutput(armour);
+if (!WeaponProduction.TryRegister(pluginGuid, "alternate-armour", definition,
+        out var registration, out reason)) Log(reason);
+```
+
+See the [compiled custom-output example](../examples/ThirdPartyMod/CustomWorkshopExample.cs).
+The stored-good owner must
+match the recipe owner, the handle must be the exact registered instance, and its
+pool must be Armory. Native workshop destination search does not select Granaries.
+`WithIngredientAmount` and `WithStoredOutput` return immutable copies and preserve
+each other's settings. Passing null to `WithStoredOutput` throws.
+
+The template retains its native ingredients, manufacturing and transport. The
+native `OutputGood` remains the recipe's native icon/carrier descriptor; a custom
+delivery creates only the separate `StoredOutput` stock. Map restrictions follow
+the work template for these recipes. Existing native-only recipes keep their
+output-based restriction rule. The latched option follows the finished local
+product and its carrier, so selecting another recipe does not reinterpret goods
+already manufactured. Existing output modifiers still determine issued cargo.
+
+Each qualified arrival attempts one item. Acceptance atomically publishes one
+physical custom item and subtracts one signed native cargo unit. Refusal publishes
+neither and retains the carried goods; a protected retry transition can re-enter
+the original native Armory search. Native search still requests enough space for
+the remaining cargo and retains its normal pathfinding/hazard behavior. It does
+not guarantee eventual delivery. No ingredients are refunded after manufacture.
+
+Custom acceptance bypasses native template stock, weapons-produced counters,
+weapon achievements, the native stock cue and the template AddGood event chain.
+Those would describe an item which was not delivered. Native recipes retain their
+complete original delivery and accounting behavior. A custom Tanner requires the
+original qualified route; if ImprovedHunters changes that route, only the new
+stored-output Tanner capability is unavailable. Legacy Tanner recipes remain
+available under their existing compatibility rules.
+
+Stored-output workshops currently support confirmed offline and editor worlds.
+Real multiplayer is rejected before launch/activation because native worker repair
+and private storage repair have not been qualified as one state transfer. Matching
+catalogue hashes alone do not establish that guarantee.
+
+### Stored-output persistence
+
+The existing building/worker wire rows retain their layout and catalogue option
+indices. Native-only catalogues retain their exact established digest formats;
+custom-output catalogues include the stable good owner, local ID and pool.
+
+A stored-output save uses workshop reader requirement 2. Older framework readers
+preserve that record as too new. Native-only captures retain their exact schema-1
+payload and envelope. At the existing critical save boundary, the native carrier,
+workshop state and both pooled-storage entries are frozen under the same engine
+monitor. The save succeeds only after the matching archive records and native I/O
+are verified; failed or stale captures preserve the previous destination file.
+Reentrant custom mutations are refused while that checkpoint is frozen.
+
 ## Select recipes in a mission
 
 `GetOptions` returns the active catalogue for a workshop type. The building HUD

@@ -25,12 +25,14 @@ namespace APIShared.Economy
         private readonly WeaponProductionOption[] entries;
         internal string Digest { get; }
         internal bool HasOptions => entries.Length != 0;
+        internal bool HasStoredOutputs { get; }
         internal bool HasTannerIngredientOverrides { get; }
 
         private WeaponProductionCatalog(WeaponProductionOption[] entries, string digest)
         {
             this.entries = entries;
             Digest = digest;
+            HasStoredOutputs = entries.Any(option => option.StoredOutput != null);
             HasTannerIngredientOverrides = entries.Any(option =>
                 option.BuildingType == eStructs.STRUCT_TANNERS_WORKSHOP && option.IngredientAmount > 1);
             byType = entries.GroupBy(option => option.BuildingType)
@@ -119,8 +121,11 @@ namespace APIShared.Economy
             using (var data = new MemoryStream())
             using (var writer = new BinaryWriter(data))
             {
+                bool hasStoredOutputs = options.Any(option => option.StoredOutput != null);
                 bool hasIngredientAmounts = options.Any(option => option.IngredientAmount.HasValue);
-                writer.Write(hasIngredientAmounts ? "weapon-workshop-options/2" : "weapon-workshop-options/1");
+                // Native-only catalogues retain the exact established /1 and /2 byte encodings.
+                writer.Write(hasStoredOutputs ? "weapon-workshop-options/3" :
+                    hasIngredientAmounts ? "weapon-workshop-options/2" : "weapon-workshop-options/1");
                 writer.Write(options.Length);
                 foreach (var option in options)
                 {
@@ -131,7 +136,16 @@ namespace APIShared.Economy
                     writer.Write((short)option.OutputGood);
                     writer.Write(option.BaseAmount ?? -1);
                     writer.Write(option.WorkTicks ?? -1);
-                    if (hasIngredientAmounts) writer.Write(option.IngredientAmount ?? -1);
+                    if (hasStoredOutputs || hasIngredientAmounts) writer.Write(option.IngredientAmount ?? -1);
+                    if (hasStoredOutputs)
+                    {
+                        NativeStoredGood output = option.StoredOutput;
+                        writer.Write((byte)(output == null ? 0 : 1));
+                        if (output != null)
+                        {
+                            writer.Write(output.OwnerGuid); writer.Write(output.GoodId); writer.Write((byte)output.Pool);
+                        }
+                    }
                 }
                 writer.Flush();
                 return Sha256Hex.Of(data.GetBuffer(), 0, checked((int)data.Length));

@@ -118,9 +118,11 @@ This service refuses its own exchanges throughout the native add-goods wrapper's
 entire Pre/Original/Post chain, including nested calls. That preserves the native
 arrival-admission assumptions. Arbitrary foreign callbacks rewriting quantity,
 good, identity or native stock can violate producer accounting independently;
-this contribution does not claim a lossless worker queue or rewrite Vanilla's
-failed-admission behavior. Virtual production integration must use the existing
-shared production owner and a separately qualified accepted/refused boundary.
+this storage backend does not itself supply a lossless worker queue or rewrite
+Vanilla's failed-admission behavior. Registered custom workshop outputs use the
+[qualified shared producer boundary](WEAPON_PRODUCTION.md#produce-a-registered-custom-good),
+which commits cargo and physical stock together. Other producer integrations still
+need their own verified completion/arrival policy.
 
 Existing private Medium capacity detours overlap these helpers. Live-byte and
 ownership checks fail closed on that conflict. Migrate the consumer onto the

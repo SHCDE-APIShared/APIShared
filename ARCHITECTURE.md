@@ -11,6 +11,12 @@ pools: its private Content ledger, physical allocations, shared capacity cohort
 and matching archive pair share one lifetime. Consumers retain recipes, hauling,
 visuals and authorization. See [native storage](docs/NATIVE_STORAGE.md).
 
+`Economy/WeaponProduction` retains native recipe/batch/transport ownership and can
+bind a registered custom Armory output. Its optional early delivery cohorts use a
+trusted cargo/storage commit; the existing critical save writer freezes and verifies
+that related state together. Consumer recipes and presentation stay outside these
+mechanisms; see [workshop output contracts](docs/WEAPON_PRODUCTION.md).
+
 The Content assembly also owns the caller-instantiated virtual-goods ledger in
 `APIShared.Goods`: bounded balances, atomic changes, replay receipts, reservations
 and canonical snapshots. Consumers share one instance per authoritative mission

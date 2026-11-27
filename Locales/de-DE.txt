@@ -259,3 +259,4 @@ ModKeybinds.Capture=Taste oder Maustaste drücken. Esc bricht ab.
 ModKeybinds.Unassigned=Nicht belegt
 ModKeybinds.Conflict=Dieses Kürzel ist auch einer anderen Aktion zugewiesen.
 AllyGoods.More=Mehr...
+WeaponProduction.StoredOutputsOfflineOnly=Custom stored-goods workshop recipes are currently available only in single-player and the map editor.
