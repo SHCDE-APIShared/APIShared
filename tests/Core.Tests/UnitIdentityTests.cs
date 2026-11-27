@@ -298,6 +298,125 @@ namespace APISharedTests
             Assert.IsTrue(f.Registry.IsCurrentWorldReady, "A valid empty restored world is ready.");
         }
 
+        // Incremental publication (one page per mark) must stay observably identical to a complete rebuild:
+        // the same TryGet answers for every owner and slot, the same slot-ordered member lists, and earlier
+        // retained member snapshots never change. The model below is independent of the registry's code.
+        [TestMethod]
+        public void IncrementalPublicationMatchesAnIndependentModelAndKeepsRetainedSnapshots()
+        {
+            var f = new Fixture();
+            var variants = new[] { f.Variant("a", "ranger"), f.Variant("b", "ranger"), f.Variant("a", "scout", carrier: 3) };
+            const int Slots = 300;
+            var random = new Random(1234);
+            var model = new Dictionary<int, (UnitVariantDefinition Variant, uint GlobalId)>();
+            uint nextId = 1000;
+            for (int slot = 1; slot <= Slots; slot++) f.Unit(slot, nextId++, type: random.Next(2, 4));
+            // One dormant restored row (an owner that never registers) must stay invisible and be replaceable.
+            f.Registry.BindWorld(f.World, new[] { new UnitIdentityRow { Owner = "absent", Variant = "x", NativeType = 2, UnitId = 5,
+                GlobalId = f.Units[5].GlobalId } });
+            var retained = new List<(UnitVariantDefinition Variant, IReadOnlyList<UnitIdentitySnapshot> List, int[] Slots)>();
+            for (int step = 0; step < 4000; step++)
+            {
+                int slot = random.Next(1, Slots + 1);
+                var variant = variants[random.Next(variants.Length)];
+                var unit = f.Units[slot];
+                switch (random.Next(6))
+                {
+                    case 0: case 1: case 2:
+                        if (f.Registry.Mark(variant, slot, unit.GlobalId, out _)) model[slot] = (variant, unit.GlobalId);
+                        break;
+                    case 3:
+                        if (f.Registry.Unmark(variant, slot, unit.GlobalId, out _) && model.TryGetValue(slot, out var held) &&
+                            held.Variant == variant && held.GlobalId == unit.GlobalId) model.Remove(slot);
+                        break;
+                    case 4: // slot reuse: a new exact unit; the old mark is reconciled away
+                        f.Unit(slot, nextId++, type: unit.NativeType);
+                        f.Registry.Reconcile();
+                        model.Remove(slot);
+                        break;
+                    default: // a peasant transforming into the variant's carrier becomes pending, then completes
+                        if (model.TryGetValue(slot, out var marked))
+                        {
+                            f.Unit(slot, unit.GlobalId, type: 1, transform: marked.Variant.NativeType);
+                            f.Registry.Reconcile();
+                            f.Unit(slot, unit.GlobalId, type: marked.Variant.NativeType);
+                            f.Registry.Reconcile();
+                        }
+                        break;
+                }
+                if (step % 500 == 499) // many deaths in one tick take the complete-rebuild path
+                {
+                    for (int k = 0; k < 40; k++)
+                    {
+                        int reused = random.Next(1, Slots + 1);
+                        f.Unit(reused, nextId++, type: f.Units[reused].NativeType);
+                        model.Remove(reused);
+                    }
+                    f.Registry.Reconcile();
+                }
+                if (step % 97 == 0)
+                    foreach (var definition in variants)
+                    {
+                        var list = f.Registry.Members(definition);
+                        var slots = new int[list.Count];
+                        for (int i = 0; i < slots.Length; i++) slots[i] = list[i].UnitId;
+                        retained.Add((definition, list, slots));
+                    }
+                if (step % 13 != 0) continue;
+                foreach (var definition in variants)
+                {
+                    var expected = new List<int>();
+                    foreach (var entry in model) if (entry.Value.Variant == definition) expected.Add(entry.Key);
+                    expected.Sort();
+                    var members = f.Registry.Members(definition);
+                    var actual = new List<int>();
+                    foreach (var member in members) actual.Add(member.UnitId);
+                    CollectionAssert.AreEqual(expected, actual, "member enumeration at step " + step);
+                    for (int i = 0; i < members.Count; i++) Assert.AreEqual(expected[i], members[i].UnitId, "member index at step " + step);
+                }
+                for (int s = 1; s <= Slots; s++)
+                {
+                    uint id = f.Units[s].GlobalId;
+                    foreach (string owner in new[] { "a", "b", "absent" })
+                    {
+                        bool has = model.TryGetValue(s, out var entry) && entry.Variant.Owner == owner && entry.GlobalId == id;
+                        Assert.AreEqual(has, f.Registry.TryGet(owner, s, id, out var found), "slot " + s + " owner " + owner + " at step " + step);
+                        if (has) Assert.AreEqual(entry.Variant.Id, found.VariantId);
+                    }
+                }
+            }
+            foreach (var kept in retained)
+            {
+                Assert.AreEqual(kept.Slots.Length, kept.List.Count, "a retained member snapshot never changes");
+                for (int i = 0; i < kept.Slots.Length; i++) Assert.AreEqual(kept.Slots[i], kept.List[i].UnitId);
+            }
+        }
+
+        // One mark used to rebuild the whole published table (about 0.4 us per existing mark). It now copies a
+        // fixed number of pages, so its allocation must not grow with the number of marks.
+        [TestMethod]
+        public void OneMarkCostDoesNotGrowWithTheMarkCount()
+        {
+            long Measure(int existing)
+            {
+                var f = new Fixture(); var own = f.Variant();
+                for (int slot = 1; slot <= existing + 1; slot++) f.Unit(slot, (uint)(5000 + slot));
+                for (int slot = 1; slot <= existing; slot++) f.Mark(own, slot, (uint)(5000 + slot));
+                int probe = existing + 1; uint id = (uint)(5000 + probe);
+                for (int i = 0; i < 16; i++) { f.Mark(own, probe, id); f.Registry.Unmark(own, probe, id, out _); }
+                long before = GC.GetAllocatedBytesForCurrentThread();
+                var watch = System.Diagnostics.Stopwatch.StartNew();
+                for (int i = 0; i < 64; i++) { f.Mark(own, probe, id); f.Registry.Unmark(own, probe, id, out _); }
+                watch.Stop();
+                long perOperation = (GC.GetAllocatedBytesForCurrentThread() - before) / 128;
+                Console.WriteLine("existing=" + existing + " bytes/op=" + perOperation + " us/op=" + (watch.Elapsed.TotalMilliseconds * 1000 / 128).ToString("F2"));
+                return perOperation;
+            }
+            long small = Measure(200), large = Measure(4000);
+            Assert.IsTrue(large < 64 * 1024, "one mark allocates a bounded number of pages: " + large + " bytes");
+            Assert.IsTrue(large < 2 * small + 4096, "cost must not scale with the mark count: " + small + " vs " + large + " bytes");
+        }
+
         [TestMethod]
         public void WarmPresentationLiveAndUnchangedReconciliationPathsAllocateNothing()
         {
