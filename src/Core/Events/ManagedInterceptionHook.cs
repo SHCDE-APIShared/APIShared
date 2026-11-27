@@ -10,6 +10,7 @@ namespace APIShared.Events
     {
         private Hook hook;
         internal T Original { get; private set; }
+        internal bool IsInstalled => hook != null;
         internal void Install(Type type, string name, Type result, Type[] parameters, T callback, string id)
         {
             if (hook != null) return;
@@ -18,11 +19,20 @@ namespace APIShared.Events
                 null, parameters, null);
             if (target == null || target.ReturnType != result)
                 throw new MissingMethodException(type.FullName, name);
+            Install(target, callback, id);
+        }
+        // For owners that resolve and validate the exact target themselves (paint sites). publish receives
+        // the trampoline before Apply, so a static hook can read it from its own field; null on rollback.
+        internal void Install(MethodInfo target, T callback, string id, Action<T> publish = null)
+        {
+            if (hook != null) return;
+            if (target == null) throw new ArgumentNullException(nameof(target));
             Hook candidate = null;
             try
             {
                 candidate = new Hook(target, callback, new HookConfig { ManualApply = true, ID = "APIShared.Events." + id });
                 Original = candidate.GenerateTrampoline<T>();
+                publish?.Invoke(Original);
                 candidate.Apply();
                 hook = candidate;
             }
@@ -30,6 +40,7 @@ namespace APIShared.Events
             {
                 candidate?.Dispose();
                 Original = null;
+                publish?.Invoke(null);
                 throw;
             }
         }
