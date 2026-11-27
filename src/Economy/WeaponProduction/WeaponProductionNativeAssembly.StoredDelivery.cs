@@ -75,13 +75,9 @@ namespace APIShared.Economy
             a.mov(rax, currentUnit); a.mov(eax, __dword_ptr[rax]);
             a.cmp(eax, 1); a.jl(dormant);
             a.cmp(eax, WeaponProductionNativeDefinition.MaxUnitId); a.jg(dormant);
-            a.imul(rax, rax, WorkerProductionBonusNativeDefinition.UnitStride);
-            a.mov(rcx, units);
-            a.movsx(eax, __word_ptr[rcx + rax + WeaponProductionNativeDefinition.LinkedBuildingOffset]);
-            a.cmp(eax, 1); a.jl(dormant);
-            a.cmp(eax, WeaponProductionNativeDefinition.MaxBuildingId); a.jg(dormant);
-            a.mov(rcx, buildingDemand); a.cmp(__byte_ptr[rcx + rax], 0); a.je(dormant);
-            a.mov(rax, currentUnit); a.mov(eax, __dword_ptr[rax]);
+            // A live carrier's latched custom batch can outlive its workshop and
+            // its building-demand bit. Gate by worker custody, not current home;
+            // the callback separately validates live actor/home mutation authority.
             a.imul(rax, rax, WeaponProductionNativeDefinition.StoredWorkerWireStride);
             a.mov(rcx, workerWire);
             a.movzx(eax, __byte_ptr[rcx + rax + WeaponProductionNativeDefinition.StoredWorkerOptionOffset]);

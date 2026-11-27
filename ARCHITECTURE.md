@@ -17,7 +17,9 @@ See [native storage and external cargo](docs/NATIVE_STORAGE.md).
 bind a registered custom Armory output. Its optional early delivery cohorts use a
 trusted cargo/storage commit; the existing critical save writer freezes and verifies
 that related state together. Consumer recipes and presentation stay outside these
-mechanisms; see [workshop output contracts](docs/WEAPON_PRODUCTION.md).
+mechanisms. Opted-in legacy storage imports can jointly publish already-paid native-timed
+Armourer manufacturing into this same owner without a second ledger or actor write;
+see [workshop output contracts](docs/WEAPON_PRODUCTION.md).
 
 The Content assembly also owns the caller-instantiated virtual-goods ledger in
 `APIShared.Goods`: bounded balances, atomic changes, replay receipts, reservations
