@@ -1195,7 +1195,7 @@ This example uses Stronghold: Definitive Edition as the required Steam app:
 Keep the usual asset-mod layout, for example `Override/Atlas/tile_buildings1/`
 with the atlas texture and `atlas.json`. The same manifest works inside an
 asset-only `.semod`. Install both the APIShared plugin and its matching
-preloader from version 0.74.0 or later. With the gate active, the
+preloader from version 0.75.0 or later. With the gate active, the
 Extender registers the package only when Steam reports access to every listed
 app. An absent field or empty list leaves ordinary registration in place.
 Use an array of positive integer Steam app IDs.

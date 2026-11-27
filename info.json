@@ -3,13 +3,22 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.74.0",
+  "Version": "0.75.0",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
   "Manifest": 1,
   "NetworkMode": 1,
   "SerpChangelog": [
+    {
+      "Version": "0.75.0",
+      "Changes": [
+        "Let mods explain how a market price was composed and compare it with the value currently in the game.",
+        "Give mods shared inventories and transactions for custom goods, with support for native storage and workshop production.",
+        "Add protected mod save participation, atomic imports of older storage data, and safer association of save and load callbacks with the active mission.",
+        "Add shared rendering and market UI hooks, troop variant identity, and read-only observations of native worlds and workshop batches."
+      ]
+    },
     {
       "Version": "0.74.0",
       "Changes": [
