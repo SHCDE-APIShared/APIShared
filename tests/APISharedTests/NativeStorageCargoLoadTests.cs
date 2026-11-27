@@ -1,5 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Reflection;
+using APIShared;
+using APIShared.GameModes;
 using APIShared.Economy;
 using APIShared.Goods;
 using APIShared.Savegames;
@@ -9,8 +13,8 @@ namespace APISharedTests
 {
     // The same prepared-load controller used by Runtime.Prepare is bound to the actual
     // versioned registry. The transport is managed; no native world or archive is executed.
-    [TestClass]
-    public sealed class NativeStorageCargoLoadTests
+    [TestClass, DoNotParallelize]
+    public sealed partial class NativeStorageCargoLoadTests
     {
         private sealed class Binding
         {
@@ -148,6 +152,463 @@ namespace APISharedTests
             binding.Read(new byte[] { 1, 2, 3 }); Assert.IsTrue(binding.Prepared.Blocked); Assert.IsTrue(binding.Prepared.MayContainCargo);
             binding.Read(null); Assert.IsFalse(binding.Prepared.Blocked); Assert.IsFalse(binding.Prepared.MayContainCargo);
             Assert.IsNotNull(binding.Prepared.State); Assert.IsFalse(binding.Prepared.State.HasCargoHistory);
+        }
+
+        // This binds the actual Runtime.Prepare/Capture/Loaded methods to the actual registry.
+        // Only mission metadata is published: no native cohort, game objects, hooks, gold or
+        // building probes are initialized. Cargo-only fixture states have no physical rows.
+        private sealed class RuntimeBinding : IDisposable
+        {
+            private const BindingFlags Fields = BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public;
+            private static readonly FieldInfo Published = typeof(MissionLifecycleService).GetField("published", BindingFlags.Static | BindingFlags.NonPublic);
+            private readonly object previousPublished;
+            private readonly MissionLifecycleService service;
+            private readonly MissionLifecycleState lifecycle;
+            private readonly MissionExecutionSession execution;
+            private readonly FieldInfo executing;
+            private MissionExecutionSession.Scope previousExecution;
+            private bool inExecution;
+            private MissionContext seed;
+            internal readonly object Gate = new object();
+            internal readonly NativeStorageRuntime Runtime;
+            internal readonly VersionedSaveDataRegistry Registry;
+            internal readonly VersionedSaveDataHandle Handle;
+            internal readonly CustomGoodId Good;
+            internal readonly NativeStoredGood StoredGood;
+            internal long Session;
+            internal Func<VersionedSaveContext, byte[]> Save;
+            private Action<byte[]> load;
+            internal readonly Dictionary<string, Func<VersionedSaveContext, byte[]>> Saves =
+                new Dictionary<string, Func<VersionedSaveContext, byte[]>>(StringComparer.Ordinal);
+            internal readonly Dictionary<string, Action<byte[]>> Loads = new Dictionary<string, Action<byte[]>>(StringComparer.Ordinal);
+            internal Action BeforePrepare;
+            internal int Captures;
+            internal NativeStorageState CurrentState => (NativeStorageState)typeof(NativeStorageRuntime).GetField("state", Fields).GetValue(Runtime);
+            internal object BoundWorld => typeof(NativeStorageRuntime).GetField("boundWorld", Fields).GetValue(Runtime);
+            internal object PreparedArchive => typeof(NativeStorageRuntime).GetField("preparedLoad", Fields).GetValue(Runtime);
+            internal string StartupFailure => (string)typeof(NativeStorageRuntime).GetField("failure", Fields).GetValue(Runtime);
+
+            internal RuntimeBinding(bool editorCreated, bool cargo = true, bool protectedStorage = false,
+                Action<RuntimeBinding> configure = null, bool activate = true, Action<bool> demandSink = null)
+            {
+                // Demand updates would write native fixture memory if a process-wide cohort
+                // existed. Preserve it; do not clear/replace it to make this fixture run.
+                Assert.IsNull(typeof(NativeStorageNativeRuntime).GetField("candidate", BindingFlags.Static | BindingFlags.NonPublic).GetValue(null));
+                Assert.IsFalse(GoodsWalletNative.Instance.IsReady);
+                previousPublished = Published.GetValue(null);
+                try
+                {
+                    service = (MissionLifecycleService)Activator.CreateInstance(typeof(MissionLifecycleService),
+                        BindingFlags.Instance | BindingFlags.NonPublic, null, new object[] { null }, null);
+                    lifecycle = (MissionLifecycleState)typeof(MissionLifecycleService).GetField("state", Fields).GetValue(service);
+                    execution = (MissionExecutionSession)typeof(MissionLifecycleService).GetField("executionSession", Fields).GetValue(service);
+                    executing = typeof(MissionLifecycleService).GetField("executing", Fields);
+                    Published.SetValue(null, service);
+                    Runtime = demandSink == null
+                        ? (NativeStorageRuntime)Activator.CreateInstance(typeof(NativeStorageRuntime), true)
+                        : ImportRuntimeWithDemandSink(demandSink);
+                    typeof(NativeStorageRuntime).GetField("engine", Fields).SetValue(Runtime, Gate);
+                    typeof(NativeStorageRuntime).GetField("ready", Fields).SetValue(Runtime, true);
+                    var stock = State(cargo, out Good);
+                    Assert.IsFalse(stock.HasRows, "This fixture must never enter native building-probe reconciliation.");
+                    var definitions = (List<NativeStorageGoodRegistration>)typeof(NativeStorageRuntime).GetField("definitions", Fields).GetValue(Runtime);
+                    definitions.AddRange(stock.GetRegistrations());
+                    StoredGood = new NativeStoredGood(Good, StoragePool.Granary);
+                    typeof(NativeStorageRuntime).GetField("registeredHandles", Fields).SetValue(Runtime, new[] { StoredGood });
+                    var capture = (VersionedSaveCapture)Delegate.CreateDelegate(typeof(VersionedSaveCapture), Runtime,
+                        typeof(NativeStorageRuntime).GetMethod("Capture", Fields));
+                    var prepared = (Action<VersionedSaveLoad>)Delegate.CreateDelegate(typeof(Action<VersionedSaveLoad>), Runtime,
+                        typeof(NativeStorageRuntime).GetMethod("Prepare", Fields));
+                    var loaded = (Action<VersionedSaveLoad>)Delegate.CreateDelegate(typeof(Action<VersionedSaveLoad>), Runtime,
+                        typeof(NativeStorageRuntime).GetMethod("Loaded", Fields));
+                    Registry = new VersionedSaveDataRegistry((id, save, read) =>
+                    {
+                        Saves.Add(id, save); Loads.Add(id, read);
+                        if (id == "causal-storage") { Save = save; load = read; }
+                        return true;
+                    }, _ => { }, _ => { });
+                    var registration = new VersionedSaveDataRegistration("causal.storage", "causal-storage", protectedStorage ? 3 : 2, 1,
+                        protectedStorage ? new[] { "ledger", "stores", NativeStorageProductionSave.CriticalMarkerEntry } : new[] { "ledger", "stores" },
+                        writer => { Captures++; return capture(writer); }, loaded)
+                        { Scope = VersionedSaveScope.SaveGamesAndMaps, SimulationRelevant = protectedStorage, Prepared = prepared };
+                    Assert.IsTrue(Registry.TryRegister(registration, out Handle, out string reason), reason);
+                    typeof(NativeStorageRuntime).GetField("saveHandle", Fields).SetValue(Runtime, Handle);
+                    if (protectedStorage)
+                    {
+                        Assert.IsTrue(Registry.TryTrackPreparedSource(registration.OwnerGuid, Handle, out var source, out reason), reason);
+                        Assert.IsTrue(Registry.TryEnrollCriticalSource(source, NativeStorageProductionSave.CriticalMarkerEntry, 3,
+                            out var enrollment, out reason), reason);
+                        Assert.IsTrue(Registry.TryJoinNativeStorageCriticalSource(enrollment, out reason), reason);
+                        typeof(NativeStorageRuntime).GetField("criticalPreparedSource", Fields).SetValue(Runtime, source);
+                        Assert.IsTrue(Registry.TryObserveGeneration(Runtime.ImportGenerationChanged, out reason), reason);
+                    }
+                    configure?.Invoke(this);
+                    Begin(editorCreated ? MissionStartKind.EditorCreated : MissionStartKind.LoadedSave);
+                    lock (Gate)
+                    {
+                        if (editorCreated && activate)
+                        {
+                            // A real blank editor world has no archive callback. Exercise that
+                            // actual fallback before seeding fixture-owned cargo on its state.
+                            Assert.IsTrue(Runtime.TryGetStock(Good, 1, out _, out reason), reason);
+                            if (cargo)
+                            {
+                                Assert.AreEqual(GoodsTransactionStatus.Applied,
+                                    CurrentState.PrepareCreateCargo(Good, 1, 1, 8, out var plan, out _, out reason), reason);
+                                using (plan) plan.Publish();
+                            }
+                        }
+                        else if (!editorCreated) Read(VersionedSaveRecordCodec.Encode(2, 2, Entries(stock)), Session);
+                        if (activate) Assert.IsTrue(Runtime.TryGetStock(Good, 1, out _, out reason), reason);
+                    }
+                    Ready();
+                }
+                catch
+                {
+                    if (inExecution) execution.Restore(previousExecution);
+                    Published.SetValue(null, previousPublished);
+                    throw;
+                }
+            }
+
+            internal void Begin(MissionStartKind kind)
+            {
+                Assert.IsFalse(inExecution);
+                bool editor = kind == MissionStartKind.EditorCreated || kind == MissionStartKind.EditorLoaded;
+                var mode = FixtureMode(editor, false);
+                seed = new MissionContext(0, kind, mode, editor ? "editor.map" : "mission.sav", "fixture", false, 160, 1, 1);
+                previousExecution = execution.Enter(lifecycle); inExecution = true;
+                object operation = Activator.CreateInstance(typeof(MissionLifecycleService).GetNestedType("Operation", BindingFlags.NonPublic), true);
+                executing.SetValue(service, operation);
+                Session = lifecycle.Begin(seed);
+                operation.GetType().GetField("Id", Fields).SetValue(operation, Session);
+                lifecycle.CompleteNativeLoad(Session, true);
+                Assert.AreEqual(Session, MissionLifecycleService.ExecutingSessionId);
+            }
+
+            internal void Ready()
+            {
+                lifecycle.Ready(Session, seed);
+                execution.Restore(previousExecution); inExecution = false;
+                executing.SetValue(service, null);
+                Assert.AreEqual(0L, MissionLifecycleService.ExecutingSessionId);
+            }
+
+            private static GameModeSnapshot FixtureMode(bool editor, bool multiplayer) =>
+                new GameModeSnapshot(multiplayer, false, false, false, editor, false, true, false, false,
+                    false, false, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    editor ? GameModeKind.MapEditor : GameModeKind.CustomGame, GameModeLaunchVariant.Standard,
+                    0, 0, 0, 0, 0, false);
+
+            internal void RefreshMode(bool multiplayer)
+            {
+                object prior = MissionLifecycleService.NativeWorld;
+                var context = lifecycle.Context.With(Session, FixtureMode(false, multiplayer));
+                typeof(MissionLifecycleState).GetMethod("RefreshNativeClock", Fields).Invoke(lifecycle, new object[] { context });
+                Assert.AreSame(prior, MissionLifecycleService.NativeWorld);
+            }
+
+            internal void RefreshMetadata()
+            {
+                object prior = MissionLifecycleService.NativeWorld;
+                typeof(MissionLifecycleState).GetMethod("RefreshNativeClock", Fields).Invoke(lifecycle, new object[] { lifecycle.Context });
+                Assert.AreSame(prior, MissionLifecycleService.NativeWorld);
+            }
+
+            internal void FailInitialization(string reason)
+            {
+                lock (Gate)
+                {
+                    typeof(NativeStorageRuntime).GetField("ready", Fields).SetValue(Runtime, false);
+                    typeof(NativeStorageRuntime).GetField("failure", Fields).SetValue(Runtime, reason);
+                }
+            }
+
+            internal void Read(byte[] record, long session, VersionedSaveLoadSource source = VersionedSaveLoadSource.SaveGame)
+            {
+                Registry.BeginLoad(source, "causal.sav", session);
+                if (record != null) load(record);
+                BeforePrepare?.Invoke();
+                Registry.PrepareLoad(); Registry.EndLoad();
+            }
+            internal byte[] SaveCurrent() => Save(new VersionedSaveContext(true, false, "causal.sav"));
+            public void Dispose()
+            {
+                try { if (inExecution) execution.Restore(previousExecution); }
+                finally { Published.SetValue(null, previousPublished); }
+            }
+        }
+
+        [TestMethod]
+        [DataRow(false, false, false)]
+        [DataRow(false, false, true)]
+        [DataRow(false, true, false)]
+        [DataRow(false, true, true)]
+        [DataRow(true, false, false)]
+        [DataRow(true, false, true)]
+        [DataRow(true, true, false)]
+        [DataRow(true, true, true)]
+        public void UnassociatedArchiveCannotBorrowReadyWorldOrEraseItsStock(bool wrongPositive, bool noRecord, bool editorCreated)
+        {
+            using (var fixture = new RuntimeBinding(editorCreated))
+            lock (fixture.Gate)
+            {
+                NativeStorageState prior = fixture.CurrentState;
+                prior.Capture(out byte[] ledger, out byte[] stores);
+                byte[] incoming = noRecord ? null : VersionedSaveRecordCodec.Encode(1, 1, Entries(State(false, out _)));
+                fixture.Read(incoming, wrongPositive ? fixture.Session + 1 : 0);
+                fixture.RefreshMetadata();
+                Assert.IsFalse(fixture.Runtime.TryGetStock(fixture.Good, 1, out _, out _),
+                    "An unassociated archive must not borrow ReadyB's global ID, including its blank-editor fallback.");
+                Assert.IsFalse(fixture.Runtime.IsCurrentWorldReady);
+                Assert.IsFalse(fixture.Runtime.TryGetSequence(fixture.Good.OwnerGuid, out _, out _));
+                Assert.IsFalse(fixture.Runtime.TryExchange(fixture.StoredGood,
+                    new NativeStorageSnapshot(MissionLifecycleService.NativeWorld, default, 0), 1, 1, 0, out _, out _));
+                Assert.ThrowsExactly<InvalidDataException>(() => fixture.Runtime.FreezeProductionSave());
+                Assert.IsTrue(fixture.Runtime.HasExternalCargoSaveDemand,
+                    "Unknown association, even NoRecord, must retain the protected-save requirement.");
+                Assert.AreSame(prior, fixture.CurrentState);
+                prior.Capture(out byte[] afterLedger, out byte[] afterStores);
+                CollectionAssert.AreEqual(ledger, afterLedger); CollectionAssert.AreEqual(stores, afterStores);
+                if (noRecord)
+                {
+                    // Failed preparation retains passive-save policy even when the original record is absent.
+                    Assert.IsTrue(fixture.Handle.KeepsLoadedRecord);
+                    Assert.IsNull(fixture.SaveCurrent());
+                    Assert.AreEqual(VersionedSaveWriteStatus.NotWritten, fixture.Handle.LastWriteStatus);
+                }
+                else
+                {
+                    Assert.IsTrue(fixture.Handle.KeepsLoadedRecord);
+                    CollectionAssert.AreEqual(incoming, fixture.SaveCurrent());
+                }
+            }
+        }
+
+        [TestMethod]
+        public void UnassociatedNoRecordRetainsProtectedSaveDemandEvenWithoutPriorCargo()
+        {
+            using (var fixture = new RuntimeBinding(true, false))
+            lock (fixture.Gate)
+            {
+                Assert.IsFalse(fixture.Runtime.HasExternalCargoSaveDemand);
+                NativeStorageState prior = fixture.CurrentState;
+                fixture.Read(null, 0);
+                Assert.IsTrue(fixture.Runtime.HasExternalCargoSaveDemand);
+                Assert.IsFalse(fixture.Runtime.TryGetStock(fixture.Good, 1, out _, out _));
+                Assert.AreSame(prior, fixture.CurrentState);
+                Assert.IsNull(fixture.SaveCurrent());
+                Assert.ThrowsExactly<InvalidDataException>(() => fixture.Runtime.FreezeProductionSave());
+            }
+        }
+
+        [TestMethod]
+        [DataRow(false, false, false)]
+        [DataRow(false, true, false)]
+        [DataRow(true, false, false)]
+        [DataRow(true, true, false)]
+        [DataRow(false, false, true)]
+        [DataRow(false, true, true)]
+        public void MatchingExecutingArchiveRetainsNormalSaveAndNewMapNoRecordBehavior(bool newMap, bool noRecord, bool editorMap)
+        {
+            using (var fixture = new RuntimeBinding(false))
+            lock (fixture.Gate)
+            {
+                fixture.Begin(editorMap ? MissionStartKind.EditorLoaded :
+                    newMap ? MissionStartKind.NewGame : MissionStartKind.LoadedSave);
+                byte[] incoming = noRecord ? null : VersionedSaveRecordCodec.Encode(2, 2, Entries(State(true, out _)));
+                fixture.Read(incoming, fixture.Session, editorMap ? VersionedSaveLoadSource.EditorMap :
+                    newMap ? VersionedSaveLoadSource.MapToPlay : VersionedSaveLoadSource.SaveGame);
+                Assert.IsTrue(fixture.Runtime.TryGetStock(fixture.Good, 1, out _, out string reason), reason);
+                Assert.IsTrue(fixture.Runtime.IsCurrentWorldReady);
+                Assert.AreEqual(!noRecord, fixture.CurrentState.HasCargoHistory);
+                Assert.IsFalse(fixture.Handle.KeepsLoadedRecord);
+                fixture.Ready();
+                Assert.IsNotNull(fixture.SaveCurrent());
+                Assert.AreEqual(VersionedSaveWriteStatus.Written, fixture.Handle.LastWriteStatus);
+            }
+        }
+
+        [TestMethod]
+        [DataRow(false)]
+        [DataRow(true)]
+        public void ANewExplicitBlankEditorWorldCanRecoverAfterAnUnassociatedArchive(bool noRecord)
+        {
+            using (var fixture = new RuntimeBinding(true))
+            lock (fixture.Gate)
+            {
+                byte[] incoming = noRecord ? null : VersionedSaveRecordCodec.Encode(1, 1, Entries(State(false, out _)));
+                fixture.Read(incoming, 0);
+                Assert.IsFalse(fixture.Runtime.TryGetStock(fixture.Good, 1, out _, out _));
+                object blocked = MissionLifecycleService.NativeWorld;
+                fixture.Registry.Unload(); // Actual unload outside the closed archive drops its passive bytes.
+                fixture.Begin(MissionStartKind.EditorCreated);
+                Assert.AreNotSame(blocked, MissionLifecycleService.NativeWorld);
+                Assert.IsTrue(fixture.Runtime.TryGetStock(fixture.Good, 1, out _, out string reason), reason);
+                Assert.IsTrue(fixture.Runtime.IsCurrentWorldReady);
+                Assert.IsFalse(fixture.CurrentState.HasCargoHistory);
+                fixture.Ready();
+                Assert.IsFalse(fixture.Handle.KeepsLoadedRecord);
+                Assert.IsNotNull(fixture.SaveCurrent());
+            }
+        }
+
+        [TestMethod]
+        [DataRow("restored")]
+        [DataRow("corrupt")]
+        [DataRow("unassociated-absence")]
+        public void FailedInitializationRetainsOriginalArchiveAndStateUntilExactlyAssociatedAbsence(string kind)
+        {
+            const string failure = "controlled storage initialization failure";
+            using (var fixture = new RuntimeBinding(false))
+            lock (fixture.Gate)
+            {
+                NativeStorageState prior = fixture.CurrentState;
+                prior.Capture(out byte[] ledger, out byte[] stores);
+                object boundWorld = fixture.BoundWorld, preparedArchive = fixture.PreparedArchive;
+                fixture.FailInitialization(failure);
+                fixture.Begin(MissionStartKind.LoadedSave);
+                byte[] incoming = null;
+                if (kind != "unassociated-absence")
+                {
+                    // Readable legacy data is still a record, not proof of an empty world.
+                    incoming = VersionedSaveRecordCodec.Encode(1, 1, Entries(State(false, out _)));
+                    if (kind == "corrupt") Array.Resize(ref incoming, incoming.Length - 1);
+                }
+                fixture.Read(incoming, kind == "unassociated-absence" ? 0 : fixture.Session);
+                Assert.IsTrue(fixture.Runtime.HasUnreadyArchiveSaveDemand);
+                Assert.IsTrue(fixture.Handle.KeepsLoadedRecord);
+                Assert.AreEqual(failure, fixture.StartupFailure);
+                Assert.AreSame(prior, fixture.CurrentState); Assert.AreSame(boundWorld, fixture.BoundWorld);
+                Assert.AreSame(preparedArchive, fixture.PreparedArchive);
+                prior.Capture(out byte[] afterLedger, out byte[] afterStores);
+                CollectionAssert.AreEqual(ledger, afterLedger); CollectionAssert.AreEqual(stores, afterStores);
+                Assert.IsFalse(fixture.Runtime.TryGetStock(fixture.Good, 1, out _, out _));
+                Assert.IsFalse(fixture.Runtime.IsCurrentWorldReady);
+                Assert.ThrowsExactly<InvalidOperationException>(() => fixture.Runtime.FreezeProductionSave());
+                if (incoming == null)
+                {
+                    Assert.IsNull(fixture.SaveCurrent());
+                    Assert.AreEqual(VersionedSaveWriteStatus.NotWritten, fixture.Handle.LastWriteStatus);
+                }
+                else
+                {
+                    CollectionAssert.AreEqual(incoming, fixture.SaveCurrent());
+                    Assert.AreEqual(VersionedSaveWriteStatus.KeptLoadedRecord, fixture.Handle.LastWriteStatus);
+                }
+                Assert.AreEqual(0, fixture.Captures);
+
+                fixture.Ready();
+                fixture.Begin(MissionStartKind.LoadedSave);
+                fixture.Read(null, fixture.Session);
+                Assert.IsFalse(fixture.Runtime.HasUnreadyArchiveSaveDemand,
+                    "Only new absence associated with the actual executing attempt clears protection demand.");
+                Assert.AreEqual(failure, fixture.StartupFailure);
+                Assert.AreSame(prior, fixture.CurrentState); Assert.AreSame(boundWorld, fixture.BoundWorld);
+                Assert.AreSame(preparedArchive, fixture.PreparedArchive);
+                Assert.IsTrue(fixture.Handle.KeepsLoadedRecord);
+                Assert.IsNull(fixture.SaveCurrent());
+                Assert.AreEqual(VersionedSaveWriteStatus.NotWritten, fixture.Handle.LastWriteStatus);
+                Assert.AreEqual(0, fixture.Captures);
+                Assert.IsFalse(fixture.Runtime.TryGetStock(fixture.Good, 1, out _, out _));
+                Assert.IsFalse(fixture.Runtime.IsCurrentWorldReady);
+                fixture.Ready();
+            }
+        }
+
+        [TestMethod]
+        public void FailedInitializationAbsenceWithoutExecutingScopeRemainsProtectedOutsideTheEngineMonitor()
+        {
+            const string failure = "controlled unready storage owner";
+            using (var fixture = new RuntimeBinding(true, false))
+            {
+                NativeStorageState prior = fixture.CurrentState;
+                fixture.FailInitialization(failure);
+                Assert.AreEqual(0L, MissionLifecycleService.ExecutingSessionId);
+                Assert.IsFalse(System.Threading.Monitor.IsEntered(fixture.Gate));
+                fixture.Read(null, fixture.Session);
+                Assert.IsFalse(System.Threading.Monitor.IsEntered(fixture.Gate));
+                Assert.IsTrue(fixture.Runtime.HasUnreadyArchiveSaveDemand,
+                    "A ready-world ID cannot replace missing execution provenance in the failed owner.");
+                Assert.IsTrue(fixture.Handle.KeepsLoadedRecord);
+                Assert.AreSame(prior, fixture.CurrentState); Assert.AreEqual(failure, fixture.StartupFailure);
+                Assert.IsNull(fixture.SaveCurrent());
+                Assert.AreEqual(VersionedSaveWriteStatus.NotWritten, fixture.Handle.LastWriteStatus);
+                Assert.AreEqual(0, fixture.Captures);
+                Assert.IsFalse(fixture.Runtime.IsCurrentWorldReady);
+            }
+        }
+
+        [TestMethod]
+        [DataRow(false)]
+        [DataRow(true)]
+        public void FailedInitializationClassificationRequiresExactExecutionAndRecordAbsence(bool associated)
+        {
+            const long session = 77;
+            foreach (var status in new[] { VersionedSaveLoadStatus.NoRecord, VersionedSaveLoadStatus.OutOfScope,
+                VersionedSaveLoadStatus.Restored, VersionedSaveLoadStatus.Corrupt, VersionedSaveLoadStatus.TooNew,
+                VersionedSaveLoadStatus.Unrecognized, VersionedSaveLoadStatus.MigrationFailed })
+            {
+                var load = new VersionedSaveLoad(status, VersionedSaveLoadSource.SaveGame, "classification.sav",
+                    0, 0, null, 0, string.Empty, null, session);
+                bool expected = !associated || (status != VersionedSaveLoadStatus.NoRecord && status != VersionedSaveLoadStatus.OutOfScope);
+                Assert.AreEqual(expected, NativeStorageRuntime.FailedInitializationRequiresProtection(load, associated ? session : 0), status.ToString());
+                Assert.IsTrue(NativeStorageRuntime.FailedInitializationRequiresProtection(load, session + 1));
+            }
+            Assert.IsTrue(NativeStorageRuntime.FailedInitializationRequiresProtection(null, session));
+            var unknown = new VersionedSaveLoad(VersionedSaveLoadStatus.NoRecord, VersionedSaveLoadSource.SaveGame,
+                "classification.sav", 0, 0, null, 0, string.Empty);
+            Assert.IsTrue(NativeStorageRuntime.FailedInitializationRequiresProtection(unknown, session));
+        }
+
+        [TestMethod]
+        [DataRow(false)]
+        [DataRow(true)]
+        public void ActualRegistrationRetainsDefaultReaderTwoAndRequiresExplicitProtectedMetadata(bool critical)
+        {
+            using (var fixture = new RuntimeBinding(false))
+            lock (fixture.Gate)
+            {
+                var registration = fixture.Runtime.CreateSaveRegistration(critical);
+                Assert.AreEqual(APISharedPlugin.PluginGuid, registration.OwnerGuid);
+                Assert.AreEqual(NativeStorageProductionSave.RecordIdentifier, registration.SaveDataIdentifier);
+                Assert.AreEqual(critical ? 3 : 2, registration.CurrentVersion);
+                Assert.AreEqual(1, registration.MinimumReaderVersion);
+                CollectionAssert.AreEquivalent(critical ? new[] { "ledger", "stores", NativeStorageProductionSave.CriticalMarkerEntry } :
+                    new[] { "ledger", "stores" }, new List<string>(registration.KnownEntries));
+                Assert.AreEqual(VersionedSaveScope.SaveGamesAndMaps, registration.Scope);
+                Assert.IsTrue(registration.SimulationRelevant);
+                Assert.IsNotNull(registration.Prepared); Assert.IsNotNull(registration.Capture); Assert.IsNotNull(registration.Loaded);
+                if (!critical)
+                {
+                    Func<VersionedSaveContext, byte[]> save = null;
+                    Action<byte[]> deliver = null;
+                    var registry = new VersionedSaveDataRegistry((id, capture, load) =>
+                    {
+                        save = capture; deliver = load; return true;
+                    }, ignored => { }, ignored => { });
+                    Assert.IsTrue(registry.TryRegister(registration, out var handle, out string reason), reason);
+                    var context = new VersionedSaveContext(true, false, "ordinary.sav");
+                    byte[] before = VersionedSaveRecordCodec.Encode(2, 2, Entries(fixture.CurrentState));
+                    byte[] written = save(context);
+                    CollectionAssert.AreEqual(before, written);
+                    Assert.AreEqual(VersionedSaveWriteStatus.Written, handle.LastWriteStatus);
+                    Assert.AreEqual(VersionedSaveRecordCodec.DecodeStatus.Valid, VersionedSaveRecordCodec.Decode(written, 2).Status);
+                    Assert.IsFalse(registry.HasCriticalWriterDemand);
+
+                    fixture.Begin(MissionStartKind.LoadedSave);
+                    registry.BeginLoad(VersionedSaveLoadSource.SaveGame, "ordinary.sav", fixture.Session);
+                    deliver(written); registry.PrepareLoad(); registry.EndLoad();
+                    Assert.IsTrue(fixture.Runtime.TryGetStock(fixture.Good, 1, out _, out reason), reason);
+                    Assert.IsTrue(fixture.Runtime.IsCurrentWorldReady);
+                    Assert.IsFalse(handle.KeepsLoadedRecord);
+                    fixture.Ready();
+                    CollectionAssert.AreEqual(before, save(context));
+                    Assert.AreEqual(VersionedSaveWriteStatus.Written, handle.LastWriteStatus);
+                }
+                // The opt-in row checks the actual descriptor, not enrollment,
+                // multiplayer repair, a protected native freeze or native saving.
+            }
         }
     }
 }

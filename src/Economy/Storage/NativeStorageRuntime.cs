@@ -21,16 +21,33 @@ namespace APIShared.Economy
         private readonly Func<int, NativeStorageProbe> readProbe;
         private readonly NativeStorageExchangeEngine exchanges;
         private readonly NativeStorageDeliveryEngine deliveries;
+        private readonly Action<bool> publishNativeCapacityDemand;
         private object engine, boundWorld;
         private NativeStorageState state;
         private NativeStorageState staged;
-        private long stagedSession;
+        private NativeStoragePreparedLoad preparedLoad;
+        private long stagedSession => preparedLoad?.MissionSessionId ?? 0;
+        private object blockedWorld;
         private volatile bool ready, blocked;
         private bool attempted;
         private string failure;
+        private VersionedSavePreparedSource criticalPreparedSource;
+        private bool criticalEnrollmentRequested;
+        private bool preparedCreatedWorld;
+        private VersionedSavePreparedOrigin preparedStorageOrigin;
+        private VersionedSaveCriticalCreatedWorldOrigin preparedCreatedOrigin;
+        private volatile bool unreadyArchiveSaveDemand;
+        internal bool HasUnreadyArchiveSaveDemand => unreadyArchiveSaveDemand;
+        internal bool HasCriticalWriterEnrollment => ready && criticalPreparedSource != null;
 
-        private NativeStorageRuntime()
+        private NativeStorageRuntime() : this(NativeStorageNativeRuntime.UpdateDemand) { }
+
+        // The process-owned leaf is a nonthrowing demand-DWORD store; it performs no
+        // game callback or native helper call. A private constructor also lets the
+        // actual runtime fixture observe this publication without installing hooks.
+        private NativeStorageRuntime(Action<bool> publishNativeCapacityDemand)
         {
+            this.publishNativeCapacityDemand = publishNativeCapacityDemand ?? throw new ArgumentNullException(nameof(publishNativeCapacityDemand));
             readProbe = ReadProbe; exchanges = new NativeStorageExchangeEngine(GoodsWalletNative.Instance);
             deliveries = new NativeStorageDeliveryEngine(GoodsWalletNative.Instance);
         }
@@ -38,9 +55,16 @@ namespace APIShared.Economy
         {
             get
             {
+                if (!ready || blocked || HasPendingImports) return false;
                 object current = MissionLifecycleService.NativeWorld;
-                return ready && !blocked && current != null && ReferenceEquals(current, Volatile.Read(ref boundWorld)) &&
-                    ReferenceEquals(current, MissionLifecycleService.NativeWorld);
+                if (current == null || !ReferenceEquals(current, Volatile.Read(ref boundWorld))) return false;
+                if (criticalEnrollmentRequested || criticalPreparedSource != null)
+                {
+                    var clock = MissionLifecycleService.NativeClock;
+                    if (clock == null || clock.Context.Mode.Kind == GameModes.GameModeKind.Unknown ||
+                        clock.Context.Mode.IsRealMultiplayer || !ReferenceEquals(clock.World, current)) return false;
+                }
+                return ReferenceEquals(current, MissionLifecycleService.NativeWorld);
             }
         }
 
@@ -77,6 +101,38 @@ namespace APIShared.Economy
             }
         }
 
+        // Public enrollment first validates a metadata-only plan. The native
+        // mode request is assigned only after that exact plan commits, so false
+        // cannot change a later ordinary reader2 registration into protected3.
+        internal bool TryRequestCriticalSaveEnrollment(out string reason)
+        {
+            if (!CanRequestCriticalSaveEnrollment(out reason)) return false;
+            CommitCriticalSaveEnrollmentRequest(); return true;
+        }
+
+        internal bool CanRequestCriticalSaveEnrollment(out string reason)
+        {
+            if (!UnityMainThreadDispatch.IsMainThread || ApiSharedRuntime.ProcessInstance.State != NativeApiState.Ready)
+            { reason = "Request protected storage during initialized Unity startup."; return false; }
+            if (MissionLifecycleService.NativeWorld != null || MissionLifecycleService.ActiveContext != null ||
+                (!criticalEnrollmentRequested && (attempted || ready || registeredHandles.Length != 0)) ||
+                (criticalEnrollmentRequested && attempted && !HasCriticalWriterEnrollment))
+            { reason = "Request protection before the first storage registration or world."; return false; }
+            if (!WorkerProductionCriticalSaveRuntime.IsAvailable)
+            { reason = "The qualified critical writer is unavailable."; return false; }
+            reason = string.Empty; return true;
+        }
+
+        internal void CommitCriticalSaveEnrollmentRequest() => criticalEnrollmentRequested = true;
+
+        // The normal startup path uses this exact descriptor. Keeping the legacy
+        // descriptor at reader2 also makes protected3 archives TooNew/passive in
+        // an unenrolled runtime rather than silently dropping their known marker.
+        internal VersionedSaveDataRegistration CreateSaveRegistration(bool critical) =>
+            new VersionedSaveDataRegistration(APISharedPlugin.PluginGuid, NativeStorageProductionSave.RecordIdentifier, critical ? 3 : 2, 1,
+                critical ? new[] { "ledger", "stores", NativeStorageProductionSave.CriticalMarkerEntry } : new[] { "ledger", "stores" }, Capture, Loaded)
+            { Scope = VersionedSaveScope.SaveGamesAndMaps, SimulationRelevant = true, Prepared = Prepare };
+
         private bool EnsureInitialized(out string reason)
         {
             if (ready) { reason = string.Empty; return true; }
@@ -88,13 +144,23 @@ namespace APIShared.Economy
                 if (!GoodsWalletNative.Instance.IsReady) throw new InvalidOperationException("The checked native wallet is unavailable.");
                 NativeStorageState.WarmPublication();
                 if (!NativeStorageNativeRuntime.EnsureInstalled(out reason)) throw new InvalidOperationException(reason);
-                var archive = new VersionedSaveDataRegistration(APISharedPlugin.PluginGuid, "APIShared.NativeStorage.v1", 2, 1,
-                    new[] { "ledger", "stores" }, Capture, Loaded)
-                { Scope = VersionedSaveScope.SaveGamesAndMaps, SimulationRelevant = true, Prepared = Prepare };
+                // Physical-stock callers keep their original default2/MP path.
+                // Only explicit protected startup selects the reserved marker/reader3.
+                if (criticalEnrollmentRequested && !WorkerProductionCriticalSaveRuntime.IsAvailable)
+                    throw new InvalidOperationException("Protected native storage requires the available qualified critical writer.");
+                var archive = CreateSaveRegistration(criticalEnrollmentRequested);
                 if (!VersionedSaveData.TryRegister(archive, out saveHandle, out reason)) throw new InvalidOperationException(reason);
+                if (criticalEnrollmentRequested && !VersionedSaveDataRuntime.TryTrackPreparedSource(APISharedPlugin.PluginGuid, saveHandle, out criticalPreparedSource, out reason))
+                    throw new InvalidOperationException(reason);
+                if (criticalEnrollmentRequested && !VersionedSaveDataRuntime.TryObserveGeneration(ImportGenerationChanged, out reason))
+                    throw new InvalidOperationException(reason);
                 if (!SimulationTickEvents.TryRegister(APISharedPlugin.PluginGuid, "native-storage/reconcile", Tick, out reason, -1000))
                     throw new InvalidOperationException(reason);
-                NativeStorageNativeRuntime.UpdateDemand(false);
+                PublishCapacityDemand(false);
+                // Joining adds permanent demand: publish it only after every other
+                // fallible startup operation. Tick remains inert until ready=true.
+                if (criticalEnrollmentRequested && !VersionedSaveDataRuntime.TryJoinCriticalWriterCohort(criticalPreparedSource, NativeStorageProductionSave.CriticalMarkerEntry, 3, out reason))
+                    throw new InvalidOperationException(reason);
                 ready = true; reason = string.Empty; return true;
             }
             catch (Exception error)
@@ -128,30 +194,71 @@ namespace APIShared.Economy
         private bool EnsureWorld(out object world, out string reason)
         {
             if (!Context(false, out world, out reason)) return false;
+            if (HasPendingImports)
+            { reason = "The matching legacy storage imports must all commit before shared state activation."; return false; }
             var current = MissionLifecycleService.NativeWorld;
             var clock = MissionLifecycleService.NativeClock;
+            if ((criticalEnrollmentRequested || criticalPreparedSource != null) &&
+                (clock == null || clock.Context.Mode.Kind == GameModes.GameModeKind.Unknown ||
+                    clock.Context.Mode.IsRealMultiplayer || !ReferenceEquals(clock.World, world)))
+            { reason = "Protected native storage activation requires its exact known single-player/editor world."; return false; }
             // Creating a blank editor map has no archive callback. Only that explicit native
             // operation may synthesize NoRecord; a missing callback on a loaded map/save must
             // never silently erase its unknown state, including after a previous blocked load.
             if (current != null && clock != null &&
                 CanCreateWithoutArchive(stagedSession, current.Mission, clock.Context.StartKind) &&
+                (!blocked || !ReferenceEquals(current, blockedWorld)) &&
                 current.Mission == (MissionLifecycleService.ActiveContext?.SessionId ?? 0))
             {
                 var empty = CreateEmpty();
-                staged = empty; stagedSession = current.Mission; blocked = false; failure = null; passiveCargoRecord = false;
+                preparedLoad = NativeStoragePreparedLoad.ForBlankWorld(empty, current.Mission);
+                preparedCreatedWorld = true;
+                staged = empty; blocked = false; blockedWorld = null; failure = null; passiveCargoRecord = false;
+                preparedStorageOrigin = null; preparedCreatedOrigin = null;
                 Volatile.Write(ref boundWorld, null);
             }
+            if (criticalPreparedSource != null && !preparedCreatedWorld && saveHandle?.KeepsLoadedRecord == true)
+                return Block(reason = "The original storage cohort record must remain passive.");
             if (blocked) { reason = failure ?? "The native-storage record is blocked."; return false; }
             if (ReferenceEquals(world, boundWorld) && state != null) return true;
             if (current == null || staged == null || stagedSession == 0 || stagedSession != current.Mission ||
                 stagedSession != (MissionLifecycleService.ActiveContext?.SessionId ?? 0))
             { reason = "The matching storage archive is not prepared yet."; return false; }
-            if (!staged.Reconcile(readProbe, out NativeStorageState candidate, out reason)) return Block(reason);
+            NativeStoragePreparedLoad prepared = preparedLoad;
+            NativeStorageState pending = staged;
+            VersionedSavePreparedOrigin archiveOrigin = preparedStorageOrigin;
+            VersionedSaveCriticalCreatedWorldOrigin createdOrigin = preparedCreatedOrigin;
+            if (!pending.Reconcile(readProbe, out NativeStorageState candidate, out reason)) return Block(reason);
             if (!ReferenceEquals(world, MissionLifecycleService.NativeWorld)) { reason = "World replacement interrupted storage activation."; return false; }
-            state = candidate;
-            Volatile.Write(ref boundWorld, world);
-            staged = null;
-            NativeStorageNativeRuntime.UpdateDemand(state.HasRows);
+            if (preparedCreatedWorld && criticalPreparedSource != null && createdOrigin == null)
+            {
+                // Retain the token minted for this exact empty candidate. A later
+                // metadata reset must not be repaired by recapturing a new token.
+                if (!criticalPreparedSource.Registry.TryAuthorizeCriticalCreatedWorld(criticalPreparedSource, world,
+                    current.Mission, out createdOrigin, out reason)) return false;
+                preparedCreatedOrigin = createdOrigin;
+            }
+            if (criticalPreparedSource != null)
+            {
+                lock (importSync)
+                {
+                    if (HasPendingImports || !ReferenceEquals(preparedLoad, prepared) || !ReferenceEquals(staged, pending) ||
+                        !ReferenceEquals(preparedStorageOrigin, archiveOrigin) || !ReferenceEquals(preparedCreatedOrigin, createdOrigin))
+                    { reason = "The protected storage candidate or its retained origin changed."; return false; }
+                    // The registry guard closes invalidation after validation and
+                    // before publication. Only preallocated assignments run inside.
+                    if (!criticalPreparedSource.Registry.TryAcquireCriticalWorldPublication(criticalPreparedSource,
+                        archiveOrigin, createdOrigin, world, current.Mission, out var lease, out reason)) return false;
+                    using (lease)
+                    {
+                        state = candidate; Volatile.Write(ref boundWorld, world); staged = null;
+                    }
+                }
+            }
+            else
+            { state = candidate; Volatile.Write(ref boundWorld, world); staged = null; }
+            prepared.ReleaseState();
+            PublishCapacityDemand(candidate.HasRows);
             reason = string.Empty; return true;
         }
 
@@ -169,9 +276,28 @@ namespace APIShared.Economy
         private bool Block(string reason)
         {
             failure = reason; blocked = true;
-            NativeStorageNativeRuntime.UpdateDemand(true); // Unknown occupied storage cannot safely admit more goods.
+            // Metadata refresh keeps this identity. Only a genuinely new explicit blank
+            // world may recover without an archive; the same Ready world cannot erase a refusal.
+            blockedWorld = MissionLifecycleService.NativeWorld;
+            PublishCapacityDemand(true); // Unknown occupied storage cannot safely admit more goods.
             return false;
         }
+
+        // All owned demand decisions and their native-DWORD publication share the
+        // revocation gate. A late empty-stock result cannot undo a newer protected
+        // load/unload barrier. The ordinary unenrolled path retains its exact input.
+        private void PublishCapacityDemand(bool requested)
+        {
+            if (!criticalEnrollmentRequested && criticalPreparedSource == null)
+            { publishNativeCapacityDemand(requested); return; }
+            lock (importSync)
+                publishNativeCapacityDemand(requested || HasPendingImports || blocked ||
+                    Volatile.Read(ref boundWorld) == null);
+        }
+
+        // No native occupancy is implied by cargo alone. Unbound protected state,
+        // however, remains conservative until exact activation/import binds it.
+        internal void RefreshImportPublicationDemand() => PublishCapacityDemand(HasPendingImports || blocked || state?.HasRows == true);
 
         private static NativeStorageProbe ReadProbe(int slot) =>
             NativeStorageNativeRuntime.TryRead(slot, out NativeStorageProbe probe) ? probe : default;
@@ -195,6 +321,41 @@ namespace APIShared.Economy
             reason = string.Empty; return true;
         }
 
+        internal bool TryGetQuantity(NativeStoredGood good, NativeStorageSnapshot expected, out int quantity, out string reason)
+        {
+            quantity = 0;
+            // Registration handles are immutable/process-lived; the shared lookup reads their
+            // published array and does not race the Unity startup dictionary.
+            if (!IsRegistrationReady(good)) { reason = "The exact registered output handle is unavailable."; return false; }
+            try
+            {
+                if (!EnsureWorld(out object world, out reason)) return false;
+                if (!ReferenceEquals(expected.World, world)) { reason = "The storage observation belongs to another native world."; return false; }
+                NativeStorageNativeRuntime.TryRead(expected.BuildingId, out NativeStorageProbe current);
+                if (!TryReadQuantity(state, good.Key, world, blocked, expected, current, out quantity, out reason)) return false;
+                if (!ReferenceEquals(world, MissionLifecycleService.NativeWorld) || blocked)
+                { quantity = 0; reason = "The native world changed during quantity observation."; return false; }
+                return true;
+            }
+            catch (Exception error)
+            { quantity = 0; reason = "Storage quantity observation failed: " + error.Message; return false; }
+        }
+
+        // The production binding supplies a protected current native probe after EnsureWorld.
+        // Kept value-only so lifetime/identity rejection can be tested without executing game code.
+        internal static bool TryReadQuantity(NativeStorageState owner, CustomGoodId good, object world, bool blockedRecord,
+            NativeStorageSnapshot expected, NativeStorageProbe current, out int quantity, out string reason)
+        {
+            quantity = 0;
+            if (owner == null || world == null || blockedRecord)
+            { reason = "The matching storage state is pending, blocked or unavailable."; return false; }
+            if (!ReferenceEquals(expected.World, world)) { reason = "The storage observation belongs to another native world."; return false; }
+            NativeStorageProbe prior = expected.Probe;
+            if (!prior.IsLive || !current.IsLive || prior.Slot != current.Slot || prior.GlobalId != current.GlobalId ||
+                prior.PlayerId != current.PlayerId || prior.Kind != current.Kind)
+            { reason = "The observed storage was destroyed, reused, captured or retyped."; return false; }
+            return owner.TryGetQuantity(good, current, out quantity, out reason);
+        }
         internal bool TryGetSequence(string owner, out long sequence, out string reason)
         {
             sequence = 0;
@@ -223,7 +384,7 @@ namespace APIShared.Economy
             if (!Reconcile(out reason)) return false;
             NativeStorageNativeRuntime.TryRead(expected.BuildingId, out NativeStorageProbe current);
             bool applied = exchanges.TryExchange(state, good.Key, expected, current, sequence, quantityDelta, goldDelta, out status, out reason);
-            if (applied) NativeStorageNativeRuntime.UpdateDemand(state.HasRows);
+            if (applied) PublishCapacityDemand(state.HasRows);
             return applied;
         }
 
@@ -234,7 +395,7 @@ namespace APIShared.Economy
             if (!state.Reconcile(readProbe, out NativeStorageState next, out reason)) return Block(reason);
             if (!ReferenceEquals(world, MissionLifecycleService.NativeWorld)) { reason = "The native world changed during reconciliation."; return false; }
             state = next;
-            NativeStorageNativeRuntime.UpdateDemand(next.HasRows);
+            PublishCapacityDemand(next.HasRows);
             return true;
         }
 
@@ -266,16 +427,41 @@ namespace APIShared.Economy
             }
         }
 
+        // A registered callback outlives partial startup failure. Only exact
+        // causally associated absence proves there is no virtual occupancy to
+        // protect; even readable legacy stores can contain saved physical rows.
+        internal static bool FailedInitializationRequiresProtection(VersionedSaveLoad load, long executingSession) =>
+            load == null || load.MissionSessionId <= 0 || load.MissionSessionId != executingSession ||
+            (load.Status != VersionedSaveLoadStatus.NoRecord && load.Status != VersionedSaveLoadStatus.OutOfScope);
+
         private void Prepare(VersionedSaveLoad load)
         {
             lock (engine)
             {
-                blocked = false; failure = null; staged = null;
-                stagedSession = MissionLifecycleService.ActiveContext?.SessionId ?? 0;
+                long executingSession = MissionLifecycleService.ExecutingSessionId;
+                if (!ready)
+                {
+                    bool protect = FailedInitializationRequiresProtection(load, executingSession);
+                    // Same owned transition drives capacity protection and native
+                    // save demand. Keep original bytes; never publish failed state.
+                    unreadyArchiveSaveDemand = protect;
+                    PublishCapacityDemand(protect);
+                    throw new InvalidOperationException(failure ?? "Native storage startup has not completed; preserve the original archive.");
+                }
+                unreadyArchiveSaveDemand = false;
+                blocked = false; blockedWorld = null; failure = null; staged = null; preparedCreatedWorld = false;
+                preparedStorageOrigin = null; preparedCreatedOrigin = null;
                 Volatile.Write(ref boundWorld, null);
-                NativeStorageNativeRuntime.UpdateDemand(true);
+                if (criticalPreparedSource != null &&
+                    !criticalPreparedSource.TryGetCurrent(load, out preparedStorageOrigin, out string originReason))
+                {
+                    Block(originReason);
+                    throw new InvalidOperationException(originReason);
+                }
+                PublishCapacityDemand(true);
                 var prepared = new NativeStoragePreparedLoad();
-                try { prepared.Prepare(definitions, load); }
+                preparedLoad = prepared;
+                try { prepared.Prepare(definitions, load, executingSession); }
                 finally
                 {
                     staged = prepared.State;

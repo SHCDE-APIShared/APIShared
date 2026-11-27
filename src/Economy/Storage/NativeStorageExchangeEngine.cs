@@ -7,7 +7,7 @@ namespace APIShared.Economy
 {
     // The runtime binds/reconciles this private state under the engine monitor before entering.
     // This seam owns preparation and the callback-free payment/publication aperture, not hooks.
-    internal sealed unsafe class NativeStorageExchangeEngine
+    internal sealed unsafe partial class NativeStorageExchangeEngine
     {
         private static readonly object warmSync = new object();
         private static bool warmed;

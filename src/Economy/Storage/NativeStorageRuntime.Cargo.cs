@@ -73,7 +73,7 @@ namespace APIShared.Economy
             if (!Reconcile(out reason)) return false;
             NativeStorageNativeRuntime.TryRead(destination.BuildingId, out NativeStorageProbe current);
             if (!cargoEngine.TryDeposit(state, owner, expected.Value, world, true, destination.Probe, current, quantity, out var lot, out status, out reason)) return false;
-            snapshot = new NativeCargoSnapshot(world, lot); NativeStorageNativeRuntime.UpdateDemand(state.HasRows); return true;
+            snapshot = new NativeCargoSnapshot(world, lot); PublishCapacityDemand(state.HasRows); return true;
         }
         internal bool TryDiscardCargo(string owner, NativeCargoSnapshot expected, out NativeCargoSnapshot snapshot,
             out GoodsTransactionStatus status, out string reason)

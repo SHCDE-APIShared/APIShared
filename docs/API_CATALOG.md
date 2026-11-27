@@ -8,6 +8,25 @@ gold/stock exchanges and joint ledger/allocation persistence. No native goods ID
 recipe, art or hauling policy is invented. See [contracts and limits](NATIVE_STORAGE.md)
 and the [compiled example](../examples/ThirdPartyMod/NativeStorageExample.cs).
 
+Ordinary NativeStorage retains its physical-stock/save behavior, including real
+multiplayer. Explicit `client.CriticalSaves` enrollment can request the shared
+SP/editor-only protected writer and container version 3/minimum reader 3.
+Consumer migration remains separate. See
+[save-policy compatibility](NATIVE_STORAGE.md#material-save-policy-compatibility-change).
+
+`NativeStoredGood.TryGetQuantity` reads one registered good in an exact observed
+store under the existing [protected read contract](NATIVE_STORAGE.md#read-one-good-in-one-store).
+
+`NativeStorageClient.TryPrepareImport` and `TryCommitImport` support bounded typed
+cold migration of an enrolled owner's physical allocations and final cargo. A
+successful prepared plan keeps shared publication passive until every matching
+owner commits. See [legacy-ledger import](NATIVE_STORAGE.md#importing-an-existing-owner-ledger)
+for exact provenance, generation, capacity, retry and consumer-cutover requirements.
+
+`NativeStorageClient.TryExchangeBatch` atomically exchanges up to 64 physical
+rows and one player's gold, with bounded replay and joint pooled-capacity checks.
+See [atomic multi-store exchanges](NATIVE_STORAGE.md#atomic-multi-store-exchanges).
+
 ## External production cargo
 
 `NativeStorageClient.TryCreateCargo`, `TryGetCargo`, `TryDepositCargo` and
@@ -102,6 +121,14 @@ own existing local setting. See [mod keybind integration](THIRD_PARTY_GUIDE.md#l
 `APIShared.Units.TroopCommandInputEvents` reports local command releases with
 the final map tile and the ordered unit IDs under the cursor.
 See [troop-command observation](THIRD_PARTY_GUIDE.md#troop-command-observation).
+
+## Critical save participants
+
+`ModApiClient.CriticalSaves` enrolls an owner-matching versioned record in the shared
+SP/editor protected writer, with private prepare/release state and original-record
+protection observations. Acquisition is dormant; enrollment is explicit and
+process-lived. See [startup, prerequisites and limits](SAVE_DATA.md#opt-in-protected-save-participants)
+and the [compiled example](../examples/ThirdPartyMod/SaveDataExample.cs).
 
 ## Managed save calls
 
@@ -321,6 +348,7 @@ Rounded fear coefficients and fixed contributions per signed level use [`Economy
 | `APIShared.Units.UnitSettledEvents` | Created, recruited, assigned and disbanded units once their native creation or type change has finished; value notifications | Startup registration; SE simulation-tick thread; trigger order, then order/owner/ID; first registration subscribes to SE; no replay; process lifetime |
 | `APIShared.NativeSites.NativeSiteRegistry` | Prefer a shared APIShared service; use the registry for hooks APIShared doesn't cover yet. Cooperative registry of CrusaderDE.dll native sites: register a span before hooking it (Exclusive, ChainableEntry, CallOnly, Observe), get an acceptance or a refusal naming the owner, query owner and mode by RVA or span. A refusal identifies a conflict without resolving it; an accepted overlap only means no byte overlap, not compatibility | Any thread; register at startup or install time; atomic groups; allocation-free snapshot queries; process lifetime, unregister only to roll back; sees only registered sites ([guide](NATIVE_SITES.md)) |
 | `APIShared.Savegames.VersionedSaveData` | Versioned per-mod save records over Script Extender `ModSaveDataAPI`: migration steps, unknown entries kept, documented load results | Register during startup; capture on the Extender's save thread; one load result per archive load in owner/identifier order; process lifetime |
+| `ModApiClient.CriticalSaves` | Explicit protected-writer enrollment for an owner-matching versioned record; prepare/release checkpoints and original-marker observations | Initialized Unity startup before world/load; SP/editor only; exact Prepared delivery for marker reads; process lifetime; [contract](SAVE_DATA.md#opt-in-protected-save-participants) |
 | `APIShared.Audio.SoundSourceEvents` | Native-stage Pre for attributed soldier and melee-kill sound calls: acting unit ID, GlobalId and type, the killed victim, and sound ID replacement before the native record exists | Any-thread registration; native game-tick thread inside the wrapper; order/owner/ID; no replay; allocation-free struct args; process lifetime |
 | `APIShared.Audio.SoundSourceSelection` | Optional set of catalog sources (by key or situation) for `SoundEvents`/`SoundSourceEvents` registrations; unselected sources stay native | Immutable; any thread; fixed per registration; existing overloads equal `All` ([guide](AUDIO.md#source-selections)) |
 
@@ -418,6 +446,7 @@ Member-level documentation is also shipped as `APIShared.xml` beside the DLL.
 | Mission-start settings log | Automatic for published APIShared preset endpoints; no consumer registration required | Info-level compact JSON, once per successful session; applied host values and this client's player/local values | [Log format](MOD_SETTINGS.md#mission-start-settings-log) |
 | Savegame participation | [Contracts](../src/Savegames/SavegameModSettingsContracts.cs), [exclusion attribute](../src/ModSettings/ExcludeFromSavegameModSettingsAttribute.cs) | [SavegameModSettings](../src/Savegames/SavegameModSettings.cs) | â€” |
 | Versioned save data | [Contracts](../src/Savegames/VersionedSaveDataContracts.cs), [registration](../src/Savegames/VersionedSaveDataRuntime.cs) | [Registry and load window](../src/Savegames/VersionedSaveDataRegistry.cs), [record codec](../src/Savegames/VersionedSaveRecordCodec.cs), [guide](SAVE_DATA.md) | [Save data](../examples/ThirdPartyMod/SaveDataExample.cs) |
+| Critical save participants | [Contracts](../src/Savegames/CriticalSaveContracts.cs), [client](../src/Savegames/CriticalSaveClient.cs) | [Enrollment, 8/16 MiB aggregate consent and limits](SAVE_DATA.md#opt-in-protected-save-participants), [capture protocol](../src/Savegames/VersionedSaveCriticalCapture.cs) | [Save data](../examples/ThirdPartyMod/SaveDataExample.cs) |
 | Additional route search | [Pre/Post contracts](../src/Pathfinding/Routes/RouteSearchContracts.cs) | [Registry and publication](../src/Pathfinding/Routes/RouteSearchEvents.cs) | [Route observer](../examples/ThirdPartyMod/RouteSearchExample.cs) |
 | Route engine status | [RouteEngineInfo](../src/Pathfinding/Routes/RouteEngineInfo.cs) | Passive report; one engine at a time; diagnostics and option texts only. |
 | Route tile rules | [Rules and rule sets](../src/Pathfinding/Routes/RouteTileRules.cs) | Passive registry; route engines read effects and the change journal ([section](#route-tile-rules)) | [Hazard tiles](../examples/ThirdPartyMod/RouteTileRulesExample.cs) |
@@ -960,10 +989,14 @@ callback runs once per archive load with a documented status, including `NoRecor
 declared `SimulationRelevant` are compared across players before a multiplayer save loads.
 Usage, the record-version migration policy, the comparison boundary, limits and
 implementation are in [Save data](SAVE_DATA.md).
+The readonly `VersionedSaveLoad.MissionSessionId` associates synchronous archive
+callbacks with queued lifecycle notifications; see the [association contract](SAVE_DATA.md#associating-archive-callbacks-with-a-mission-attempt).
 The registry's internal [tracked-origin and enrolled-capture protocol](SAVE_DATA.md#tracked-origins-and-enrolled-captures)
 binds existing records to frozen bytes and original markers without adding a
 public enrollment or legacy-storage migration API. The existing protected writer
 retains [explicit cleanup/commit outcomes](SAVE_DATA.md#critical-save-cleanup-outcomes).
+The [internal managed Trail metadata](SAVE_DATA.md#internal-managed-trail-producer-metadata)
+has a separate binding and supplies no public pre-capture or enrollment API.
 
 ## Workshop inventory
 
@@ -1164,7 +1197,9 @@ taken from an AI group. Opt-in, simulation state, hash-bound. See the
 APIShared corrects selected Script Extender defects without consumer registration, for example
 save-only record persistence in synchronized saves and the classification of multiplayer
 save/editor loads, and early Vanilla handshake preservation during prepared lobby
-starts. See [Script Extender fixes](SCRIPT_EXTENDER_FIXES.md).
+starts. Its internal managed producer can pin a queried normal/editor save's first
+archive context; it exposes no public capture or native-write authority. See
+[Script Extender fixes](SCRIPT_EXTENDER_FIXES.md#internal-early-save-context).
 
 ## Ally gifts and the goods dialog
 
@@ -1188,7 +1223,10 @@ APIShared reserves the original recipes within the four choices per workshop typ
 It supplies the building HUD, Shift selection, synchronized execution and saved
 production state. `WithStoredOutput` binds an owner-matching registered Armory good
 for offline/editor production, with atomic native cargo/custom-stock delivery and
-verified joint save capture. See [the recipe contract and example](WEAPON_PRODUCTION.md).
+verified joint save capture. `TryPrepareManufacturingAdoption` can attach exact-origin,
+already-paid native-timed Armourer work to a legacy storage import; Ready and Carrying
+need separate qualified adoption. See [the recipe contract and example](WEAPON_PRODUCTION.md)
+and [paid manufacturing adoption](WEAPON_PRODUCTION.md#adopt-an-already-paid-legacy-manufacturing-charge).
 
 ## Huntable prey
 
@@ -1278,3 +1316,12 @@ row for simulation checks independent of the local HUD. [Integration guide](THIR
 `APIShared.Buildings.QuarryPilePlacement` (0.61.0) exposes the native candidate query for
 a new quarry, the indexed coordinates used by pile relocation, and a scoped filter for
 one synchronous quarry build. [Integration guide](THIRD_PARTY_GUIDE.md#construction-material-stock-and-quarry-piles)
+
+## Managed assembly audit tool
+
+[AssemblyMetadata](../tools/AssemblyMetadata/README.md) is a game-independent
+.NET 10 developer CLI for hash-bound, bounded metadata and complete selected IL
+reports. Exact type/method filters do not expand to unrelated types or dependency
+assemblies. See its guide for fresh-output, no-resolution and resource contracts;
+[metadata evidence limits](NATIVE_COMPATIBILITY.md#inspecting-managed-dependencies)
+remain separate from runtime/backend qualification.

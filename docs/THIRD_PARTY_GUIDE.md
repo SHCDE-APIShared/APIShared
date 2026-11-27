@@ -9,6 +9,30 @@ The service owns physical rows, its private ledger and matching save entries.
 Recipes, hauling, art, player authorization and command transport remain consumer
 responsibilities. Existing overlapping private capacity detours must be migrated.
 
+Follow the [NativeStorage save-policy contract](NATIVE_STORAGE.md#material-save-policy-compatibility-change):
+ordinary registrations keep reader 2 and their real-multiplayer path. Explicit
+`client.CriticalSaves` enrollment can request the SP/editor writer cohort and
+reader 3 before the first storage registration. Follow the
+[protected participant workflow](SAVE_DATA.md#opt-in-protected-save-participants).
+Legacy import and private-ledger retirement still require a verified consumer migration.
+
+For a per-building display or withdrawal plan, observe the exact store and call
+the registered good's `TryGetQuantity`; combined virtual occupancy is not that
+good's quantity. Follow the [protected read workflow](NATIVE_STORAGE.md#read-one-good-in-one-store),
+which grants no mutation authority.
+
+For an existing owner ledger, [typed cold import](NATIVE_STORAGE.md#importing-an-existing-owner-ledger)
+stages bounded physical allocations and final cargo from the enrolled record's
+exact `Prepared` delivery. Commit only after the complete matching load under the
+actual engine monitor; all related consumer callers and actor records still need
+a lossless migration before the old ledger retires.
+
+Use `NativeStorageClient.TryExchangeBatch` for an authorized lot spanning several
+stores; looping single-store exchanges cannot make the lot atomic. Retain the
+original snapshots and owner sequence for an in-world retry. See
+[batch bounds, capacity and replay](NATIVE_STORAGE.md#atomic-multi-store-exchanges).
+This supplies no legacy-ledger import or consumer-save cutover authority.
+
 ## External production cargo
 
 Use the existing `NativeStorageClient` cargo methods when an external producer
@@ -1108,6 +1132,9 @@ APIShared corrects selected Script Extender defects without consumer registratio
 [Script Extender fixes](SCRIPT_EXTENDER_FIXES.md). Save handlers in particular receive
 `SaveContext.IsSaveFile=true` with a null `FilePath` for synchronized native saves, including
 autosaves; branch on the explicit context rather than assuming autosaves are maps.
+The optional [internal early producer](SCRIPT_EXTENDER_FIXES.md#internal-early-save-context)
+pins only explicitly queried normal/editor saves and adds no public consumer query
+or native-save permission. Unqueried ordinary save callbacks retain their existing context.
 
 ## Plugin entry points with optional APIShared
 
@@ -1123,11 +1150,30 @@ is ready, and treat `NoRecord` as a new mission. Follow the
 [record-version migration policy](SAVE_DATA.md#record-version-migration-policy) when the
 format changes, and add a legacy reader when you keep an identifier that already holds data.
 See [Save data](SAVE_DATA.md) and the [compiled example](../examples/ThirdPartyMod/SaveDataExample.cs).
-Keeping an identifier and adding a legacy reader only decodes that record; it
-does not atomically transfer stock, cargo or authority to another service. The
-[internal provenance/capture protocol](SAVE_DATA.md#tracked-origins-and-enrolled-captures)
-does not expose consumer enrollment. Continue applying ordinary loaded state at
-its supported lifecycle boundary; do not add a competing native save hook.
+Consumers coupling early `Prepared` state to mission lifecycle notifications can use
+`VersionedSaveLoad.MissionSessionId`; require the provider build exporting that getter
+and follow its [association contract](SAVE_DATA.md#associating-archive-callbacks-with-a-mission-attempt).
+For a record that must veto incomplete destination replacement, explicitly enroll
+its handle through `client.CriticalSaves` during initialized Unity startup, before
+any world/archive load. Supply private prepare/release callbacks, a known reserved
+marker and its supported reader floor; the record must provide `Prepared`, use
+`SaveGamesAndMaps` and declare `SimulationRelevant`. Request shared NativeStorage
+before its first registration when needed. Follow the authoritative
+[protected participant workflow](SAVE_DATA.md#opt-in-protected-save-participants)
+for same-thread callbacks, original-marker observations, SP/editor limits and
+process lifetime. The compiled example keeps this opt-in separate from ordinary registration.
+The cohort defaults to 8 MiB of encoded records in total. A 16 MiB aggregate requires
+explicit consent from every joined source; default/internal sources keep 8 MiB, and
+record/entry limits do not change. See the same protected workflow for the typed
+`CriticalSaveAggregateBudget` option, snapshot timing and lower-ceiling behavior.
+
+Keeping an identifier and adding a legacy reader only decodes that record; neither
+it nor critical enrollment atomically transfers stock, cargo or authority to
+another service. Retain private ledgers until a complete lossless migration is
+verified. Continue applying ordinary loaded state at its supported lifecycle
+boundary; do not add a competing native save hook.
+Framework implementation work should follow the
+[managed Trail metadata and limits](SAVE_DATA.md#internal-managed-trail-producer-metadata).
 
 ## Workshop package cleanup
 

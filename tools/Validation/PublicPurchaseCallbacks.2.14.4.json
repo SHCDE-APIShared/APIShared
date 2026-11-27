@@ -1,0 +1,79 @@
+{
+  "schema": "public-extender-metadata-fixture/1",
+  "release": "2.14.4",
+  "archive": {
+    "url": "https://gitlab.com/api/v4/projects/74440776/packages/generic/shcdese/2.14.4/SHCDESE.zip",
+    "bytes": 60330646,
+    "sha256": "c993c40ea3a74c6fc03d120d0161e8c654cb11ed72509dda2c0e3ca0fc4b80e9"
+  },
+  "assemblies": [
+    {
+      "name": "SHCDESE.dll",
+      "entry": "BepInEx/plugins/000shcdese/SHCDESE.dll",
+      "bytes": 1587200,
+      "sha256": "e1b73d1e64e809ec51b9f2540f8f5dbf5357b5970492c688e9a8a7a8283e7d37"
+    }
+  ],
+  "probes": [
+    {
+      "id": "player-subtract-callback",
+      "assembly": "SHCDESE.dll",
+      "type": "SHCDESE.Detours.BulkPlayerDetours",
+      "includeNested": true,
+      "calledMember": "SHCDESE.EventAPI.Player.PlayerSubtractResourceEventArgs::.ctor",
+      "maxOutputBytes": 524288
+    },
+    {
+      "id": "unit-movement-callback",
+      "assembly": "SHCDESE.dll",
+      "type": "SHCDESE.Detours.BulkUnitDetours",
+      "includeNested": true,
+      "calledMember": "SHCDESE.EventAPI.Units.UnitMovementEventArgs::.ctor",
+      "maxOutputBytes": 524288
+    },
+    {
+      "id": "tribe-create-callback",
+      "assembly": "SHCDESE.dll",
+      "type": "SHCDESE.Detours.BulkTribeDetours",
+      "includeNested": true,
+      "calledMember": "SHCDESE.EventAPI.Tribes.TribeCreateEventArgs::.ctor",
+      "maxOutputBytes": 262144
+    },
+    {
+      "id": "tribe-assign-callback",
+      "assembly": "SHCDESE.dll",
+      "type": "SHCDESE.Detours.BulkTribeDetours",
+      "includeNested": true,
+      "calledMember": "SHCDESE.EventAPI.Tribes.TribeAssignUnitEventArgs::.ctor",
+      "maxOutputBytes": 262144
+    },
+    {
+      "id": "tail-event-contracts",
+      "assembly": "SHCDESE.dll",
+      "type": "SHCDESE.EventAPI.EventHookBase;SHCDESE.EventAPI.Player.PlayerSubtractResourceEventArgs;SHCDESE.EventAPI.Units.UnitMovementEventArgs;SHCDESE.EventAPI.Tribes.TribeCreateEventArgs;SHCDESE.EventAPI.Tribes.TribeAssignUnitEventArgs",
+      "includeNested": false,
+      "maxOutputBytes": 262144
+    },
+    {
+      "id": "tail-event-publisher",
+      "assembly": "SHCDESE.dll",
+      "type": "SHCDESE.EventAPI.R3EventHook`1",
+      "includeNested": false,
+      "methods": [
+        ".ctor",
+        "Raise"
+      ],
+      "maxOutputBytes": 131072
+    },
+    {
+      "id": "tail-owner-registrations",
+      "assembly": "SHCDESE.dll",
+      "type": "SHCDESE.Detours.BulkPlayerDetours;SHCDESE.Detours.BulkTribeDetours",
+      "includeNested": false,
+      "methods": [
+        ".ctor"
+      ],
+      "maxOutputBytes": 1048576
+    }
+  ]
+}

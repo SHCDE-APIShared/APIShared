@@ -2,6 +2,7 @@ using APIShared;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace APISharedTests
@@ -149,6 +150,170 @@ namespace APISharedTests
             reentrant.Ready(reentrantId, Seed(MissionStartKind.NewGame));
             Assert.IsTrue(order.SequenceEqual(new[] { "first:Start", "second:Start", "first:End", "second:End" }),
                 "reentrant End overtook Start for another observer");
+        }
+
+        [TestMethod]
+        public void ExecutingSessionRequiresOwnedScopePendingAttemptAndCallingThread()
+        {
+            var failures = new List<Exception>();
+            var state = new MissionLifecycleState(failures.Add);
+            var execution = new MissionExecutionSession();
+            long id = state.Begin(Seed(MissionStartKind.LoadedSave));
+            Assert.AreEqual(0L, execution.Read(state, true, id), "pending alone is not execution");
+            var previous = execution.Enter(state);
+            try
+            {
+                Assert.AreEqual(id, execution.Read(state, true, id));
+                Assert.AreEqual(0L, execution.Read(state, true, 0), "unassigned operation borrowed an earlier pending attempt");
+                Assert.AreEqual(0L, execution.Read(state, false, id), "scope alone is not execution");
+                Assert.AreEqual(0L, execution.Read(state, true, id + 1), "unrelated operation borrowed pending identity");
+                long foreign = -1, foreignEntry = -1;
+                var reader = new Thread(() =>
+                {
+                    foreign = execution.Read(state, true, id);
+                    var foreignScope = execution.Enter(state);
+                    try { foreignEntry = execution.Read(state, true, id); }
+                    finally { execution.Restore(foreignScope); }
+                });
+                reader.Start(); reader.Join();
+                Assert.AreEqual(0L, foreign, "foreign archive caller borrowed another thread's attempt");
+                Assert.AreEqual(0L, foreignEntry, "foreign entry ignored the service creator thread");
+                var nested = execution.Enter(state);
+                try { throw new InvalidOperationException("nested callback failed"); }
+                catch (InvalidOperationException) { }
+                finally { execution.Restore(nested); }
+                Assert.AreEqual(id, execution.Read(state, true, id), "nested failure lost outer execution");
+                state.Ready(id, Seed(MissionStartKind.LoadedSave));
+                Assert.AreEqual(0L, execution.Read(state, true, id), "ready context is not executing pending identity");
+            }
+            finally { execution.Restore(previous); }
+            Assert.AreEqual(0L, execution.Read(state, true, id), "completed scope leaked execution");
+            Assert.AreEqual(0, failures.Count, "lifecycle observer assertion failed");
+        }
+
+        [TestMethod]
+        public void ExecutingSessionReadsPendingReplacementBeforeBeginReturnsItsId()
+        {
+            var failures = new List<Exception>();
+            var state = new MissionLifecycleState(failures.Add);
+            var execution = new MissionExecutionSession();
+            long a = state.Begin(Seed(MissionStartKind.NewGame));
+            state.Ready(a, Seed(MissionStartKind.NewGame));
+            long operationId = 0, observed = 0;
+            state.Register("owner", "replacement", e =>
+            {
+                if (e.Kind == MissionLifecycleKind.End)
+                {
+                    Assert.AreEqual(0L, operationId, "fixture must observe Begin before its return assignment");
+                    observed = execution.Read(state, true, operationId);
+                    Assert.AreEqual(e.ReplacementContext.SessionId, observed);
+                    Assert.IsNull(state.Current);
+                }
+            });
+            var previous = execution.Enter(state);
+            try
+            {
+                operationId = state.Begin(Seed(MissionStartKind.LoadedSave));
+                Assert.AreEqual(operationId, observed);
+                Assert.AreEqual(operationId, execution.Read(state, true, operationId));
+            }
+            finally { execution.Restore(previous); }
+            Assert.AreEqual(0, failures.Count, "lifecycle observer assertion failed");
+        }
+
+        [TestMethod]
+        public void ExecutingSessionAssociatesReentrantLoadBeforeQueuedNotificationsAndDeferredResume()
+        {
+            foreach (int outcome in new[] { 0, 1, 2 }) // ready, failed, deferred client
+            {
+                var failures = new List<Exception>();
+                var state = new MissionLifecycleState(failures.Add);
+                var execution = new MissionExecutionSession();
+                long a = state.Begin(Seed(MissionStartKind.NewGame));
+                long b = 0, preparedSession = 0;
+                bool beforeBDelivered = false;
+                var ends = new List<long>();
+                state.Register("first", "starts-load", e =>
+                {
+                    if (e.Kind != MissionLifecycleKind.Start || e.Context.SessionId != a) return;
+                    var previous = execution.Enter(state);
+                    try
+                    {
+                        b = state.Begin(Seed(MissionStartKind.LoadedSave));
+                        state.Checkpoint(b, Seed(MissionStartKind.LoadedSave), MissionInitializationPhase.BeforeLoad);
+                        Assert.IsFalse(beforeBDelivered, "reentrant lifecycle fixture stopped queuing");
+                        preparedSession = execution.Read(state, true, b);
+                        state.Finish(b, Seed(MissionStartKind.LoadedSave), true, outcome != 1,
+                            outcome == 0, outcome == 2);
+                    }
+                    finally { execution.Restore(previous); }
+                });
+                state.Register("second", "consumer", e =>
+                {
+                    if (e.Kind == MissionLifecycleKind.Initialization && e.Context.SessionId == b)
+                        beforeBDelivered = true;
+                    if (e.Kind == MissionLifecycleKind.End) ends.Add(e.Context.SessionId);
+                });
+                state.Ready(a, Seed(MissionStartKind.NewGame));
+                Assert.AreEqual(b, preparedSession, "early archive callback inherited the retiring session");
+                Assert.IsTrue(beforeBDelivered);
+                Assert.IsTrue(ends.Contains(a));
+                Assert.AreEqual(outcome == 1, ends.Contains(preparedSession), "exact failure identity was lost");
+                Assert.AreEqual(0L, execution.Read(state, true, b), "returned operation remained executing");
+                if (outcome == 2)
+                {
+                    Assert.IsNull(state.Current);
+                    var resume = execution.Enter(state);
+                    try
+                    {
+                        Assert.AreEqual(b, execution.Read(state, true, b), "deferred message lost its waiting attempt");
+                        state.Ready(b, Seed(MissionStartKind.LoadedSave));
+                    }
+                    finally { execution.Restore(resume); }
+                }
+                Assert.AreEqual(outcome == 1 ? 0L : b, state.Current?.SessionId ?? 0);
+                Assert.AreEqual(0, failures.Count, "lifecycle observer assertion failed");
+            }
+        }
+
+        [TestMethod]
+        public void ExecutingSessionSeparatesPendingReplacementFromDelayedTerminalEnd()
+        {
+            var failures = new List<Exception>();
+            var state = new MissionLifecycleState(failures.Add);
+            var execution = new MissionExecutionSession();
+            long a = state.Begin(Seed(MissionStartKind.NewGame));
+            state.Ready(a, Seed(MissionStartKind.NewGame));
+            long b = 0, preparedSession = 0, delayedEnd = 0;
+            bool beforeBDelivered = false;
+            state.Register("first", "end-starts-load", e =>
+            {
+                if (e.Kind != MissionLifecycleKind.End || e.Context.SessionId != a) return;
+                var previous = execution.Enter(state);
+                try
+                {
+                    b = state.Begin(Seed(MissionStartKind.LoadedSave));
+                    state.Checkpoint(b, Seed(MissionStartKind.LoadedSave), MissionInitializationPhase.BeforeLoad);
+                    preparedSession = execution.Read(state, true, b);
+                    Assert.IsFalse(beforeBDelivered);
+                    Assert.IsTrue(state.Finish(b, Seed(MissionStartKind.LoadedSave), true, true, false, true));
+                }
+                finally { execution.Restore(previous); }
+            });
+            state.Register("second", "consumer", e =>
+            {
+                if (e.Kind == MissionLifecycleKind.Initialization && e.Context.SessionId == b) beforeBDelivered = true;
+                if (e.Kind == MissionLifecycleKind.End) delayedEnd = e.Context.SessionId;
+            });
+            state.End(MissionEndReason.SceneChanged, a);
+            Assert.IsNull(state.Current, "deferred B must remain indistinguishable through Current alone");
+            Assert.IsTrue(state.IsPending(b));
+            Assert.AreEqual(b, preparedSession);
+            Assert.AreEqual(a, delayedEnd);
+            Assert.AreNotEqual(preparedSession, delayedEnd, "late terminal End(A) was associated with B's archive");
+            state.End(MissionEndReason.Failed, b);
+            Assert.AreEqual(preparedSession, delayedEnd, "terminal End(B) could not identify its own prepared archive");
+            Assert.AreEqual(0, failures.Count, "lifecycle observer assertion failed");
         }
 
         [TestMethod]
