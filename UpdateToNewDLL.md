@@ -2754,3 +2754,55 @@ stub/jump/padding and watch foreign patches; never unpatch after publication.
 Unknown hashes have no fallback because a prologue cannot establish the producer,
 ring and SE-wrapper attribution contracts. Failure disables only silent requests.
 Run the actual native writer/stub execution tests and SE nested-wrapper tests.
+
+## Notification presentation identity
+
+Reference native SHA-256
+`FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`.
+This service is hash-bound. Its observers are read-only and call the
+original game functions once. The original queue owns every entry and
+continues normal promotion, media control and completion.
+
+| RVA | Indirect span and continuation | ABI and observed transition |
+|---|---|---|
+| `0xFEE50` | 6 bytes (5 + 1), then `0xFEE56` | Win64 void (manager, video path, audio path). Selectors are at manager +4 and +8. Queue promotion passes the exact slot-zero video/audio addresses. |
+| `0x102C30` | 6 bytes (2 + 4), then `0x102C36` | Win64 void (manager). A reset can call the finalizer and temporarily promote a pending entry before clearing the remaining count. |
+| `0x24220` | 10 bytes (5 + 5), then `0x2422A` | Win64 void (state pointer). Multiplayer PreInit clears the notification count directly. |
+| `0x87D10` | 6 bytes (5 + 1), then `0x87D16` | Win64 void (). World initialization clears the notification count before the nested queue reset. |
+| `0x104240` | 7 bytes (4 + 3), then `0x104247` | Win64 void (int action). Only action 2 clears the notification count. |
+
+All these spans start at function entries. The existing Extender detour at
+`0x103290` and its interior speech path relocation at `0xFEF21` are outside the
+owned spans. Validate Indirect patch form, displaced lengths and trampoline
+continuations with the installed backend. At publication compare with the
+unmodified module snapshot, and verify the published patches at mission start.
+
+The global notification manager is at `0x1B62EE0`. The busy flag is +0, the
+accepted pending count is +0x94C (capacity ten), and queued selectors/indices
+are contiguous dwords at +0xDC/+0x104. Slot-zero video/audio paths start at
++0x154/+0x53C. Their pointer equality proves promotion in the audited call
+protocol. Managed enqueue capture reserves the count's old slot only after
+the original increments the count, and treats a full queue as rejection.
+Vanilla's other enqueue (`0x1031B0`) writes a zero speaker and a non-Lord
+selector. Positive non-skirmish headers with speaker zero are generic.
+A reset, an uncoordinated producer or a failed observation retires the
+managed generation so a reused slot cannot inherit an older subtitle.
+
+The render manager is at `0xA98820`, with destination at +0 and the 42-byte
+record cursor at +8. `0x1A45D0` sets the live buffer. `0x1A3EE0` copies staged
+records at +0x10C9E8C into its prefix without reordering. `0x19CE70` restores
+that staging destination and resets the cursor. The guarded managed edit
+brackets exactly the native call inside EngineInterface.run. It seals the
+rendered batch before any readback or work-pump callback can stage the next
+batch. At the existing publication boundary, the exact MemBuffer's
+PlayState, word-array reference, count and record indices identify each
+presentation. Audio and video ownership require the last applicable dispatch
+because PlayState carries one path for each media kind. Only a verified batch
+with observed media searches from its end to the relevant media record.
+
+Update checks include a fresh full writer audit for the queue count, caller
+and instruction contracts for the observer spans, version-independent
+validation of the loaded Extender and managed run methods, and a deliberate
+staging/live/staging split with repeated selectors. Verify identical
+selectors through tutorial reset, full queue rejection, native presentation
+without a custom subtitle, and original pass-through when a hook is invalid.

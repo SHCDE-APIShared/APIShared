@@ -1,12 +1,16 @@
+using APIShared.Presentation;
 using APIShared.ScriptExtenderFixes;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Mono.Cecil.Cil;
+using MonoMod.Cil;
+using MonoMod.RuntimeDetour;
 using MonoMod.Utils;
 using Mono.Cecil;
 using SHCDESE.API;
 using SHCDESE.API.Components.AI;
 using SHCDESE.API.Components.ModManager;
 using SHCDESE.Interop.Enums;
+using SHCDESE.Detours;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -98,6 +102,25 @@ namespace APISharedTests
         {
             MethodInfo target = typeof(GameAIManagerAPI).GetMethod("TryGetVideoAndAudio", BindingFlags.NonPublic | BindingFlags.Instance);
             LordMediaResolverRuntime.ValidateTarget(target);
+        }
+
+        [TestMethod]
+        public void InstalledExtenderNotificationCaptureTranspilesAndCompilesBothSites()
+        {
+            MethodInfo enqueue = typeof(BulkAIDetours).GetMethod(nameof(BulkAIDetours.c_game_ai_enqueue_message_hook_impl));
+            MethodInfo resolver = typeof(GameAIManagerAPI).GetMethod("TryGetVideoAndAudio", BindingFlags.NonPublic | BindingFlags.Instance);
+            CheckGenerated(enqueue, NotificationEnqueueCapture.EditCallback);
+            CheckGenerated(resolver, NotificationEnqueueCapture.EditSelection);
+
+            void CheckGenerated(MethodInfo target, ILContext.Manipulator edit)
+            {
+                using (var definition = new DynamicMethodDefinition(target))
+                {
+                    using (var il = new ILContext(definition.Definition))
+                        il.Invoke(edit);
+                    Assert.AreNotEqual(IntPtr.Zero, DetourHelper.GetNativeStart(definition.Generate()));
+                }
+            }
         }
 
         [TestMethod]

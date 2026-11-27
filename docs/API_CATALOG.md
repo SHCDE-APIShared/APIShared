@@ -1172,6 +1172,12 @@ resolves original message references without enqueueing a message or using gamep
 See the [contract and coverage](LORD_MESSAGES.md) and
 [consumer example](../examples/ThirdPartyMod/LordMessageExample.cs).
 
+`APIShared.Presentation.NotificationPresentations` requires APIShared 0.77.0
+or later. It identifies one native
+notification across Unity playback and the serialized simulation. It lets code
+that acts on the HUD verify that it still owns the same notification. See
+[notification identity](LORD_MESSAGES.md#notification-identity).
+
 ## Packaged Lord presentation
 
 Requires APIShared 0.20.0 or later. `APIShared.Presentation.PackagedLordPresentation.TryRegister`
