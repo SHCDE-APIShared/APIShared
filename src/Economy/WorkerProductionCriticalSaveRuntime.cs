@@ -134,6 +134,14 @@ namespace APIShared.Economy
             return RunTransaction(archive, sections, map, original, requirements);
         }
 
+        internal static VersionedSaveContext ReadRequiredLogicalContext(PreCaptureSaveContextReader reader)
+        {
+            if (reader == null) throw new InvalidOperationException("The pre-capture reader is unavailable.");
+            if (!reader.TryReadSnapshot(out var context, out _, out string reason))
+                throw new InvalidOperationException(reason);
+            return context;
+        }
+
         // Keep closure construction wholly behind the existing no-demand guards.
         // The protected writer still owns this single transaction and native ABI.
         private static ulong RunTransaction(IntPtr archive, IntPtr sections, byte map,
@@ -174,11 +182,11 @@ namespace APIShared.Economy
                     // A fault is rejected before capture or ANY native file open/truncation.
                     if (requirements.Faulted) throw new InvalidOperationException("The production world is faulted.");
                     if (requirements.CriticalCohort)
-                    {
                         CriticalSaveRuntime.RequireCurrentSaveWorld(protectedWorld, protectedGeneration);
-                        if (preCaptureContext == null) throw new InvalidOperationException("The pre-capture reader is unavailable.");
-                        if (!preCaptureContext.TryReadSnapshot(out logicalContext, out _, out string contextReason))
-                            throw new InvalidOperationException(contextReason);
+                    if (requirements.CriticalCohort || requirements.AtomicRecords)
+                        logicalContext = ReadRequiredLogicalContext(preCaptureContext);
+                    if (requirements.CriticalCohort)
+                    {
                         factoryFrame = VersionedSaveDataRuntime.BeginCriticalWriterFrame(logicalContext);
                         ownsFactoryFrame = true;
                         participants = VersionedSaveDataRuntime.BeginParticipantPreparation(logicalContext);
@@ -213,9 +221,9 @@ namespace APIShared.Economy
                         // cohort prepares once here and still requires the real factory
                         // dispatch/transport inside Original; early capture is no delivery.
                         if (requirements.CriticalCohort) factoryFrame.PrepareOwnedCapture(logicalContext);
-                        required = requirements.CriticalCohort
-                            ? VersionedSaveDataRuntime.BeginAtomicSave(logicalContext)
-                            : VersionedSaveDataRuntime.BeginAtomicSave(map != 0, destination);
+                        // The archive factory receives the producer's path and save kind.
+                        // The canonical native destination is only for the file transaction.
+                        required = VersionedSaveDataRuntime.BeginAtomicSave(logicalContext);
                         if (required == null) throw new InvalidOperationException("The required atomic record registry is unavailable.");
                         RequireAtomicSaveEpoch(protectedWorld, protectedGeneration);
                     }

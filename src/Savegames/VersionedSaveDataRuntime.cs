@@ -80,11 +80,6 @@ namespace APIShared.Savegames
             VersionedSaveDataRegistry current; lock (Sync) current = registry;
             return current != null && current.RequiresAtomicWrite(new VersionedSaveContext(!map, map, ""));
         }
-        internal static VersionedSaveDataRegistry.AtomicSnapshot BeginAtomicSave(bool map, string path)
-        {
-            VersionedSaveDataRegistry current; lock (Sync) current = registry;
-            return current?.BeginAtomicSave(new VersionedSaveContext(!map, map, path));
-        }
         internal static VersionedSaveDataRegistry.AtomicSnapshot BeginAtomicSave(VersionedSaveContext context)
         {
             VersionedSaveDataRegistry current; lock (Sync) current = registry;

@@ -130,15 +130,16 @@ namespace APIShared.Presentation
 
         private static void Paint(GameMapTile tile, int file, int image, int light)
         {
+            TileGraphicPass pass = TileGraphicPassRuntime.Take(tile, file, image, light);
             original(tile, file, image, light);
             PaintEntry<TileGraphicPaint>[] entries = Registry.ForFile(file);
-            if (entries.Length != 0) Notify(entries, tile, file, image, light);
+            if (entries.Length != 0) Notify(entries, tile, file, image, light, pass);
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
-        private static void Notify(PaintEntry<TileGraphicPaint>[] entries, GameMapTile tile, int file, int image, int light)
+        private static void Notify(PaintEntry<TileGraphicPaint>[] entries, GameMapTile tile, int file, int image, int light, TileGraphicPass pass)
         {
-            var paint = new TileGraphicPaint(tile, file, image, light, entries);
+            var paint = new TileGraphicPaint(tile, file, image, light, entries, pass);
             Registry.Notify(entries, ref paint);
         }
     }

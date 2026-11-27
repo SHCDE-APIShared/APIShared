@@ -1,4 +1,5 @@
 using System;
+using System.Threading;
 using CrusaderDE;
 using APIShared.Events;
 
@@ -86,7 +87,7 @@ namespace APIShared.Presentation
         public FatControler Controller => Instance as FatControler;
         /// <summary>Final UI parameter passed to the original or selected replacement.</summary>
         public object Parameter { get; }
-        /// <summary>True when an observer vetoed the complete managed operation. Its Vanilla UI writes did not run.</summary>
+        /// <summary>True when a Pre observer or final input guard vetoed the complete managed operation.</summary>
         public bool WasSkipped { get; }
         /// <summary>The original's exception, if any. It is rethrown after all Post observers; they cannot swallow it.</summary>
         public Exception OriginalException => WasReplaced ? null : CompletionException;
@@ -125,9 +126,34 @@ namespace APIShared.Presentation
             if (index < 0 || index >= sites.Length) { reason = "Unknown presentation operation."; return false; }
             return sites[index].Events.TryRegister(ownerGuid, registrationId, pre, post, out reason, order, isActive: isActive);
         }
+
+        /// <summary>
+        /// Registers a synchronous input guard on a MainViewModel operation during Unity startup, for the process lifetime.
+        /// Return true to allow the input. Guards run in order, then by ordinal owner and ID.
+        /// A rejection or exception before Pre skips the complete call. After Pre, guards check the final input
+        /// before the original or replacement, and Post observes a late rejection as a veto.
+        /// Calls from nested notifications still check the input before running the original.
+        /// Guards must be side-effect-free and must not issue UI commands.
+        /// </summary>
+        public static bool TryRegisterViewInputGuard(PresentationOperation operation, string ownerGuid, string registrationId,
+            Func<MainViewModel, object, bool> allows, out string reason, int order = 0)
+        {
+            int index = (int)operation;
+            if (index < 0 || index >= sites.Length || sites[index].Guards == null)
+            {
+                reason = "The operation has no MainViewModel input.";
+                return false;
+            }
+            return sites[index].Guards.TryRegister(ownerGuid, registrationId, allows, out reason, order);
+        }
+
         /// <summary>Total isolated callback errors at this named site; zero for an unknown operation.</summary>
         public static long GetCallbackFailures(PresentationOperation operation)
-        { int index = (int)operation; return index >= 0 && index < sites.Length ? sites[index].Events.CallbackFailures : 0; }
+        {
+            int index = (int)operation;
+            if (index < 0 || index >= sites.Length) return 0;
+            return sites[index].Events.CallbackFailures + (sites[index].Guards?.Failures ?? 0);
+        }
         private static Site[] CreateSites() => new[] {
             new Site(PresentationOperation.GuiChecks, typeof(FatControler), "NoesisGUIUpdateChecksInGame"),
             new Site(PresentationOperation.BuildingRollover, typeof(HUD_Main), "UpdateRollover"),
@@ -153,10 +179,28 @@ namespace APIShared.Presentation
             if (!events.CanNotify) { original(receiver, args.Parameter); return; }
             ExecuteObserved(events, args, receiver, original);
         }
+        internal static void ExecuteView(InterceptionEvent<PresentationPreEventArgs, PresentationPostEventArgs> events,
+            ViewInputGuards guards, PresentationOperation operation, MainViewModel receiver, object parameter,
+            Action<MainViewModel, object> original)
+        {
+            var snapshot = guards.Snapshot;
+            if (!ViewInputGuards.Allows(snapshot, receiver, parameter)) return;
+            if (!events.CanNotify) { original(receiver, parameter); return; }
+            ExecuteObservedView(events, operation, receiver, parameter, original, snapshot);
+        }
+
+        private static void ExecuteObservedView(InterceptionEvent<PresentationPreEventArgs, PresentationPostEventArgs> events,
+            PresentationOperation operation, MainViewModel receiver, object parameter, Action<MainViewModel, object> original,
+            ViewInputGuards.Entry[] guards) =>
+            ExecuteObserved(events, new PresentationPreEventArgs(operation, receiver, parameter), receiver, original, guards);
+
         private static void ExecuteObserved<TReceiver>(InterceptionEvent<PresentationPreEventArgs, PresentationPostEventArgs> events,
-            PresentationPreEventArgs args, TReceiver receiver, Action<TReceiver, object> original)
+            PresentationPreEventArgs args, TReceiver receiver, Action<TReceiver, object> original,
+            ViewInputGuards.Entry[] guards = null)
         {
             var invocation = events.Begin(args);
+            if (!args.SkipOriginalFunction && guards != null && !ViewInputGuards.Allows(guards, args.ViewModel, args.Parameter))
+                args.RejectAfterPre();
             Exception error = null;
             try
             {
@@ -182,9 +226,12 @@ namespace APIShared.Presentation
         private sealed class Site
         {
             internal readonly InterceptionEvent<PresentationPreEventArgs, PresentationPostEventArgs> Events;
+            internal readonly ViewInputGuards Guards;
             private readonly PresentationOperation operation;
             private readonly Type type;
             private readonly string method;
+            private readonly object installLock = new object();
+            private bool installed;
             private readonly ManagedInterceptionHook<ViewCall> viewHook = new ManagedInterceptionHook<ViewCall>();
             private readonly ManagedInterceptionHook<HudCall> hudHook = new ManagedInterceptionHook<HudCall>();
             private readonly ManagedInterceptionHook<GuiCall> guiHook = new ManagedInterceptionHook<GuiCall>();
@@ -195,24 +242,25 @@ namespace APIShared.Presentation
             internal Site(PresentationOperation operation, Type type, string method)
             { this.operation = operation; this.type = type; this.method = method;
                 Events = new InterceptionEvent<PresentationPreEventArgs, PresentationPostEventArgs>(Install);
+                if (type == typeof(MainViewModel)) Guards = new ViewInputGuards(Install);
                 viewOriginal = (self, parameter) => viewHook.Original(self, parameter);
                 hudOriginal = (self, _) => hudHook.Original(self);
                 guiOriginal = (self, _) => guiHook.Original(self); }
             private void Install()
             {
-                if (type == typeof(FatControler))
-                    guiHook.Install(type, method, typeof(void), Type.EmptyTypes, DispatchGui, method);
-                else if (type == typeof(HUD_Main))
-                    hudHook.Install(type, method, typeof(void), Type.EmptyTypes, DispatchHud, method);
-                else viewHook.Install(type, method, typeof(void), new[] { typeof(object) }, DispatchView, method);
+                lock (installLock)
+                {
+                    if (installed) return;
+                    if (type == typeof(FatControler))
+                        guiHook.Install(type, method, typeof(void), Type.EmptyTypes, DispatchGui, method);
+                    else if (type == typeof(HUD_Main))
+                        hudHook.Install(type, method, typeof(void), Type.EmptyTypes, DispatchHud, method);
+                    else viewHook.Install(type, method, typeof(void), new[] { typeof(object) }, DispatchView, method);
+                    installed = true;
+                }
             }
-            private void DispatchView(MainViewModel self, object parameter)
-            {
-                if (!Events.CanNotify) { viewHook.Original(self, parameter); return; }
-                DispatchObservedView(self, parameter);
-            }
-            private void DispatchObservedView(MainViewModel self, object parameter) =>
-                Execute(Events, new PresentationPreEventArgs(operation, self, parameter), self, viewOriginal);
+            private void DispatchView(MainViewModel self, object parameter) =>
+                ExecuteView(Events, Guards, operation, self, parameter, viewOriginal);
             private void DispatchHud(HUD_Main self)
             {
                 if (!Events.CanNotify) { hudHook.Original(self); return; }
@@ -227,6 +275,84 @@ namespace APIShared.Presentation
             }
             private void DispatchObservedGui(FatControler self) =>
                 Execute(Events, new PresentationPreEventArgs(operation, self, null), self, guiOriginal);
+        }
+
+        internal sealed class ViewInputGuards
+        {
+            [ThreadStatic] private static bool checking;
+            private readonly Action install;
+            private readonly object sync = new object();
+            private Entry[] entries = Array.Empty<Entry>();
+            internal ViewInputGuards(Action install = null) { this.install = install; }
+            internal Entry[] Snapshot => Volatile.Read(ref entries);
+            internal long Failures
+            {
+                get
+                {
+                    long total = 0;
+                    foreach (Entry entry in Snapshot) total += Interlocked.Read(ref entry.Failures);
+                    return total;
+                }
+            }
+
+            internal bool TryRegister(string owner, string id, Func<MainViewModel, object, bool> allows,
+                out string reason, int order = 0)
+            {
+                if (string.IsNullOrWhiteSpace(owner) || string.IsNullOrWhiteSpace(id) || allows == null)
+                {
+                    reason = "Owner GUID, registration ID and an input guard are required.";
+                    return false;
+                }
+                lock (sync)
+                {
+                    if (OrderedRegistrations.Contains(entries, Entry.KeyOf, owner, id))
+                    {
+                        reason = "This owner already registered that input guard ID.";
+                        return false;
+                    }
+                    try { install?.Invoke(); }
+                    catch (Exception error) { reason = "Interception unavailable: " + error.Message; return false; }
+                    Volatile.Write(ref entries, OrderedRegistrations.WithAdded(entries,
+                        new Entry(new RegistrationKey(owner, id, order), allows), Entry.KeyOf));
+                }
+                reason = string.Empty;
+                return true;
+            }
+
+            internal static bool Allows(Entry[] snapshot, MainViewModel receiver, object parameter)
+            {
+                if (snapshot.Length == 0) return true;
+                if (checking) return false;
+                checking = true;
+                try
+                {
+                    foreach (Entry entry in snapshot)
+                    {
+                        try { if (!entry.Allows(receiver, parameter)) return false; }
+                        catch (Exception error)
+                        {
+                            if (FailureThrottle.ShouldReport(ref entry.Failures))
+                            {
+                                try { InterceptionDiagnostics.Report(entry.Key.Owner + "/" + entry.Key.Id + " InputGuard", error); }
+                                catch { }
+                            }
+                            return false;
+                        }
+                    }
+                    return true;
+                }
+                finally { checking = false; }
+            }
+
+            internal sealed class Entry
+            {
+                internal static readonly Func<Entry, RegistrationKey> KeyOf = entry => entry.Key;
+                internal readonly RegistrationKey Key;
+                internal readonly Func<MainViewModel, object, bool> Allows;
+                internal long Failures;
+                internal Entry(RegistrationKey key, Func<MainViewModel, object, bool> allows)
+                { Key = key; Allows = allows; }
+            }
         }
     }
 }

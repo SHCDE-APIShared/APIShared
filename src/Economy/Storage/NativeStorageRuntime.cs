@@ -381,6 +381,10 @@ namespace APIShared.Economy
             { reason = "Storage exchanges cannot change capacity inside a native add-goods Pre/Original/Post chain."; return false; }
             if (!Context(true, out object world, out reason) || !EnsureWorld(out world, out reason)) return false;
             if (!ReferenceEquals(expected.World, world)) { reason = "The storage observation belongs to another native world."; return false; }
+            // Like batch retries, an existing receipt must be resolved before maintenance
+            // can advance the sequence and evict it. First-time world binding stays above.
+            if (exchanges.ProbeExchangeReceipt(state, good.Key, expected, sequence, quantityDelta, goldDelta, out var receipt, out reason))
+            { status = receipt; return status == GoodsTransactionStatus.AlreadyApplied; }
             if (!Reconcile(out reason)) return false;
             NativeStorageNativeRuntime.TryRead(expected.BuildingId, out NativeStorageProbe current);
             bool applied = exchanges.TryExchange(state, good.Key, expected, current, sequence, quantityDelta, goldDelta, out status, out reason);

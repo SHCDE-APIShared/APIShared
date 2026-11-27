@@ -341,6 +341,7 @@ Rounded fear coefficients and fixed contributions per signed level use [`Economy
 | `APIShared.Recruitment.RecruitmentAvailability` | One shared pass that disables Vanilla recruit buttons by side-effect-free predicates, with one context per GUI check | Startup-thread registration; GUI-check Post on its Unity caller thread, only in Vanilla recruitment panel modes; already disabled buttons stay untouched; OR combination; process lifetime |
 | `APIShared.Presentation.TroopActionHud` | Shared Vanilla troop-action slots and automatic HUD pages; legacy host visibility/layout coordination | Unity thread; owner-local button IDs; logical activation; independent command/factory failures; process lifetime |
 | `APIShared.Economy.MarketPriceEvents` | Native buy/sell query Pre/Post and replacement totals | Register after LibraryLoaded initialization; audited image only; actual native caller thread; process lifetime |
+| `APIShared.Economy.AutoTrade` | Confirmed Vanilla AutoTrade permission for the current mission | [Consumer contract](THIRD_PARTY_GUIDE.md#respecting-the-vanilla-autotrade-option); read-only, audited image only |
 | `APIShared.Economy.AiMarketSellPolicies` | Final AI reserve and pre-booking quantity policies, OR-combined native safety | [Contract and example](AI_MARKET_SELL.md); initially disabled; native caller thread; process lifetime |
 | `APIShared.Economy.AiMarketEvents` | Paired native AI purchase-decision, recruitment, buy and sell observations (0.62.0) | Initially disabled registrations; nested caller-private numeric tokens; original exactly once; [guide](THIRD_PARTY_GUIDE.md#observing-ai-trade-and-recruitment) |
 | `APIShared.Multiplayer.MultiplayerResyncEvents` | Critical callbacks at the common executed Vanilla repair boundaries (0.62.0) | Engine-serialized native caller; process lifetime; participant failure is terminal; [guide](THIRD_PARTY_GUIDE.md#multiplayer-repair-boundaries) |
@@ -856,6 +857,8 @@ button and shared extended-features sites. The original operations are `GuiCheck
 `RechargeSiegeAmmo`. Appended operations are `MarketSelectGoods`,
 `MarketCycleGoods`, `MarketBuySell`, `MarketChangeTradeType` and
 `ExtendedFeaturesAction`; see the [method and parameter contracts](THIRD_PARTY_GUIDE.md#market-ui-actions).
+`TryRegisterViewInputGuard` applies a policy before both Pre and the final managed
+call or replacement. A nested view call still checks its input before dispatch.
 GUI checks also run while paused. Pre can replace a button parameter or veto
 the complete managed call. Post reports normal completion, veto or original
 exception; the original exception is rethrown after callbacks. Use

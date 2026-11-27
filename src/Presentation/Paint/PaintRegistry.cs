@@ -157,17 +157,18 @@ namespace APIShared.Presentation
             return byFile;
         }
 
-        // Each registration sees the claim state left by the earlier ones. A throwing callback is counted,
-        // its claim is rolled back and the next registration still runs; its renderer writes are not undone.
+        // Each registration sees the paint left by the earlier ones. Checkpoint the whole value because
+        // a ref callback can overwrite it. A struct copy cannot roll back writes to Unity objects.
         internal void Notify(PaintEntry<TPaint>[] entries, ref TPaint paint)
         {
             for (int index = 0; index < entries.Length; index++)
             {
+                TPaint previous = paint;
                 paint.Enter(index + 1);
                 try { entries[index].Handler(ref paint); }
                 catch (Exception ex)
                 {
-                    paint.Rollback();
+                    paint = previous;
                     Fail(entries[index], ex);
                 }
             }

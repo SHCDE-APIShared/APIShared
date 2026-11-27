@@ -27,13 +27,13 @@ namespace APIShared.Presentation
     /// <para><b>Thread and recursion.</b> Callbacks run synchronously on the painting thread (the Unity main
     /// thread for every current caller), outside locks. A paint started from inside a callback is dispatched
     /// like any other; avoid repainting the same renderer from its own callback.</para>
-    /// <para><b>Failures.</b> A throwing callback is counted, its claim (and chevron replacement) is rolled back,
-    /// and the next registration runs; renderer writes it made are not undone. Repeated failures are logged at
+    /// <para><b>Failures.</b> A throwing callback is counted and the full paint value is restored before
+    /// the next registration runs. Writes to Unity objects persist. Repeated failures are logged at
     /// exponentially spaced counts. An exception from the original propagates and skips the callbacks.</para>
-    /// <para><b>Refusal.</b> Installation fails, and the registration returns false with the reason, when the
-    /// method's signature changed or its compiled entry was redirected by something other than MonoMod (a
-    /// foreign detour APIShared will not overwrite). Keep your own hook as the fallback for that case. A later
-    /// registration retries the installation.</para>
+    /// <para><b>Refusal.</b> Registration reports the reason when installation cannot proceed, including a changed
+    /// method signature or a suspected foreign detour. The installed MonoMod registry can indicate a chain,
+    /// but cannot prove that its patch still owns the live entry. Leave a refused site alone and review the
+    /// diagnostic before considering a different integration. A later registration retries installation.</para>
     /// <para><b>Multiplayer.</b> Painting is local presentation. Never change simulation state in a callback.</para>
     /// </remarks>
     public static class PaintEvents
@@ -75,6 +75,12 @@ namespace APIShared.Presentation
         public static bool TryRegisterTileGraphic(string ownerGuid, string registrationId, PaintHandler<TileGraphicPaint> afterPaint,
             out string reason, int order = 0, int[] files = null) =>
             TileGraphicSite<GameSlot>.Registry.TryRegister(ownerGuid, registrationId, afterPaint, order, files, false, out reason);
+
+        /// <summary>Enables shared call-site classification for tile paints during Unity startup.
+        /// The installation is process-wide and idempotent. Existing registrations still receive every
+        /// matching paint. Other callers and unsupported or later changed IL report
+        /// <see cref="TileGraphicPass.Unknown"/>. Use <see cref="TileGraphicPaint.Pass"/> on each callback.</summary>
+        public static bool TryEnableTileGraphicPass(out string reason) => TileGraphicPassRuntime.TryEnable(out reason);
 
         /// <summary>Registers a callback for <c>SpriteMapping.getChevronImage</c> that may replace the returned sprite.</summary>
         /// <param name="ownerGuid">Your plugin GUID; also the claim identity.</param>

@@ -128,6 +128,8 @@ namespace APISharedTests
                     ("APIShared.Commands.GameActionEvents", "DispatchThrough"),
                     ("APIShared.Economy.MarketPriceEvents", "Dispatch"),
                     ("APIShared.Presentation.PresentationEvents/Site", "DispatchView"),
+                    ("APIShared.Presentation.PresentationEvents", "ExecuteView"),
+                    ("APIShared.Presentation.PresentationEvents/ViewInputGuards", "Allows"),
                     ("APIShared.Presentation.PresentationEvents/Site", "DispatchGui"),
                     ("APIShared.Presentation.PresentationEvents/Site", "DispatchHud")
                 };

@@ -3,13 +3,23 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.75.0",
+  "Version": "0.76.0",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
   "Manifest": 1,
   "NetworkMode": 1,
   "SerpChangelog": [
+    {
+      "Version": "0.76.0",
+      "Changes": [
+        "Preserve the confirmed Vanilla AutoTrade option in local and multiplayer saves and expose it to mods as a shared read-only permission.",
+        "Let mods guard shared view commands before observers can change the input, before the original or a replacement runs, and during nested calls.",
+        "Restore the complete previous paint result and claim when a rendering callback throws.",
+        "Keep required mod save data attached when the game uses mixed Windows path separators or writes a Trail mission to a different file.",
+        "Keep an exact retry of a custom-goods storage exchange from evicting its own receipt during cleanup, so the exchange is recognized without charging or moving goods again."
+      ]
+    },
     {
       "Version": "0.75.0",
       "Changes": [

@@ -89,8 +89,9 @@ namespace APIShared.Economy
         /// raw GoldRaw store and publication of
         /// prebuilt ledger/physical state, under engine→inventory locking. No callbacks, native
         /// helper calls, accounting/statistics or UI/audio effects occur inside that aperture.
-        /// Stock belonging to destroyed, reused or captured stores is reconciled as a loss before
-        /// further commands. Native capacity admission is coordinated by this service's shared
+        /// For an already-bound world, retained receipts are checked before storage-loss maintenance.
+        /// New exchanges still reconcile stock belonging to destroyed, reused or captured stores.
+        /// Native capacity admission is coordinated by this service's shared
         /// owners; consumers must not retain competing Medium-style capacity detours.</remarks>
         public bool TryExchange(NativeStorageSnapshot storage, long operationSequence, int quantityDelta, int goldDelta,
             out GoodsTransactionStatus status, out string reason) =>

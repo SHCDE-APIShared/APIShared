@@ -170,6 +170,67 @@ namespace APISharedTests
         }
 
         [TestMethod]
+        public void PresentationGuardChecksOriginalAndFinalInputBeforeAnyReplacement()
+        {
+            const PresentationOperation operation = PresentationOperation.MarketBuySell;
+            var events = new InterceptionEvent<PresentationPreEventArgs, PresentationPostEventArgs>();
+            var guards = new PresentationEvents.ViewInputGuards();
+            int preCalls = 0, originals = 0, replacements = 0;
+            PresentationPostEventArgs completion = null;
+            TestAssert.IsTrue(guards.TryRegister("policy", "trade", (_, value) => (int)value != 100, out _));
+            TestAssert.IsTrue(events.TryRegister("mod", "rewrite", args =>
+            {
+                preCalls++;
+                if ((int)args.Parameter == 2)
+                {
+                    args.Parameter = 100;
+                    args.Replacement = _ => replacements++;
+                }
+            }, args => completion = args, out _));
+
+            PresentationEvents.ExecuteView(events, guards, operation, null, 100, (_, value) => originals++);
+            TestAssert.AreEqual(0, preCalls);
+            TestAssert.IsNull(completion);
+            PresentationEvents.ExecuteView(events, guards, operation, null, 2, (_, value) => originals++);
+            TestAssert.AreEqual(1, preCalls);
+            TestAssert.AreEqual(100, completion.Parameter);
+            TestAssert.IsTrue(completion.WasSkipped);
+            TestAssert.IsFalse(completion.WasReplaced);
+            TestAssert.AreEqual(0, originals);
+            TestAssert.AreEqual(0, replacements);
+            PresentationEvents.ExecuteView(events, guards, operation, null, 1, (_, value) => originals++);
+            TestAssert.AreEqual(1, originals);
+            TestAssert.IsTrue(completion.OriginalCompleted);
+        }
+
+        [TestMethod]
+        public void PresentationGuardChecksNestedCallsAcrossSitesAndIsolatesErrors()
+        {
+            const PresentationOperation operation = PresentationOperation.MarketBuySell;
+            var events = new InterceptionEvent<PresentationPreEventArgs, PresentationPostEventArgs>();
+            var outer = new InterceptionEvent<PresentationPreEventArgs, PresentationPostEventArgs>();
+            var guards = new PresentationEvents.ViewInputGuards();
+            int originals = 0, nestedPreCalls = 0;
+            TestAssert.IsTrue(guards.TryRegister("policy", "trade", (_, value) =>
+            {
+                if ((int)value == 101) throw new InvalidOperationException("Test guard failure");
+                return (int)value != 100;
+            }, out _));
+            TestAssert.IsTrue(events.TryRegister("mod", "observe", _ => nestedPreCalls++, null, out _));
+            TestAssert.IsTrue(outer.TryRegister("mod", "nested", _ =>
+            {
+                foreach (int input in new[] { 100, 101, 1 })
+                    PresentationEvents.ExecuteView(events, guards, operation, null, input, (_, value) => originals++);
+            }, null, out _));
+
+            PresentationEvents.Execute(outer,
+                new PresentationPreEventArgs(PresentationOperation.MarketSelectGoods, null, null), _ => { });
+            TestAssert.AreEqual(1, originals);
+            TestAssert.AreEqual(0, nestedPreCalls);
+            TestAssert.AreEqual(1L, guards.Failures);
+        }
+
+        [TestMethod]
         public void PresentationPreservesFinalParameterAndReportsOriginalErrorsForCleanup()
         {
             var events = new InterceptionEvent<PresentationPreEventArgs, PresentationPostEventArgs>();

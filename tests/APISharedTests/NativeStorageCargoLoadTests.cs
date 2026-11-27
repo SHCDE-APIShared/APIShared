@@ -16,6 +16,17 @@ namespace APISharedTests
     [TestClass, DoNotParallelize]
     public sealed partial class NativeStorageCargoLoadTests
     {
+        private sealed unsafe class ReceiptWallet : IGoodsWalletBackend
+        {
+            public ReceiptWallet(object gate, object world) { EngineMonitor = gate; World = world; }
+            public bool IsReady => true;
+            public object EngineMonitor { get; }
+            public object World { get; }
+            public bool HasAuthorityContext => true;
+            internal int Reads;
+            public bool TryGetGoldCell(int player, out int* cell) { Reads++; cell = null; return false; }
+        }
+
         private sealed class Binding
         {
             internal readonly NativeStoragePreparedLoad Prepared = new NativeStoragePreparedLoad();
@@ -559,6 +570,68 @@ namespace APISharedTests
             var unknown = new VersionedSaveLoad(VersionedSaveLoadStatus.NoRecord, VersionedSaveLoadSource.SaveGame,
                 "classification.sav", 0, 0, null, 0, string.Empty);
             Assert.IsTrue(NativeStorageRuntime.FailedInitializationRequiresProtection(unknown, session));
+        }
+
+        [TestMethod]
+        public void SingleStorageRetryDoesNotEvictItsOwnRetainedReceipt()
+        {
+            using (var fixture = new RuntimeBinding(false, cargo: false))
+            lock (fixture.Gate)
+            {
+                const StoragePool pool = StoragePool.Granary;
+                int capacity = NativeStorageState.PoolCapacity(pool);
+                var first = new NativeStorageProbe(true, 10, 100, 1, pool, 0, capacity);
+                var other = new NativeStorageProbe(true, 11, 101, 1, pool, 0, capacity);
+                var original = new NativeStorageSnapshot(fixture.BoundWorld, first, 0);
+                var replacement = new NativeStorageSnapshot(fixture.BoundWorld, other, 0);
+                var wallet = new ReceiptWallet(fixture.Gate, fixture.BoundWorld);
+                const BindingFlags fields = BindingFlags.Instance | BindingFlags.NonPublic;
+                typeof(NativeStorageRuntime).GetField("exchanges", fields)
+                    .SetValue(fixture.Runtime, new NativeStorageExchangeEngine(wallet));
+                int probes = 0;
+                typeof(NativeStorageRuntime).GetField("readProbe", fields)
+                    .SetValue(fixture.Runtime, (Func<int, NativeStorageProbe>)(slot =>
+                    { probes++; return slot == other.Slot ? other : default; }));
+
+                var state = fixture.CurrentState;
+                // Fill the real bounded journal. Reconciling the lost first store consumes
+                // the next sequence and evicts the first operation despite the exact retry.
+                Assert.AreEqual(GoodsTransactionStatus.Applied,
+                    state.PrepareExchange(fixture.Good, 1, first, 1, -5, out var initial, out string reason), reason);
+                using (initial) initial.Publish();
+                for (int sequence = 2; sequence <= 1024; sequence++)
+                {
+                    int delta = sequence % 2 == 0 ? 1 : -1;
+                    Assert.AreEqual(GoodsTransactionStatus.Applied,
+                        state.PrepareExchange(fixture.Good, sequence, other, delta, 0, out var fill, out reason), reason);
+                    using (fill) fill.Publish();
+                }
+                state.Capture(out byte[] beforeLedger, out byte[] beforeStores);
+
+                Assert.IsTrue(fixture.Runtime.TryExchange(fixture.StoredGood, original, 1, 1, -5, out var status, out reason), reason);
+                Assert.AreEqual(GoodsTransactionStatus.AlreadyApplied, status);
+                Assert.IsFalse(fixture.Runtime.TryExchange(fixture.StoredGood, original, 1, 1, -6, out status, out reason));
+                Assert.AreEqual(GoodsTransactionStatus.Conflict, status);
+                Assert.IsFalse(fixture.Runtime.TryExchange(fixture.StoredGood, original, 1, 2, -5, out status, out reason));
+                Assert.AreEqual(GoodsTransactionStatus.Conflict, status);
+                Assert.IsFalse(fixture.Runtime.TryExchange(fixture.StoredGood, replacement, 1, 1, -5, out status, out reason));
+                Assert.AreEqual(GoodsTransactionStatus.Conflict, status);
+                Assert.AreEqual(0, probes);
+                Assert.AreEqual(0, wallet.Reads);
+                Assert.AreSame(state, fixture.CurrentState);
+                state.Capture(out byte[] afterLedger, out byte[] afterStores);
+                CollectionAssert.AreEqual(beforeLedger, afterLedger);
+                CollectionAssert.AreEqual(beforeStores, afterStores);
+
+                Assert.IsTrue(fixture.Runtime.TryGetSequence(fixture.Good.OwnerGuid, out long currentSequence, out reason), reason);
+                Assert.AreEqual(1025L, currentSequence);
+                Assert.IsTrue(probes > 0);
+                int reconciledProbes = probes;
+                Assert.IsFalse(fixture.Runtime.TryExchange(fixture.StoredGood, original, 1, 1, -5, out status, out reason));
+                Assert.AreEqual(GoodsTransactionStatus.ExpiredOperation, status);
+                Assert.AreEqual(reconciledProbes, probes);
+                Assert.AreEqual(0, wallet.Reads);
+            }
         }
 
         [TestMethod]

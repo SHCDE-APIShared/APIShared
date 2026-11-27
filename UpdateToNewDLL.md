@@ -3,6 +3,7 @@
 **Contents**
 
 - [Native goods wallet](#native-goods-wallet)
+- [Vanilla AutoTrade option](#vanilla-autotrade-option)
 - [Native pooled storage](#native-pooled-storage)
 - [Stored workshop delivery](#stored-workshop-delivery)
 - [Shared health initialization](#shared-health-initialization)
@@ -30,6 +31,21 @@
 - [Hunter native sites](#hunter-native-sites)
 - [Hunter owner gates](#hunter-owner-gates)
 - [Line of sight](#line-of-sight)
+
+## Vanilla AutoTrade option
+
+`Economy.AutoTrade` validates the supported CrusaderDE image and the original
+22-byte native predicate at `0xD03BD` in both the startup image and live code.
+The operand at `0xD03BD` reads the mode from `0x8574B90`. The one at `0xD03C6`
+reads the option from `0x87ECAC0`. It applies in setup modes 1 and 99.
+
+After a successful native save load, the mission loader still holds the engine
+monitor. APIShared verifies the predicate again and restores only the confirmed
+option DWORD at that boundary. The native load finalizer calls the update loop
+with its pause DWORD at `0x366A0F8` set to -1, so it cannot dispatch the periodic
+AutoTrade phases before this correction. Revalidate the finalizer, both native
+save wrappers, and the archive field on future images. The native gate, the
+Chore and all manual trade paths retain their original code.
 
 ## Native goods wallet
 

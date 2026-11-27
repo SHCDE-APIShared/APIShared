@@ -6,8 +6,8 @@ using UnityEngine;
 namespace ThirdPartyMod
 {
     // Optional presentation: draw replacement art on renderers this mod tracks (for example units it
-    // tagged through Script Extender's unit visual events). Unity thread only. When registration fails
-    // (an older APIShared, or a refused installation) a real mod keeps its previous SetBodySprite hook.
+    // tagged through Script Extender's unit visual events). Unity thread only. A refused registration
+    // leaves that site alone and reports the broker's diagnostic.
     internal static class PaintExample
     {
         private static readonly Dictionary<SpriteRenderer, Sprite> replacements = new Dictionary<SpriteRenderer, Sprite>();
@@ -19,7 +19,7 @@ namespace ThirdPartyMod
         {
             registered = PaintEvents.TryRegisterBodySprite(ownerGuid, "unit-art", AfterBodyPaint,
                 out string reason, order: -100, files: new[] { replacedFile });
-            if (!registered) logger("Paint broker unavailable; the mod's own hook stays in use: " + reason);
+            if (!registered) logger("Paint broker unavailable: " + reason);
         }
 
         internal static void Track(SpriteRenderer renderer, Sprite sprite)

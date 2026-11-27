@@ -128,6 +128,20 @@ namespace APIShared.Economy
             int quantityDelta, int goldDelta, out PreparedExchange prepared, out string reason)
             => PreparePhysicalChange(good, ownerSequence, building, quantityDelta, ExchangeIntent(building, goldDelta), out prepared, out reason);
 
+        internal bool ProbeExchangeReceipt(CustomGoodId good, long ownerSequence, NativeStorageProbe expected,
+            int quantityDelta, int goldDelta, out GoodsTransactionStatus status, out string reason)
+        {
+            status = GoodsTransactionStatus.InvalidRequest;
+            reason = string.Empty;
+            // The engine monitor serializes this private ledger. A sequence above its
+            // watermark needs normal maintenance and cannot have a retained receipt.
+            if (!expected.IsLive || ownerSequence <= 0 || ownerSequence > ledger.LastSequence(good.OwnerGuid)) return false;
+            status = PrepareExchange(good, ownerSequence, expected, quantityDelta, goldDelta, out var unpublished, out reason);
+            unpublished?.Dispose();
+            return status == GoodsTransactionStatus.AlreadyApplied || status == GoodsTransactionStatus.Conflict ||
+                status == GoodsTransactionStatus.ExpiredOperation;
+        }
+
         // A trusted native producer supplies its closed, versioned actor intent. No consumer
         // callback, arbitrary ledger or external replay handle participates in this boundary.
         internal GoodsTransactionStatus PrepareDelivery(CustomGoodId good, long ownerSequence, NativeStorageProbe building,
