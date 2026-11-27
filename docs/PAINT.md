@@ -117,6 +117,8 @@ fallback for a refusal and for APIShared versions without this broker. `GetStatu
   that keep their own hooks are not ordered against registrations.
 - A paint started from inside a callback is dispatched like any other paint. Do not repaint
   the same renderer from its own callback.
+- Not yet tested in a running game: actual rendering, composition with Script Extender
+  materials and frame-time effects are unverified.
 
 ## Implementation
 
