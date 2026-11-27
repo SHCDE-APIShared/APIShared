@@ -31,6 +31,7 @@ namespace ThirdPartyMod
             BuildingTooltipExample.Register(Log);
             TooltipExample.Register(Guid, context => "Example information", context => null, Log);
             SaveDataExample.Register(Guid, Log);
+            PaintExample.Register(Guid, (int)Enums.GM.GM_BODY_PIKEMAN, Log);
             // Also opts this page into the explicit search catalog and local result navigation.
             APIShared.ModSettings.LobbyModSettingsPresetRegistration.Register(
                 this, log, "APIShared Example", Settings, "ScriptExtenderUI/APISharedExample.xaml");
