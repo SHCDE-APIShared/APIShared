@@ -115,6 +115,14 @@ the original native Armory search. Native search still requests enough space for
 the remaining cargo and retains its normal pathfinding/hazard behavior. It does
 not guarantee eventual delivery. No ingredients are refunded after manufacture.
 
+At an owned arrival gate, a retained stored-output carrier is checked independently
+of its former workshop's demand bit. Classification uses the exact worker slot and
+global identity before validating its mutable native home. A missing/reassigned
+home or other failed actor authorization refuses custom delivery and retains cargo;
+saved home metadata never authorizes a storage mutation. This forwarding guard does
+not establish that native AI reaches an arrival after workshop loss, or that such
+a carrier can complete delivery without a live authorized workshop.
+
 Custom acceptance bypasses native template stock, weapons-produced counters,
 weapon achievements, the native stock cue and the template AddGood event chain.
 Those would describe an item which was not delivered. Native recipes retain their
@@ -145,6 +153,77 @@ workshop state and both pooled-storage entries are frozen under the same engine
 monitor. The save succeeds only after the matching archive records and native I/O
 are verified; failed or stale captures preserve the previous destination file.
 Reentrant custom mutations are refused while that checkpoint is frozen.
+
+### Adopt an already-paid legacy manufacturing charge
+
+An enrolled consumer migrating an original legacy record can attach
+`WeaponProductionPaidManufacturing` declarations with
+`WeaponProduction.TryPrepareManufacturingAdoption`. This is a deliberately bounded
+Armourer manufacturing capability, not a converter for every legacy phase. Reuse
+the existing `NativeStorageImportPlan` and the exact `CriticalSaveParticipant` and
+`VersionedSaveLoad` received in that participant's current `Prepared` callback.
+The service copies declarations and binds them to that exact original window.
+Identical repeated declarations return the existing attachment; changed declarations,
+copied/expired receivers and different originals refuse. Preparation changes no
+live workshop or previous ledger and publishes no stock/cargo.
+
+Each row names the exact process recipe registration, saved workshop/worker
+slots and unsigned Global IDs, producing player, original base yield and declared
+already-paid ingredient count. The recipe must belong to that participant, deliver
+the exact registered custom Armory good, have the same explicit base/cost and
+use native timing (`WorkTicks == null`). The legacy record must actually establish
+paid input: the native state number corroborates current manufacturing but cannot
+prove a historical debit. No second iron payment or managed progress reset occurs.
+Register the native-timed recipe at startup; do not reinterpret a current recipe's
+different base or override duration as the old batch. See the additional methods
+in the [compiled example](../examples/ThirdPartyMod/CustomWorkshopExample.cs).
+
+Commit the existing storage plan with `NativeStorageClient.TryCommitImport` while
+already holding the real engine monitor after the complete matching load in a
+known offline/editor world. The existing production owner verifies its admitted
+catalogue, exact live Armourer/workshop/owner/link, manufacturing state5, zero carry
+and zero local template product, and refuses an existing shared actor/selection
+collision. Native actor, progress, input and product bytes are never written.
+Preallocated producer maps and shared stock publish together under the storage
+import's existing original-generation lease. Trusted private wire/demand rows
+follow outside the registry lease before releasing the engine monitor. Other pending
+imports keep physical storage unavailable; normal stored-output delivery refuses
+until the shared world is ready. The imported paid job belongs to this same native
+production owner, not a consumer callback or competing hook.
+
+The consumer must retire its former worker/output mutation route before allowing
+shared continuation. This API does not coordinate an additional private worker
+interceptor. Adoption revalidates the existing owner's published native cohorts;
+it cannot authorize a foreign route merely because the saved IDs match.
+
+Preallocate the consumer's retired actor map before commit, then on success use
+only nonthrowing reference assignments under that same engine monitor. Exact retry
+must not restart a job that has since progressed or finished. Future selection is
+unchanged by adoption: use the existing recipe-selection API for the next charge.
+Successful adoption also opts this native epoch into a direct archive-generation
+admission stamp. The existing managed engine-run gate checks current registry
+generation before Original, without taking a registry lock or waiting for delayed
+observers. Metadata load/unload revocation therefore pauses new engine runs until
+actual native-world Admit/Retire, even if the raw optional production guard was
+subsequently disabled. A later metadata import cannot overwrite the revoked stamp
+in the same native epoch. One run already admitted before revocation may finish;
+this does not undo its work or claim to stop an in-flight native call. No-adoption
+worlds retain their existing admission decisions and perform no registry query.
+This protects the post-registry-lease private wire publication window without
+claiming registry-atomic native writes or adding another native hook.
+
+The adopted batch uses the existing workshop wire and reader2 stored-output format;
+native-only worlds retain their existing catalogue and reader1 bytes. No additional
+goods/cargo ledger or per-batch save sidecar is created by this subset.
+
+Ready/local-product and Carrying adoption are outside this capability. A suppressed
+native local-product buffer needs qualified recovery and per-lot base provenance;
+final cargo cannot be imported as a separate external lot and also treated as native
+custody. Managed stored-output delivery authorization still requires a live home.
+The arrival forwarding guard described above retains/refuses custom custody when
+that authorization is absent; it does not establish arrival reachability, orphan
+hauling, or Ready/Carrying adoption. Those extensions must extend that same owner
+and its checkpoint, not bypass these prerequisites.
 
 ## Select recipes in a mission
 

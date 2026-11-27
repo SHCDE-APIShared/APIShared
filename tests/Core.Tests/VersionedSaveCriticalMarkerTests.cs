@@ -66,6 +66,46 @@ public partial class VersionedSaveDataTests
     }
 
     [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void CriticalMarkerColdReadWaitsForItsLoadedCallbackToFinish(bool rejectLoaded)
+    {
+        var extender = new FakeExtender();
+        VersionedSavePreparedSource prepared = null;
+        VersionedSaveCriticalSource enrollment = null;
+        VersionedSavePreparedOrigin origin = null;
+        bool entered = false, preparedCompletedInside = false, readInside = true;
+        var registration = new VersionedSaveDataRegistration("owner", "Critical.MarkerLoaded", 3, 1,
+            new[] { "value", "cutover" }, Writes(new()), ignoredLoad =>
+            {
+                entered = true;
+                preparedCompletedInside = prepared.TryValidateCompleted(origin, out _);
+                readInside = extender.Registry.TryReadCriticalPreparedMarker(enrollment, origin, out _, out _, out _);
+                if (rejectLoaded) throw new InvalidOperationException("controlled-loaded-rejection");
+            })
+        { Scope = VersionedSaveScope.SaveGamesAndMaps, SimulationRelevant = true };
+        registration.Prepared = load => prepared.TryGetCurrent(load, out origin, out _);
+        var mod = extender.Register(registration);
+        Assert.IsTrue(extender.Registry.TryTrackPreparedSource("owner", mod.Handle, out prepared, out _));
+        Assert.IsTrue(extender.Registry.TryEnrollCriticalSource(prepared, "cutover", 3, out enrollment, out _));
+        byte[] record = SaveWith(3, 3, new[] { "value", "cutover" }, new Dictionary<string, byte[]>
+            { ["value"] = new byte[] { 1 }, ["cutover"] = new byte[] { 5 } });
+        extender.Registry.BeginLoad(VersionedSaveLoadSource.SaveGame, "loaded-marker.sav"); mod.Load(record);
+        extender.Registry.PrepareLoad();
+        Assert.IsTrue(prepared.TryValidateCompleted(origin, out _), "Prepared completion retains its earlier meaning.");
+        extender.Registry.EndLoad();
+        Assert.IsTrue(entered && preparedCompletedInside);
+        Assert.IsFalse(readInside, "Closing the transport window must not finalize a running Loaded callback.");
+        bool readAfter = extender.Registry.TryReadCriticalPreparedMarker(enrollment, origin,
+            out var marker, out bool present, out string reason);
+        Assert.AreEqual(!rejectLoaded, readAfter, reason);
+        Assert.AreEqual(!rejectLoaded, present);
+        if (rejectLoaded) Assert.IsNull(marker);
+        else CollectionAssert.AreEqual(new byte[] { 5 }, marker);
+        Assert.AreEqual(rejectLoaded, mod.Handle.KeepsLoadedRecord);
+        Assert.AreEqual(rejectLoaded ? 1L : 0L, extender.Registry.CallbackFailures);
+    }
+    [TestMethod]
     public void CriticalMarkerReadIgnoresMigratedMarkersAndRefusesUnreadableOrStaleOrigins()
     {
         var extender = new FakeExtender();

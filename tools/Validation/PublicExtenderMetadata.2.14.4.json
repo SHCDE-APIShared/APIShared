@@ -1,0 +1,85 @@
+{
+  "schema": "public-extender-metadata-fixture/1",
+  "release": "2.14.4",
+  "archive": {
+    "url": "https://gitlab.com/api/v4/projects/74440776/packages/generic/shcdese/2.14.4/SHCDESE.zip",
+    "bytes": 60330646,
+    "sha256": "c993c40ea3a74c6fc03d120d0161e8c654cb11ed72509dda2c0e3ca0fc4b80e9"
+  },
+  "assemblies": [
+    {
+      "name": "SHCDESE.dll",
+      "entry": "BepInEx/plugins/000shcdese/SHCDESE.dll",
+      "bytes": 1587200,
+      "sha256": "e1b73d1e64e809ec51b9f2540f8f5dbf5357b5970492c688e9a8a7a8283e7d37"
+    },
+    {
+      "name": "RedBird.X64.dll",
+      "entry": "BepInEx/plugins/000shcdese/RedBird.X64.dll",
+      "bytes": 173568,
+      "sha256": "e085b83b2b87b5d2142c980090d8d9ec616a90a443bd125c17b41e0bb47a44eb"
+    },
+    {
+      "name": "RedBird.Abstractions.dll",
+      "entry": "BepInEx/plugins/000shcdese/RedBird.Abstractions.dll",
+      "bytes": 28160,
+      "sha256": "339cece116f66f59ecc7da5e9a5c0b2dfe24f4e7a5e7efc005864fa77c027a1e"
+    }
+  ],
+  "probes": [
+    {
+      "id": "bulk-constructor",
+      "assembly": "SHCDESE.dll",
+      "type": "SHCDESE.Detours.BulkUnitDetours",
+      "includeNested": true,
+      "methods": [".ctor"],
+      "maxOutputBytes": 2097152
+    },
+    {
+      "id": "bulk-unit-transition-callbacks",
+      "assembly": "SHCDESE.dll",
+      "type": "SHCDESE.Detours.BulkUnitDetours",
+      "includeNested": true,
+      "calledMember": "SHCDESE.EventAPI.Units.UnitTransitionEventArgs::.ctor",
+      "maxOutputBytes": 524288
+    },
+    {
+      "id": "game-unit-manager",
+      "assembly": "SHCDESE.dll",
+      "type": "SHCDESE.API.GameUnitManagerAPI",
+      "includeNested": false,
+      "maxOutputBytes": 524288
+    },
+    {
+      "id": "hook-transaction",
+      "assembly": "RedBird.X64.dll",
+      "type": "RedBird.X64.Hooks.Transaction.HookTransaction",
+      "includeNested": true,
+      "methods": ["AddContextHook", "AddInline", "Commit"],
+      "maxOutputBytes": 524288
+    },
+    {
+      "id": "context-stub",
+      "assembly": "RedBird.X64.dll",
+      "type": "RedBird.X64.Hooks.Context.ContextStub",
+      "includeNested": true,
+      "methods": ["Guard", "CreateGenerator"],
+      "maxOutputBytes": 524288
+    },
+    {
+      "id": "inline-hook",
+      "assembly": "RedBird.X64.dll",
+      "type": "RedBird.X64.Hooks.X64InlineHook",
+      "includeNested": false,
+      "methods": [".ctor", "PinDelegate", "Dispose"],
+      "maxOutputBytes": 524288
+    },
+    {
+      "id": "hook-handle",
+      "assembly": "RedBird.Abstractions.dll",
+      "type": "RedBird.Abstractions.Hooks.Transaction.HookHandle`1",
+      "includeNested": false,
+      "maxOutputBytes": 524288
+    }
+  ]
+}

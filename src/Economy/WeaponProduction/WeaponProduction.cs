@@ -169,7 +169,7 @@ namespace APIShared.Economy
     }
 
     /// <summary>Shared weapon-workshop catalogue and deterministic selection.</summary>
-    public static class WeaponProduction
+    public static partial class WeaponProduction
     {
         /// <summary>Register on the initialized Unity thread during startup. The next mission preparation picks up new registrations.</summary>
         public static bool TryRegister(string ownerGuid, string optionId, WeaponProductionOptionDefinition definition,

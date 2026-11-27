@@ -33,6 +33,8 @@ namespace APIShared
         /// <summary>Owner-bound native pooled storage, separate virtual goods and coordinated gold exchanges.
         /// Startup registration installs shared capacity owners; no work starts by obtaining this client.</summary>
         public Economy.NativeStorageClient NativeStorage => new Economy.NativeStorageClient(OwnerGuid);
+        /// <summary>Owner-bound explicit protected-save enrollment. Obtaining this client starts no work or writer request.</summary>
+        public Savegames.CriticalSaveClient CriticalSaves => new Savegames.CriticalSaveClient(OwnerGuid);
         /// <summary>Owner-bound native-gold and virtual-goods exchanges; acquisition installs no hooks.</summary>
         public Economy.GoodsWalletClient GoodsWallet { get; }
         /// <summary>Explicit, Unity-thread in-game test automation for this owner. Obtaining the client does not start work.</summary>

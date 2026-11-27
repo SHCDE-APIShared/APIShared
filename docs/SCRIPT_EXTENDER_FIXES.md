@@ -44,8 +44,10 @@ save) receive `SaveContext.IsSaveFile=true` and `IsMapEditorSave=false`.
 Their `FilePath` is null: the Extender's retained path can still name the source map,
 and the synchronized Chore does not supply a managed output filename. Consumers must
 continue accepting an unavailable path, as specified by the Extender context contract.
-Ordinary export saves, map/editor writes and Trail templates retain their original
-factory context. Multiplayer-save loads use `bMultiplayerSave`; editor loads use
+Ordinary export saves and map/editor writes retain their original factory context
+unless the framework explicitly queries the qualified early producer described
+below. Trail templates retain their original factory transport. Multiplayer-save
+loads use `bMultiplayerSave`; editor loads use
 `LoadingEditorMap`, so their mod-data callbacks also receive the correct classification.
 The correction adds no public API or save format. The corrected flags apply to every
 handler, including third-party save-only records; use the explicit context scope rather
@@ -61,6 +63,35 @@ the selected base, then Trail author rules apply; personal/client values stay cu
 A missing or invalid settings record forces the existing current-host fallback and
 is reported as such, independently of the user's preferred checkbox state. Records
 missing from such saves cannot be recovered.
+
+### Internal early save context
+
+The existing save-context owner can observe the Script Extender's managed normal/editor
+producer before its native Original runs. Its optional binding validates the actual
+UTF16 decoder, flag derivation, context setup, Original forwarding and exception
+boundary together with the archive factory. It copies the already decoded logical
+path only after `SetCurrentFileContext` succeeds. A missing or incompatible producer
+disables this optional scope while the existing save/load and Trail corrections remain.
+
+Only an explicit framework pre-capture query pins a detached value triple. The ensuing
+first archive selection closes the query window before the original `SaveContext`
+constructor, and uses the pinned values for that selection. Unqueried saves, later
+handler-reentrant factory calls, legacy manager/editor side effects, Original arguments,
+results and exceptions retain their existing behavior. This opt-in pinning intentionally
+prevents mutable globals from changing the first queried save's transported context.
+The synchronized-save policy still has priority and can be read late as a constant;
+such a read does not reopen an early capture window.
+
+Normal and Trail scopes share caller-thread producer ordering. A newer valid producer
+supersedes its caller; invalid, awaiting, unidentified or closed top scopes mask outer
+values and optional providers. Return or failure restores only the previous scope.
+If either coupled managed edit later rolls back, this optional Normal scope becomes
+unavailable for the remainder of the process. `SafeIlHook` cannot prove that another
+hook's later code-generation or JIT failure published a usable final body.
+
+This adds no public query, native permission, file-success receipt or save format.
+The production critical writer does not open or enroll a capture through this reader;
+ledger import, retirement and consumer migration remain separate operations.
 
 ## Lord media and custom AI slots
 
@@ -280,3 +311,9 @@ Rendering, input and normal menu callbacks before shutdown retain their behavior
 Fixes must be tested with controlled competing callbacks and installed-game checks.
 An official upstream correction must be inspected before updating support or
 retiring a workaround. Do not install a competing patch for the same owned methods.
+
+`SaveContextTests` compares unchanged official exporter/factory copies with the actual
+production transformations. Native Original, owner editor storage and the unrelated
+factory tail are controlled; the decoder, setup, handler dispatch and exception paths
+remain real. Its startup-readiness control does not install hooks or verify native save
+success, final deployed hook coexistence, file replacement or live-game save/load.

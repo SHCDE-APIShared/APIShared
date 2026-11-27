@@ -828,15 +828,44 @@ APIShared.Economy.NativeCargoSnapshot | public int Remaining { get; }
 APIShared.Economy.NativeCargoSnapshot | public long CreationSequence { get; }
 APIShared.Economy.NativeCargoSnapshot | public string GoodId { get; }
 APIShared.Economy.NativeCargoSnapshot | public string OwnerGuid { get; }
+APIShared.Economy.NativeStorageChange | public struct APIShared.Economy.NativeStorageChange
+APIShared.Economy.NativeStorageChange | public .ctor(APIShared.Economy.NativeStoredGood good, APIShared.Economy.NativeStorageSnapshot storage, int quantityDelta)
+APIShared.Economy.NativeStorageChange | public APIShared.Economy.NativeStorageSnapshot Storage { get; }
+APIShared.Economy.NativeStorageChange | public APIShared.Economy.NativeStoredGood Good { get; }
+APIShared.Economy.NativeStorageChange | public int QuantityDelta { get; }
 APIShared.Economy.NativeStorageClient | public sealed class APIShared.Economy.NativeStorageClient
 APIShared.Economy.NativeStorageClient | public bool IsCurrentWorldReady { get; }
+APIShared.Economy.NativeStorageClient | public bool TryCommitImport(APIShared.Economy.NativeStorageImportPlan plan, out APIShared.Goods.GoodsTransactionStatus status, out string reason)
 APIShared.Economy.NativeStorageClient | public bool TryCreateCargo(long creationSequence, APIShared.Economy.NativeStoredGood good, int playerId, int quantity, out APIShared.Economy.NativeCargoSnapshot cargo, out APIShared.Goods.GoodsTransactionStatus status, out string reason)
 APIShared.Economy.NativeStorageClient | public bool TryDepositCargo(APIShared.Economy.NativeCargoSnapshot expectedCargo, APIShared.Economy.NativeStorageSnapshot destination, int quantity, out APIShared.Economy.NativeCargoSnapshot updatedCargo, out APIShared.Goods.GoodsTransactionStatus status, out string reason)
 APIShared.Economy.NativeStorageClient | public bool TryDiscardCargo(APIShared.Economy.NativeCargoSnapshot expectedCargo, out APIShared.Economy.NativeCargoSnapshot updatedCargo, out APIShared.Goods.GoodsTransactionStatus status, out string reason)
+APIShared.Economy.NativeStorageClient | public bool TryExchangeBatch(long operationSequence, System.Collections.Generic.IReadOnlyList<APIShared.Economy.NativeStorageChange> changes, int goldDelta, out APIShared.Goods.GoodsTransactionStatus status, out string reason)
 APIShared.Economy.NativeStorageClient | public bool TryGetCargo(long creationSequence, out APIShared.Economy.NativeCargoSnapshot cargo, out string reason)
 APIShared.Economy.NativeStorageClient | public bool TryGetLastCargoSequence(out long sequence, out string reason)
 APIShared.Economy.NativeStorageClient | public bool TryObserve(int buildingId, out APIShared.Economy.NativeStorageSnapshot storage, out string reason)
+APIShared.Economy.NativeStorageClient | public bool TryPrepareImport(APIShared.Savegames.CriticalSaveParticipant participant, APIShared.Savegames.VersionedSaveLoad load, System.Collections.Generic.IReadOnlyList<APIShared.Economy.NativeStorageImportAllocation> allocations, System.Collections.Generic.IReadOnlyList<APIShared.Economy.NativeStorageImportCargo> cargo, out APIShared.Economy.NativeStorageImportPlan plan, out string reason)
 APIShared.Economy.NativeStorageClient | public bool TryRegisterGood(string goodId, APIShared.Economy.NativeStoragePool pool, out APIShared.Economy.NativeStoredGood good, out string reason)
+APIShared.Economy.NativeStorageClient | public static int MaximumImportAccounts { get; }
+APIShared.Economy.NativeStorageClient | public static int MaximumImportAllocations { get; }
+APIShared.Economy.NativeStorageClient | public static int MaximumImportCargo { get; }
+APIShared.Economy.NativeStorageImportAllocation | public struct APIShared.Economy.NativeStorageImportAllocation
+APIShared.Economy.NativeStorageImportAllocation | public .ctor(APIShared.Economy.NativeStoredGood good, int buildingId, uint buildingGlobalId, int playerId, int quantity)
+APIShared.Economy.NativeStorageImportAllocation | public APIShared.Economy.NativeStoredGood Good { get; }
+APIShared.Economy.NativeStorageImportAllocation | public int BuildingId { get; }
+APIShared.Economy.NativeStorageImportAllocation | public int PlayerId { get; }
+APIShared.Economy.NativeStorageImportAllocation | public int Quantity { get; }
+APIShared.Economy.NativeStorageImportAllocation | public uint BuildingGlobalId { get; }
+APIShared.Economy.NativeStorageImportCargo | public struct APIShared.Economy.NativeStorageImportCargo
+APIShared.Economy.NativeStorageImportCargo | public .ctor(APIShared.Economy.NativeStoredGood good, long creationSequence, int playerId, int quantity)
+APIShared.Economy.NativeStorageImportCargo | public APIShared.Economy.NativeStoredGood Good { get; }
+APIShared.Economy.NativeStorageImportCargo | public int PlayerId { get; }
+APIShared.Economy.NativeStorageImportCargo | public int Quantity { get; }
+APIShared.Economy.NativeStorageImportCargo | public long CreationSequence { get; }
+APIShared.Economy.NativeStorageImportPlan | public sealed class APIShared.Economy.NativeStorageImportPlan
+APIShared.Economy.NativeStorageImportPlan | public System.Collections.Generic.IReadOnlyList<APIShared.Economy.NativeStorageImportCargo> Cargo { get; }
+APIShared.Economy.NativeStorageImportPlan | public long MissionSessionId { get; }
+APIShared.Economy.NativeStorageImportPlan | public string OwnerGuid { get; }
+APIShared.Economy.NativeStorageImportPlan | public string SaveDataIdentifier { get; }
 APIShared.Economy.NativeStoragePool | public enum APIShared.Economy.NativeStoragePool : int
 APIShared.Economy.NativeStoragePool | Armory = 1
 APIShared.Economy.NativeStoragePool | Granary = 2
@@ -853,6 +882,7 @@ APIShared.Economy.NativeStoredGood | public sealed class APIShared.Economy.Nativ
 APIShared.Economy.NativeStoredGood | public APIShared.Economy.NativeStoragePool Pool { get; }
 APIShared.Economy.NativeStoredGood | public bool TryExchange(APIShared.Economy.NativeStorageSnapshot storage, long operationSequence, int quantityDelta, int goldDelta, out APIShared.Goods.GoodsTransactionStatus status, out string reason)
 APIShared.Economy.NativeStoredGood | public bool TryGetLastSequence(out long sequence, out string reason)
+APIShared.Economy.NativeStoredGood | public bool TryGetQuantity(APIShared.Economy.NativeStorageSnapshot storage, out int quantity, out string reason)
 APIShared.Economy.NativeStoredGood | public bool TryGetStock(int playerId, out APIShared.Goods.GoodsBalance balance, out string reason)
 APIShared.Economy.NativeStoredGood | public string GoodId { get; }
 APIShared.Economy.NativeStoredGood | public string OwnerGuid { get; }
@@ -932,6 +962,14 @@ APIShared.Economy.WeaponProduction | public static class APIShared.Economy.Weapo
 APIShared.Economy.WeaponProduction | public static APIShared.Networking.NetworkSendResult RequestSelection(int buildingId, uint globalId, APIShared.Economy.WeaponProductionOptionId optionId, bool allOfType = false)
 APIShared.Economy.WeaponProduction | public static System.Collections.Generic.IReadOnlyList<APIShared.Economy.WeaponProductionOption> GetOptions(SHCDESE.Interop.eStructs buildingType)
 APIShared.Economy.WeaponProduction | public static bool TryGetSelection(int buildingId, uint globalId, out APIShared.Economy.WeaponProductionSelection selection)
+APIShared.Economy.WeaponProduction | public static bool TryPrepareManufacturingAdoption(string ownerGuid, APIShared.Savegames.CriticalSaveParticipant participant, APIShared.Savegames.VersionedSaveLoad load, APIShared.Economy.NativeStorageImportPlan storageImport, System.Collections.Generic.IReadOnlyList<APIShared.Economy.WeaponProductionPaidManufacturing> actors, out APIShared.Economy.WeaponProductionManufacturingAdoption adoption, out string reason)
+APIShared.Economy.WeaponProduction | public static bool TryRegister(string ownerGuid, string optionId, APIShared.Economy.WeaponProductionOptionDefinition definition, out APIShared.Economy.WeaponProductionRegistration registration, out string reason)
+APIShared.Economy.WeaponProduction | public static bool TrySetAiNextOption(int buildingId, uint globalId, APIShared.Economy.WeaponProductionOptionId optionId)
+APIShared.Economy.WeaponProductionManufacturingAdoption | public sealed class APIShared.Economy.WeaponProductionManufacturingAdoption
+APIShared.Economy.WeaponProductionManufacturingAdoption | public APIShared.Economy.NativeStorageImportPlan StorageImport { get; }
+APIShared.Economy.WeaponProductionManufacturingAdoption | public System.Collections.Generic.IReadOnlyList<APIShared.Economy.WeaponProductionPaidManufacturing> Actors { get; }
+APIShared.Economy.WeaponProductionManufacturingAdoption | public long MissionSessionId { get; }
+APIShared.Economy.WeaponProductionManufacturingAdoption | public string OwnerGuid { get; }
 APIShared.Economy.WeaponProduction | public static bool TryGetWorkerBatch(int unitId, uint globalId, out APIShared.Economy.WeaponProductionWorkerBatch batch)
 APIShared.Economy.WeaponProduction | public static bool TryRegister(string ownerGuid, string optionId, APIShared.Economy.WeaponProductionOptionDefinition definition, out APIShared.Economy.WeaponProductionRegistration registration, out string reason)
 APIShared.Economy.WeaponProduction | public static bool TrySetAiNextOption(int buildingId, uint globalId, APIShared.Economy.WeaponProductionOptionId optionId)
@@ -971,6 +1009,16 @@ APIShared.Economy.WeaponProductionOptionId | public override int GetHashCode()
 APIShared.Economy.WeaponProductionOptionId | public override string ToString()
 APIShared.Economy.WeaponProductionOptionId | public string OptionId { get; }
 APIShared.Economy.WeaponProductionOptionId | public string OwnerGuid { get; }
+APIShared.Economy.WeaponProductionPaidManufacturing | public struct APIShared.Economy.WeaponProductionPaidManufacturing
+APIShared.Economy.WeaponProductionPaidManufacturing | public .ctor(APIShared.Economy.WeaponProductionRegistration recipe, int buildingId, uint buildingGlobalId, int unitId, uint unitGlobalId, int playerId, int baseAmount, int paidIngredientAmount)
+APIShared.Economy.WeaponProductionPaidManufacturing | public APIShared.Economy.WeaponProductionRegistration Recipe { get; }
+APIShared.Economy.WeaponProductionPaidManufacturing | public int BaseAmount { get; }
+APIShared.Economy.WeaponProductionPaidManufacturing | public int BuildingId { get; }
+APIShared.Economy.WeaponProductionPaidManufacturing | public int PaidIngredientAmount { get; }
+APIShared.Economy.WeaponProductionPaidManufacturing | public int PlayerId { get; }
+APIShared.Economy.WeaponProductionPaidManufacturing | public int UnitId { get; }
+APIShared.Economy.WeaponProductionPaidManufacturing | public uint BuildingGlobalId { get; }
+APIShared.Economy.WeaponProductionPaidManufacturing | public uint UnitGlobalId { get; }
 APIShared.Economy.WeaponProductionRegistration | public sealed class APIShared.Economy.WeaponProductionRegistration
 APIShared.Economy.WeaponProductionRegistration | public APIShared.Economy.WeaponProductionOption Option { get; }
 APIShared.Economy.WeaponProductionRegistration | public APIShared.Economy.WeaponProductionRegistrationStatus Status { get; }
@@ -1775,6 +1823,7 @@ APIShared.ModApiClient | public APIShared.Economy.NativeStorageClient NativeStor
 APIShared.ModApiClient | public APIShared.NativeApiState State { get; }
 APIShared.ModApiClient | public APIShared.Networking.ModNetworkClient Network { get; }
 APIShared.ModApiClient | public APIShared.Presentation.UiWorkClient Ui { get; }
+APIShared.ModApiClient | public APIShared.Savegames.CriticalSaveClient CriticalSaves { get; }
 APIShared.ModApiClient | public APIShared.Units.UnitIdentityClient UnitIdentities { get; }
 APIShared.ModApiClient | public APIShared.Workshop.WorkshopClient Workshop { get; }
 APIShared.ModApiClient | public bool TryGetAiMilitary(out APIShared.Units.AiMilitary.IAiMilitaryCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
@@ -3644,6 +3693,32 @@ APIShared.SavegameModSettingsRecordFormatter | public sealed class APIShared.Sav
 APIShared.SavegameModSettingsRecordFormatter | public .ctor()
 APIShared.SavegameModSettingsRecordFormatter | public APIShared.SavegameModSettingsRecord Deserialize(ref MessagePack.MessagePackReader reader, MessagePack.MessagePackSerializerOptions options)
 APIShared.SavegameModSettingsRecordFormatter | public void Serialize(ref MessagePack.MessagePackWriter writer, APIShared.SavegameModSettingsRecord value, MessagePack.MessagePackSerializerOptions options)
+APIShared.Savegames.CriticalSaveAggregateBudget | public enum APIShared.Savegames.CriticalSaveAggregateBudget : int
+APIShared.Savegames.CriticalSaveAggregateBudget | Extended16MiB = 1
+APIShared.Savegames.CriticalSaveAggregateBudget | Standard8MiB = 0
+APIShared.Savegames.CriticalSaveClient | public sealed class APIShared.Savegames.CriticalSaveClient
+APIShared.Savegames.CriticalSaveClient | public bool TryConfirmCreatedWorld(APIShared.Savegames.CriticalSaveParticipant participant, APIShared.MissionContext context, out string reason)
+APIShared.Savegames.CriticalSaveClient | public bool TryEnroll(APIShared.Savegames.VersionedSaveDataHandle handle, APIShared.Savegames.CriticalSaveOptions options, out APIShared.Savegames.CriticalSaveParticipant participant, out string reason)
+APIShared.Savegames.CriticalSaveModes | public enum APIShared.Savegames.CriticalSaveModes : int
+APIShared.Savegames.CriticalSaveModes | None = 0
+APIShared.Savegames.CriticalSaveModes | SinglePlayerAndEditor = 1
+APIShared.Savegames.CriticalSaveOptions | public sealed class APIShared.Savegames.CriticalSaveOptions
+APIShared.Savegames.CriticalSaveOptions | public .ctor(string reservedMarkerEntry, int minimumReaderVersion, APIShared.Savegames.CriticalSavePrepare prepare, APIShared.Savegames.CriticalSaveRelease release)
+APIShared.Savegames.CriticalSaveOptions | public APIShared.Savegames.CriticalSaveAggregateBudget AggregateBudget { get; set; }
+APIShared.Savegames.CriticalSaveOptions | public APIShared.Savegames.CriticalSaveModes Modes { get; set; }
+APIShared.Savegames.CriticalSaveOptions | public APIShared.Savegames.CriticalSavePrepare Prepare { get; }
+APIShared.Savegames.CriticalSaveOptions | public APIShared.Savegames.CriticalSaveRelease Release { get; }
+APIShared.Savegames.CriticalSaveOptions | public bool RequiresNativeStorage { get; set; }
+APIShared.Savegames.CriticalSaveOptions | public int MinimumReaderVersion { get; }
+APIShared.Savegames.CriticalSaveOptions | public string ReservedMarkerEntry { get; }
+APIShared.Savegames.CriticalSaveParticipant | public sealed class APIShared.Savegames.CriticalSaveParticipant
+APIShared.Savegames.CriticalSaveParticipant | public APIShared.Savegames.VersionedSaveDataHandle Handle { get; }
+APIShared.Savegames.CriticalSaveParticipant | public bool RequiresNativeStorage { get; }
+APIShared.Savegames.CriticalSaveParticipant | public bool TryReadPreparedProtection(APIShared.Savegames.VersionedSaveLoad load, out bool protectedRecord, out string reason)
+APIShared.Savegames.CriticalSaveParticipant | public string OwnerGuid { get; }
+APIShared.Savegames.CriticalSaveParticipant | public string SaveDataIdentifier { get; }
+APIShared.Savegames.CriticalSavePrepare | public delegate bool APIShared.Savegames.CriticalSavePrepare(APIShared.Savegames.VersionedSaveContext context, ref object state)
+APIShared.Savegames.CriticalSaveRelease | public delegate void APIShared.Savegames.CriticalSaveRelease(APIShared.Savegames.VersionedSaveContext context, object state)
 APIShared.Savegames.ManagedSaveCall | public sealed class APIShared.Savegames.ManagedSaveCall
 APIShared.Savegames.ManagedSaveCall | public bool LockMap { get; }
 APIShared.Savegames.ManagedSaveCall | public bool MapSave { get; }
@@ -3722,6 +3797,10 @@ APIShared.Savegames.SaveLoadDialogOutcome | Confirmed = 0
 APIShared.Savegames.SaveLoadDialogOutcome | Failed = 3
 APIShared.Savegames.SaveLoadDialogOutcome | Replaced = 2
 APIShared.Savegames.VersionedSaveCapture | public delegate bool APIShared.Savegames.VersionedSaveCapture(APIShared.Savegames.VersionedSaveWriter writer)
+APIShared.Savegames.VersionedSaveContext | public struct APIShared.Savegames.VersionedSaveContext
+APIShared.Savegames.VersionedSaveContext | public bool IsMapEditorSave { get; }
+APIShared.Savegames.VersionedSaveContext | public bool IsSaveFile { get; }
+APIShared.Savegames.VersionedSaveContext | public string FilePath { get; }
 APIShared.Savegames.VersionedSaveData | public static class APIShared.Savegames.VersionedSaveData
 APIShared.Savegames.VersionedSaveData | public static bool IsAtomicWriteAvailable { get; }
 APIShared.Savegames.VersionedSaveData | public static bool TryRegister(APIShared.Savegames.VersionedSaveDataRegistration registration, out APIShared.Savegames.VersionedSaveDataHandle handle, out string reason)
@@ -3767,6 +3846,7 @@ APIShared.Savegames.VersionedSaveLoad | public System.Collections.Generic.IReadO
 APIShared.Savegames.VersionedSaveLoad | public int KeptEntryCount { get; }
 APIShared.Savegames.VersionedSaveLoad | public int MinimumReaderVersion { get; }
 APIShared.Savegames.VersionedSaveLoad | public int RecordVersion { get; }
+APIShared.Savegames.VersionedSaveLoad | public long MissionSessionId { get; }
 APIShared.Savegames.VersionedSaveLoad | public string Detail { get; }
 APIShared.Savegames.VersionedSaveLoad | public string FilePath { get; }
 APIShared.Savegames.VersionedSaveLoadSource | public enum APIShared.Savegames.VersionedSaveLoadSource : int

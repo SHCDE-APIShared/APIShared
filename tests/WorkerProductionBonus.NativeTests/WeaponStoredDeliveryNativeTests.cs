@@ -152,7 +152,7 @@ internal static partial class Program
                 {
                     foreach (var sample in new[] {
                         (Enabled: 0, Demand: 1, Option: option, Flag: 1, Decision: 1, Mutate: 0),
-                        (Enabled: 1, Demand: 0, Option: option, Flag: 1, Decision: 1, Mutate: 0),
+                        (Enabled: 1, Demand: 0, Option: option, Flag: 1, Decision: 2, Mutate: 0),
                         (Enabled: 1, Demand: 1, Option: 6, Flag: 0, Decision: 1, Mutate: 0),
                         (Enabled: 1, Demand: 1, Option: 32, Flag: 1, Decision: 1, Mutate: 0),
                         (Enabled: 1, Demand: 1, Option: option, Flag: 2, Decision: 1, Mutate: 0),
@@ -164,7 +164,7 @@ internal static partial class Program
                         Reset(site.Building, 3, sample.Decision, sample.Mutate, sample.Option, sample.Flag);
                         Marshal.WriteInt32(enabled, sample.Enabled); Marshal.WriteByte(control, home, (byte)sample.Demand);
                         PrepareStoredDeliveryInputs(capture, site.Building);
-                        bool active = sample.Enabled == 1 && sample.Demand == 1 && sample.Option == option && sample.Flag == 1;
+                        bool active = sample.Enabled == 1 && sample.Option == option && sample.Flag == 1;
                         bool accepted = active && sample.Decision == 1;
                         if (accepted)
                         {
@@ -198,16 +198,18 @@ internal static partial class Program
                 // doubles; the epilogue is captured before consuming a real game stack.
                 using (var execution = new MachineHarness(Generate, new Dictionary<int, int> { [site.EpilogueRva] = 3 }))
                 foreach (var sample in new[] {
-                    (Enabled: 0, Option: option, Decision: 1, Cargo: 2, Mutate: 0),
-                    (Enabled: 1, Option: 6, Decision: 1, Cargo: 2, Mutate: 0),
-                    (Enabled: 1, Option: option, Decision: 0, Cargo: 2, Mutate: 0),
-                    (Enabled: 1, Option: option, Decision: 1, Cargo: 1, Mutate: 0),
-                    (Enabled: 1, Option: option, Decision: 1, Cargo: 3, Mutate: 1),
-                    (Enabled: 1, Option: option, Decision: 2, Cargo: 3, Mutate: 0),
-                    (Enabled: 1, Option: option, Decision: 99, Cargo: 3, Mutate: 0) })
+                    (Enabled: 0, Demand: 1, Option: option, Decision: 1, Cargo: 2, Mutate: 0),
+                    (Enabled: 1, Demand: 1, Option: 6, Decision: 1, Cargo: 2, Mutate: 0),
+                    (Enabled: 1, Demand: 1, Option: option, Decision: 0, Cargo: 2, Mutate: 0),
+                    (Enabled: 1, Demand: 1, Option: option, Decision: 1, Cargo: 1, Mutate: 0),
+                    (Enabled: 1, Demand: 1, Option: option, Decision: 1, Cargo: 3, Mutate: 1),
+                    (Enabled: 1, Demand: 1, Option: option, Decision: 2, Cargo: 3, Mutate: 0),
+                    (Enabled: 1, Demand: 1, Option: option, Decision: 99, Cargo: 3, Mutate: 0),
+                    (Enabled: 1, Demand: 0, Option: option, Decision: 2, Cargo: 3, Mutate: 0) })
                 {
                     Reset(site.Building, sample.Cargo, sample.Decision, sample.Mutate, sample.Option);
-                    Marshal.WriteInt32(enabled, sample.Enabled); PrepareStoredDeliveryInputs(execution, site.Building);
+                    Marshal.WriteInt32(enabled, sample.Enabled); Marshal.WriteByte(control, home, (byte)sample.Demand);
+                    PrepareStoredDeliveryInputs(execution, site.Building);
                     int state = site.Building == eStructs.STRUCT_FLETCHERS_WORKSHOP ? 7 : 8; Word(unit + 0x918, state);
                     bool active = sample.Enabled == 1 && sample.Option == option;
                     bool accepted = active && sample.Decision == 1;

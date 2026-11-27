@@ -253,13 +253,19 @@ namespace APIShared.Savegames
         internal VersionedSaveLoad(VersionedSaveLoadStatus status, VersionedSaveLoadSource source, string filePath,
             int recordVersion, int minimumReaderVersion, IReadOnlyDictionary<string, byte[]> entries,
             int keptEntryCount, string detail)
-            : this(status, source, filePath, recordVersion, minimumReaderVersion, entries, keptEntryCount, detail, null) { }
+            : this(status, source, filePath, recordVersion, minimumReaderVersion, entries, keptEntryCount, detail, null, 0) { }
 
         internal VersionedSaveLoad(VersionedSaveLoadStatus status, VersionedSaveLoadSource source, string filePath,
             int recordVersion, int minimumReaderVersion, IReadOnlyDictionary<string, byte[]> entries,
             int keptEntryCount, string detail, VersionedSavePreparedOrigin origin)
+            : this(status, source, filePath, recordVersion, minimumReaderVersion, entries, keptEntryCount, detail, origin, 0) { }
+
+        internal VersionedSaveLoad(VersionedSaveLoadStatus status, VersionedSaveLoadSource source, string filePath,
+            int recordVersion, int minimumReaderVersion, IReadOnlyDictionary<string, byte[]> entries,
+            int keptEntryCount, string detail, VersionedSavePreparedOrigin origin, long missionSessionId)
         {
             PreparedOrigin = origin;
+            MissionSessionId = missionSessionId > 0 ? missionSessionId : 0;
             Status = status; Source = source; FilePath = filePath;
             RecordVersion = recordVersion; MinimumReaderVersion = minimumReaderVersion;
             Entries = entries ?? NoEntries; KeptEntryCount = keptEntryCount; Detail = detail ?? string.Empty;
@@ -273,6 +279,17 @@ namespace APIShared.Savegames
         public VersionedSaveLoadSource Source { get; }
         /// <summary>File name reported by the Extender load event; may be null.</summary>
         public string FilePath { get; }
+        /// <summary>Process-local mission attempt associated with this archive window, or 0 when unknown.
+        /// Captured once before archive callbacks from an owned lifecycle operation executing on the
+        /// archive caller's thread; without that scope the association is unknown.</summary>
+        /// <remarks>Prepared and Loaded retain the same association, including NoRecord and failure
+        /// outcomes. Several archive windows, including nested loads, can share one attempt ID;
+        /// this is not a unique archive-invocation ID. Archive callbacks can precede queued lifecycle notifications.
+        /// This immutable metadata is not serialized and is not evidence of successful initialization,
+        /// a current native world, original archive provenance or permission to import or mutate state.
+        /// Compare with lifecycle notifications only within this process; do not persist the ID or
+        /// replace an unknown association with the latest ready mission.</remarks>
+        public long MissionSessionId { get; }
         /// <summary>Version the record was written at (or the legacy reader's version), before migration;
         /// 0 when no record header was read.</summary>
         public int RecordVersion { get; }
@@ -355,6 +372,10 @@ namespace APIShared.Savegames
         /// registration is refused unless the protected atomic writer is available. Capture runs once
         /// under the actual engine monitor before native file creation. Archive serialization reuses
         /// those frozen bytes; omitted/stale records or write failures prevent destination replacement.
+        /// When this save also contains an explicitly enrolled CriticalSaves cohort, all of that
+        /// cohort's records prepare once after participant freezes and before file creation;
+        /// actual factory dispatch and once-only transport are still required. This moves those
+        /// cohort capture callbacks earlier than their ordinary lazy factory timing.
         /// Capture is read-only with respect to simulation: do not issue gameplay calls. The callback
         /// must not save, wait for another thread, or acquire the engine monitor while holding its own state lock. Acquire consumer locks only inside this callback.</summary>
         public bool RequireAtomicWrite { get; set; }

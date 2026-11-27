@@ -70,6 +70,110 @@ equivalent ordered decisions on every peer.
 
 See the [compiled example](../examples/ThirdPartyMod/NativeStorageExample.cs).
 
+### Atomic multi-store exchanges
+
+Use `api.NativeStorage.TryExchangeBatch` when a purchase or sale must succeed
+across several stores together. Supply `NativeStorageChange` values containing
+the exact registered good, original storage snapshot and signed quantity delta,
+plus one aggregate signed gold delta. A 100-unit purchase can deposit 50 in each
+of two Armories and charge once. Looping individual exchanges cannot provide that
+all-or-none result. The consumer selects stores, distributes the lot, sets prices
+and authorizes the common player; the framework supplies no market command engine.
+
+```csharp
+// Already authorized and holding the actual engine monitor; both observations are current.
+var changes = new[] {
+    new NativeStorageChange(armor, firstArmory, 50),
+    new NativeStorageChange(armor, secondArmory, 50)
+};
+api.NativeStorage.TryExchangeBatch(operationSequence, changes, goldDelta: -100,
+    out var status, out reason);
+```
+
+A batch accepts **1–64 physical changes**, with at most **32 nonzero aggregated
+good/player totals**, all belonging to the submitting client's owner, one player
+and one exact native world. Distinct goods and supported pools can share a batch.
+Duplicate exact good/store rows, zero row deltas, foreign/unregistered/dormant
+handles, conflicting identities for one slot and mixed players/worlds reject.
+An individual good may have a zero net total across stores when another account
+changes; an **entirely net-zero batch, including a pure-gold request, rejects**.
+
+Every store must supply its own withdrawals. Capacity is checked against the final
+combined native and virtual occupancy, including other owners and goods, without
+publishing an intermediate row. Neutral or decreasing virtual occupancy can drain
+or rearrange valid claims during foreign native overfill; virtual claims alone
+still cannot exceed the fixed pool limit. One failed row, capacity check or payment
+refuses the requested whole lot. A zero gold delta performs no wallet lookup or
+gold write, so existing debt does not block a free stock operation.
+
+Use the same caller-held engine monitor and authoritative context as single-store
+exchanges. Real multiplayer still requires a native-tick or authenticated-Chore
+mutation boundary and equivalent commands/catalogs on every peer. Frozen saves,
+native add-goods Pre/Original/Post chains, overlapping prepared storage/cargo
+commits, blocked restoration and unsupported worlds refuse the operation. The
+batch supplies no new command transport or mutation authority.
+
+Sequences share the owner's existing storage stream, including automatic loss
+maintenance. Read `TryGetLastSequence` at execution and use the next positive
+sequence while retaining the protected boundary; the read reserves nothing.
+Refuse exhaustion at `Int64.MaxValue` rather than wrapping. A retained batch receipt
+is checked before reconciliation or live store/wallet lookup on an already-bound
+world. Identical retries return
+`AlreadyApplied` even after a store vanished, without repeating payment or restoring
+later lost stock. Keep the original changes, snapshots, sequence and aggregate
+gold; input order is immaterial, while a changed valid distribution or price
+conflicts, including changes to an individually net-zero good. A prior load's
+snapshots remain invalid.
+
+The journal retains **at most 1,024 operations globally**, rather than every owner's
+latest receipt forever. Evicted sequences return `ExpiredOperation` and never
+execute or assert success. An earlier tick or command may already have evicted a
+receipt. New-operation loss reconciliation can independently remove lost stock and
+consume sequences even if the requested batch later refuses. Do not silently
+allocate another sequence for an expired retry.
+
+The [existing commit limits](#public-limits) apply: allocations, checks and warm-up
+finish before the optional one raw gold store and prebuilt private publication.
+No consumer callbacks or native helpers run within that commit. Native weapon,
+recruitment and horse purchases still require their own qualified native-success
+and payment boundary. See the [public batch declarations](../src/Economy/Storage/NativeStorageBatch.Contracts.cs)
+and [compiled opt-in helper](../examples/ThirdPartyMod/NativeStorageExample.cs).
+
+### Read one good in one store
+
+After `TryObserve`, call the exact registered handle's
+`NativeStoredGood.TryGetQuantity(store, out quantity, out reason)` to read that
+good's committed physical allocation. `store.VirtualQuantity` is the combined
+occupancy of all virtual goods and owners, so it cannot answer this per-good query.
+True with zero is a valid empty allocation, including a freshly observed captured
+or reused store. False returns zero and a reason and means the quantity is unknown
+or unavailable, rather than a confirmed empty store.
+
+```csharp
+// The caller already holds the real engine monitor; this helper issues no command.
+if (api.NativeStorage.TryObserve(buildingId, out var store, out reason)
+        && armor.TryGetQuantity(store, out int quantity, out reason))
+{
+    // quantity is this good's confirmed allocation, including a valid zero.
+}
+```
+
+The query revalidates current world, live slot, unsigned Global ID, owner and pool.
+Wrong-pool, stale, unregistered/dormant, blocked or pending observations fail. All
+pre-load snapshots must be reacquired in the restored world. Matching staged
+restoration may activate on the first protected read; an already-bound quantity
+read does not reconcile losses or consume operation sequences.
+
+The caller-held engine monitor and confirmed known world are required for reads,
+including in multiplayer. A protected quantity read needs no native-tick or
+authenticated-Chore mutation scope. It grants no player authorization or write
+authority; exchanges retain their existing authoritative simulation requirements.
+The [compiled helper](../examples/ThirdPartyMod/NativeStorageExample.cs) is opt-in
+and must be called from an existing protected boundary.
+
+Consumers must require the provider release/build exporting this query; the batch
+API alone does not establish its availability.
+
 ### Lifetime, losses and saves
 
 The complete ledger and physical allocations belong to one exact native world.
@@ -77,6 +181,22 @@ Staged load data is applied only to its matching mission/world receipt. Queries
 may finish that matching activation; `IsCurrentWorldReady` is a nonmutating
 observation. A new blank editor map can initialize empty without an archive
 callback. A loaded map or save cannot silently take that fallback.
+
+Restoration requires the archive's positive `VersionedSaveLoad.MissionSessionId`
+to match the synchronously executing mission attempt. A ready mission, filename
+or callback order cannot supply a missing association. Unknown (zero), wrong or
+no-longer-executing associations block storage before decoding, including
+`NoRecord`; they do not mean that the current world is empty. Readable original
+records remain passive byte for byte and existing stock remains untouched.
+Storage reads, mutation and capture refuse that world. The same blank-editor
+world cannot clear the refusal by taking the no-archive fallback; a genuinely new
+explicit blank editor world retains its existing initialization path.
+
+This intentionally tightens the previous behavior, which borrowed the globally
+active mission's ID. Integrations that bypass the tracked mission-load owner must
+use a supported tracked load rather than infer an association themselves. This
+is a managed ownership check, not proof of live Extender ordering, native-world
+validity, import, enrollment or private-ledger retirement.
 
 Destroyed, reused, captured or retyped buildings lose their associated virtual
 stock. Reconciliation updates physical rows and private player totals together;
@@ -199,11 +319,28 @@ afterward**, even if the same creation key exists. Reacquire with
 A missing/expired key does not authorize recreating a cached quantity or assuming
 delivery succeeded. The consumer still reconciles its actor's saved custody.
 
-The existing `ledger`/`stores` pair remains schema 1 with reader minimum 1 when no
-cargo history exists. Successful creation switches stores and record to schema 2,
-minimum reader 2, permanently for that world's history even after lots drain or
-are discarded. Older readers report `TooNew` and retain original bytes. A
-cargo-bearing pair inside a reader-1 envelope is rejected before staged assignment.
+The `ledger`/`stores` payload remains stores schema 1 when no cargo history exists.
+Successful creation switches stores to schema 2 permanently for that world's history,
+even after lots drain or are discarded. Ordinary unenrolled checkpoints keep their
+exact version-1/reader-1 or version-2/reader-2 envelopes and verification rules.
+
+Ordinary public registration remains current version 2 and does not join a writer
+cohort. An explicit owner-bound `client.CriticalSaves.TryEnroll` with
+`RequiresNativeStorage = true` before the first storage registration/world instead
+requests the process-lifetime protected cohort. A false enrollment leaves the
+ordinary default unchanged; accepted enrollment is permanent. Missing or failed
+shared-source startup blocks the required cohort, with no unprotected fallback. Its protected container is version 3/minimum reader 3, with a framework-reserved
+`critical-cohort` entry; the stores bytes remain schema 1 or 2. Older reader 2
+reports `TooNew`, keeps the original bytes and cannot certify or save that cohort.
+Legacy 1/2 records remain readable; cargo history still requires a container and
+minimum reader of at least 2. A missing participant or mismatched protected marker
+keeps the original record passively and blocks replacement. First state publication
+waits for the full matching load pass; early callback reentry cannot activate a
+partially accepted cohort. Protected state activation and `IsCurrentWorldReady` also
+require a known single-player/editor world; a real-multiplayer load remains passive
+before stock can be published or exchanged. Ordinary reader-2 multiplayer behavior
+is unchanged. No additional capacity hook or fallback is installed. See the
+[owner-bound enrollment and compatibility contract](SAVE_DATA.md#opt-in-protected-save-participants).
 
 The critical writer freezes physical and cargo state plus version, refuses
 reentrant mutations, verifies capture/status/native I/O/archive bytes, then replaces
@@ -224,11 +361,98 @@ Earlier manual-storage behavior could follow the raw native save path. Consumers
 may therefore observe save failure where the prior implementation reported raw
 success; unknown cargo must not be overwritten as an empty successful owner.
 
-A readable stores magic and schema-1 header, even with malformed body, retains
-the prior blocked-storage/raw-save policy. That positive legacy evidence does not
-make malformed storage usable. Genuine `NoRecord`/out-of-scope results retain the existing empty-state initialization.
-Normal readable no-cargo schema-1 bytes/behavior stay exact. This is a material behavior change despite additive public signatures;
-assess it separately from a passing API compatibility baseline.
+A readable stores magic and schema-1 header remains positive no-cargo evidence;
+it does not make malformed storage usable. An enrolled cohort still requires a
+valid complete checkpoint. Genuine `NoRecord`/out-of-scope results retain the
+existing empty-state initialization when associated with the exact load attempt.
+With explicit protected opt-in, state-only/no-cargo worlds also require the
+qualified writer and owned pre-capture context and write a version-3 container.
+That process cannot save real multiplayer through the SP/editor-only protected
+freeze, even without cargo. Multiplayer snapshot/authority qualification remains
+unavailable; its native mode guard is retained. Ordinary unenrolled physical stock
+keeps its original real-MP scope and legacy save path. A default reader-2 runtime
+loading protected3 keeps it `TooNew`/passive and blocks replacement, never downgrades.
+Missing or malformed enrolled state cannot take a raw-success path.
+An archive callback can outlive a failed startup because registrations are
+process-lived. It never activates storage state. Restored, unknown, malformed or
+unassociated data retains conservative capacity and save demand; saving refuses
+before Original while that owner is unavailable. Only an exact causally associated
+`NoRecord`/`OutOfScope` clears this demand and permits the original empty-world path.
+An old stores schema-1 header is not proof of absent virtual occupancy.
+
+Without an enrolled cohort, ordinary schema-1/2 checkpoint bytes and registry unknown
+retention stay exact. Protected opt-in has a material SP/editor scope and reader
+policy despite additive public signatures; assess it separately from a passing
+API compatibility baseline. Enrollment prepares each owner's private checkpoint
+and does not migrate its stock, cargo or actor records. An actual consumer's
+lossless adapter and protected cold-load confirmation remain required before
+retiring that private ledger.
+
+## Importing an existing owner ledger
+
+Typed import is an explicit SP/editor migration operation for an owner-bound
+critical participant jointly enrolled with shared NativeStorage. It does not
+change ordinary reader-2 registration or multiplayer behavior. Register the real
+goods and the existing versioned record first; use its LegacyReader and migrations
+to decode old data. From that participant's exact Prepared callback call
+NativeStorageClient.TryPrepareImport with physical allocations and final cargo.
+No old native world is read. Unknown/wrong causal association, NoRecord, passive
+or already protected originals, foreign handles and copied/stale receivers refuse.
+
+Preparation copies bounded values: up to the existing physical-row and cargo-record
+limits, with at most 32 aggregated good/player physical accounts. It publishes no
+stock, cargo or archive bytes, but successful preparation does publish a
+conservative pending-import barrier. Discarding a successful plan does not reopen
+empty capacity: the world stays passive until every current pending plan commits
+or the actual registry advances to a replacement load/unload. Failed preparation
+does not change that metadata. Preparation of the same exact input returns the
+same plan; a changed intent refuses.
+
+At a confirmed matching native world after the complete load pass, hold the actual
+engine monitor and call TryCommitImport. The service checks the exact original
+window as well as the positive mission association, world, all original cohort
+members, live building slot/GlobalId/owner/pool, joint native/virtual capacity and
+current state identities. A mission attempt may contain multiple archive windows;
+the attempt ID alone never authorizes import. Existing allocations needing loss
+reconciliation must be reconciled independently before retry: a refused import
+does not publish activation or maintenance losses.
+
+The entire physical/cargo candidate and receipt are prepared before one publication.
+Refusal leaves shared stock, native gold, original archive and caller state intact.
+Source generation is pinned by an internal registry guard across only preallocated
+assignments (engine, then import metadata, then registry lock). Generation observers
+run after the registry lock is released. Load/unload clears old plans, receipts and
+world references; ignored nested old-world unload does not erase replacement plans.
+
+NativeStorageImportPlan.Cargo exposes creation sequences before commit, so the
+consumer can preallocate its replacement actor state. Those values are not live
+cargo snapshots and cannot mutate a future lot before publication. On success,
+perform only nonthrowing preallocated assignments under the same engine monitor to
+switch every consumer caller to the shared stock and its owner-private actor state.
+No retirement callback runs in the library. Exact retry in the same original
+window/world returns AlreadyApplied without issuing stock or cargo twice.
+There is no in-world undo after success; reload the complete prior archive when
+recovery is needed. Other owners may still be pending, so wait for
+IsCurrentWorldReady before using shared state. Do not fall back to a competing
+private capacity or stock authority while that barrier is closed.
+
+All related private actor records and the single shared all-owner storage record
+must be in the protected cohort. The original destination remains unchanged until
+the existing critical writer verifies and atomically commits all of them. An
+in-memory import, capture bytes or a matching digest alone does not establish a
+durable migration. A later protected original must restore its shared state rather
+than importing retained legacy entries again.
+
+Keep work-in-progress and base productivity inputs in the consumer's actor record;
+only observed final undelivered quantity belongs in imported cargo. Validate actor
+and building lifetime according to the actual producer: a completed batch may
+outlive its worker, and carried goods may outlive their source workshop. Neither
+is market or recruitment stock before deposit. All worker, capacity, load,
+trade and recruitment callers still need one-authority integration tests before
+the old ledger or hooks can retire. An older raw-record consumer cannot interpret
+a new versioned envelope; document that material downgrade limit. This API does
+not establish native route, live coexistence, multiplayer import, UI, audio or
+visual acceptance.
 
 ## Public limits
 
@@ -272,6 +496,15 @@ The [pure state/codec](../src/Economy/Storage/NativeStorageState.cs) uses the
 Content library's trusted internal prepared commit. Only prebuilt publication
 follows the native gold store. Native hot paths read an immutable marked-building
 index; empty demand follows the complete original path.
+
+Batch operations reuse that prepared exchange and publication. A kind-5/version-1
+intent stores a 34-byte versioned SHA-256 fingerprint of the canonical complete
+physical changes and gold intent. It fits the existing opaque Content schema-2
+receipt field; readers preserve it without interpreting its new kind. Store
+schemas, outer reader requirements and existing single-store kind-2 intent bytes
+remain unchanged. Older assemblies do not export the new batch method, so
+consumers must declare a release containing that API. The new method adds no save
+policy or native hook.
 
 The [native owner](../src/Economy/Storage/NativeStorageNativeRuntime.cs) coordinates
 Armory admission/free count, Granary free count, the existing Granary finder

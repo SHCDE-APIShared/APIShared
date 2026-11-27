@@ -8,6 +8,19 @@ on:
         description: 'Audit the historical 0.9.2 hotfix scope against the published 0.9.0 tree'
         type: boolean
         default: false
+      public_extender_metadata_audit:
+        description: 'Inspect selected metadata from the pinned official public Extender release (JSON only)'
+        type: boolean
+        default: false
+      public_extender_metadata_fixture:
+        description: 'Choose the fixed public-package metadata question set'
+        type: choice
+        default: baseline
+        options:
+          - baseline
+          - preparation
+          - reader-bindings
+          - purchase-callbacks
 permissions:
   contents: read
 jobs:
@@ -211,3 +224,38 @@ jobs:
           path: |
             proton-shell-evidence.tar
             TestResults/*.trx
+  public-extender-metadata:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.public_extender_metadata_audit }}
+    runs-on: windows-latest
+    timeout-minutes: 8
+    env:
+      DOTNET_ADD_GLOBAL_TOOLS_TO_PATH: 'false'
+      DOTNET_GENERATE_ASPNET_CERTIFICATE: 'false'
+      MSBUILDDISABLENODEREUSE: '1'
+      PUBLIC_EXTENDER_METADATA_FIXTURE: ${{ inputs.public_extender_metadata_fixture || 'baseline' }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+      - name: Build portable metadata inspector
+        shell: pwsh
+        run: dotnet build tools/AssemblyMetadata/AssemblyMetadata.csproj --configuration Release --disable-build-servers --maxcpucount:2 -p:UseSharedCompilation=false --output "$env:RUNNER_TEMP/assembly-metadata-tool"
+      - name: Audit pinned public Extender metadata
+        shell: pwsh
+        run: |
+          $fixture = switch -CaseSensitive ($env:PUBLIC_EXTENDER_METADATA_FIXTURE) {
+            'baseline' { './tools/Validation/PublicExtenderMetadata.2.14.4.json' }
+            'preparation' { './tools/Validation/PublicExtenderPreparation.2.14.4.json' }
+            'reader-bindings' { './tools/Validation/PublicReaderBindings.2.14.4.json' }
+            'purchase-callbacks' { './tools/Validation/PublicPurchaseCallbacks.2.14.4.json' }
+            default { throw 'Unsupported public metadata fixture.' }
+          }
+          ./tools/Validation/Invoke-PublicExtenderMetadataAudit.ps1 -FixturePath $fixture -ToolAssemblyPath "$env:RUNNER_TEMP/assembly-metadata-tool/AssemblyMetadata.dll" -WorkDirectory "$env:RUNNER_TEMP/public-extender-metadata-work" -OutputDirectory "$env:RUNNER_TEMP/public-extender-metadata-result"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: public-extender-metadata-${{ github.run_id }}
+          path: ${{ runner.temp }}/public-extender-metadata-result/*.json
+          if-no-files-found: error
+          retention-days: 7

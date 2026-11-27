@@ -127,6 +127,22 @@ namespace APIShared.Economy
             return option != null;
         }
 
+        // Custody classification only, on the existing engine-protected simulation boundary.
+        // The caller supplies the freshly read native worker generation. Saved home identity
+        // is provenance, not proof of a live/owned workshop, role, route or mutation authority;
+        // delivery and actor mutation must still perform their existing full validation.
+        internal static bool TryGetWorkerBatch(int unitId, uint unitGid, out WeaponProductionOption option,
+            out int homeId, out uint homeGid)
+        {
+            option = null; homeId = 0; homeGid = 0;
+            if (unitId <= 0 || unitId > MaxUnitId || unitGid == 0 ||
+                !workers.TryGetValue(unitId, out var batch) || batch.UnitId != unitId ||
+                batch.UnitGlobalId != unitGid || batch.Option == null)
+                return false;
+            option = batch.Option; homeId = batch.BuildingId; homeGid = batch.BuildingGlobalId;
+            return true;
+        }
+
         private static WeaponProductionOption GetPendingIngredientOption(BuildingState state, GameBuilding* building)
         {
             var option = state?.Next;
