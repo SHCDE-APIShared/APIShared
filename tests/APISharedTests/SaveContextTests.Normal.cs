@@ -7,6 +7,7 @@ using System.Runtime.ExceptionServices;
 using System.Runtime.InteropServices;
 using System.Threading;
 using APIShared;
+using APIShared.Economy;
 using APIShared.Savegames;
 using APIShared.ScriptExtenderFixes;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -51,6 +52,72 @@ namespace APISharedTests
             Assert.IsFalse(fixture.Reader.TryReadSnapshot(out var value, out var source, out string reason));
             Assert.AreEqual(PreCaptureSaveContextSource.None, source);
             Assert.IsNull(value.FilePath); Assert.IsFalse(string.IsNullOrEmpty(reason));
+        }
+
+        [TestMethod]
+        public void RequiredAtomicCaptureUsesNormalProducerPathBeforePhysicalRedirection()
+        {
+            using (var fixture = new NormalControlledMethods(true))
+            {
+                const string logicalPath = @"C:/Users/Player/Saves\test.sav";
+                Assert.ThrowsExactly<InvalidOperationException>(() =>
+                    WorkerProductionCriticalSaveRuntime.ReadRequiredLogicalContext(fixture.Reader));
+                fixture.Original = () =>
+                {
+                    AssertRequiredAtomicTransport(fixture.Reader, logicalPath, true, () =>
+                    {
+                        fixture.Legacy(@"C:\Users\Player\Saves\.wp-physical.tmp", false);
+                        fixture.Factory(true);
+                        return fixture.Delivered.Single();
+                    });
+                    return 1;
+                };
+                Assert.AreEqual(1L, fixture.Export(logicalPath + "\0", 0));
+            }
+        }
+
+        private static void AssertRequiredAtomicTransport(PreCaptureSaveContextReader reader, string expectedPath,
+            bool gameplaySave, Func<SaveContext> dispatchFactory)
+        {
+            var captures = new List<string>();
+            var transports = new Dictionary<string, Func<VersionedSaveContext, byte[]>>();
+            var registry = new VersionedSaveDataRegistry((id, save, load) =>
+            {
+                transports.Add(id, save);
+                return true;
+            }, _ => { }, _ => { });
+            foreach (VersionedSaveScope scope in new[] { VersionedSaveScope.SaveGames, VersionedSaveScope.SaveGamesAndMaps })
+            {
+                string id = "Atomic_" + scope;
+                var record = new VersionedSaveDataRegistration("test.owner", id, 1, 1, new[] { "state" }, writer =>
+                {
+                    captures.Add(id);
+                    writer.Write("state", new byte[] { 19 });
+                    return true;
+                }, _ => { }) { RequireAtomicWrite = true, Scope = scope };
+                Assert.IsTrue(registry.TryRegister(record, out _, out string reason), reason);
+            }
+
+            var logical = WorkerProductionCriticalSaveRuntime.ReadRequiredLogicalContext(reader);
+            Assert.AreEqual(expectedPath, logical.FilePath);
+            Assert.AreEqual(gameplaySave, logical.IsSaveFile);
+            Assert.IsFalse(logical.IsMapEditorSave);
+            var prepared = registry.BeginAtomicSave(logical);
+            try
+            {
+                var actual = dispatchFactory();
+                NormalValues(actual, gameplaySave, false, expectedPath);
+                var delivered = new VersionedSaveContext(actual.IsSaveFile, actual.IsMapEditorSave, actual.FilePath);
+                var saveOnly = transports["Atomic_SaveGames"](delivered);
+                if (gameplaySave) Assert.IsNotNull(saveOnly);
+                else Assert.IsNull(saveOnly);
+                Assert.IsNotNull(transports["Atomic_SaveGamesAndMaps"](delivered));
+                VersionedSaveDataRegistry.RequireAtomicDelivered(prepared);
+                CollectionAssert.AreEquivalent(gameplaySave
+                    ? new[] { "Atomic_SaveGames", "Atomic_SaveGamesAndMaps" }
+                    : new[] { "Atomic_SaveGamesAndMaps" }, captures);
+            }
+            finally { registry.EndAtomicSave(prepared); }
         }
 
         // Execute official installed exporter/factory DMD copies. Only the native

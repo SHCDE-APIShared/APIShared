@@ -258,7 +258,7 @@ namespace APISharedTests
                     { "APIShared.Presentation.BuildingAnimSite`1", new[] { "Update", "Notify" } },
                     { "APIShared.Presentation.PaintScope", new[] { "Enter", "Exit", "get_Current", "get_Tracked" } },
                     { "APIShared.Presentation.PaintRegistry`1", new[] { "ForFile", "ForAll", "Notify" } },
-                    { "APIShared.Presentation.PaintClaimState", new[] { "TryClaim", "ClaimOver", "Enter", "Rollback", "get_ClaimedBy" } } };
+                    { "APIShared.Presentation.PaintClaimState", new[] { "TryClaim", "ClaimOver", "Enter", "get_ClaimedBy" } } };
                 int checkedMethods = 0;
                 foreach (var target in targets)
                 {
@@ -278,7 +278,7 @@ namespace APISharedTests
                         }
                     }
                 }
-                Assert.AreEqual(29, checkedMethods);
+                Assert.AreEqual(28, checkedMethods);
             }
         }
     }

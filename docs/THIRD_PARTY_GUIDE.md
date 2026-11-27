@@ -1375,6 +1375,24 @@ Successful Pre vetoes remain sticky; notification order is ascending order follo
 by ordinal owner GUID and ID. Failed Pre changes are rolled back. State is private
 to each registration, and registrations added during a call start on the next call.
 
+### Respecting the Vanilla AutoTrade option
+
+Before an automatic market action, call
+`APIShared.Economy.AutoTrade.TryGetPermission(out bool allowed)` from APIShared
+0.76.0. Act only when the call succeeds and `allowed` is true. A successful
+false value is the confirmed Vanilla prohibition. An unavailable result can
+mean loading is in progress, the game mode has no applicable setup option, or
+the old save lacks a confirmed option. Read the permission at each action
+instead of carrying it between missions. Keep it separate from manual trade
+and from the thresholds and toggles for an individual good.
+
+APIShared stores the confirmed option in a regular versioned save record and
+uses the existing multiplayer record agreement when loading. A qualified
+local Vanilla restart payload can supply the value for an older local save.
+Without a confirmed value, APIShared leaves the native loader's behavior
+intact. The Vanilla simulation still performs automatic trades and uses its
+original permission check. The query installs no trade-command hook.
+
 ### Market UI actions
 
 The market and shared extended-features actions use the same registration and
@@ -1396,6 +1414,16 @@ replacement. Interpret button strings and current panel state in the consumer.
 `ExtendedFeaturesAction` observes the whole shared extended-features method,
 including calls outside the market. Consumers must establish market context themselves.
 Keep receiver and panel references invocation-local.
+
+`TryRegisterViewInputGuard` attaches a synchronous policy to a MainViewModel
+site. Returning false or throwing rejects the input. The broker captures one
+ordered guard list for the call and checks the original input before Pre. If the
+call has Pre/Post observers and survives Pre, it also checks the final input
+before the original or replacement. Early rejection runs no observers. Late
+rejection is reported to Post as a veto. Nested view calls from a notification
+still check their input. Guards must read state only and avoid issuing UI
+commands. This API checks managed view input. Apply rules for direct commands
+and simulation at their respective boundaries.
 
 Register once during Unity startup. Registration installs only that requested
 managed site, owned by APIShared for the process lifetime. With no notification

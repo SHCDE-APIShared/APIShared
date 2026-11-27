@@ -269,7 +269,7 @@ namespace APIShared
             multiplayerSave = Hook<MultiplayerSave>(typeof(Platform_Multiplayer), nameof(Platform_Multiplayer.StartSave), (self, setup, map) =>
             {
                 SavegameModSettings.BeginLoad(map?.filePath, true);
-                var operation = new Operation { Kind = MissionStartKind.LoadedSave, Intent = GameModeKind.Unknown, Multiplayer = true };
+                var operation = new Operation { Kind = MissionStartKind.LoadedSave, Intent = GameModeKind.Unknown, Multiplayer = true, File = map?.filePath };
                 Run(operation, () =>
                 {
                     var receipt = ScriptExtenderFixes.LobbyStartPacketRuntime.BeginNativeStart(self, operation.Id);
@@ -624,6 +624,8 @@ namespace APIShared
                 Report(new InvalidOperationException(simulationRejection));
                 throw new NativeAdmissionAbort(simulationRejection);
             }
+            if (op?.Kind == MissionStartKind.LoadedSave && !op.Multiplayer)
+                Safe(() => Economy.AutoTrade.PrepareLegacy(op.Id, op.File));
             long nativeGeneration = Units.AiMilitary.AiMilitaryService.Instance.Generation;
             EngineInterface.LoadMapReturnData result;
             bool returned = false;
@@ -658,6 +660,8 @@ namespace APIShared
                     }
                     if (result.errorCode == 1)
                         Safe(() => Units.AiMilitary.AiMilitaryService.Instance.CompleteNativeLoad());
+                    if (result.errorCode == 1 && op != null && !op.NativeFailed && state.IsPending(op.Id))
+                        Economy.AutoTrade.CompleteNativeLoad(op.Id, op.Kind, op.File, op.Multiplayer);
                 }
             }
             finally { if (!returned) Safe(() => { if (op != null) state.CompleteNativeLoad(op.Id, false); }); }

@@ -9,7 +9,7 @@ do not silently overwrite each other.
 Contracts are documented at the declarations in
 [PaintEvents.cs](../src/Presentation/Paint/PaintEvents.cs) and
 [PaintContracts.cs](../src/Presentation/Paint/PaintContracts.cs). The compiled
-[PaintExample](../examples/ThirdPartyMod/PaintExample.cs) shows a registration with a fallback.
+[PaintExample](../examples/ThirdPartyMod/PaintExample.cs) shows a registration with a diagnostic.
 
 ## Usage
 
@@ -21,7 +21,7 @@ callback while your feature is off.
 ```csharp
 if (!PaintEvents.TryRegisterBodySprite(MyPlugin.Guid, "unit-art", AfterPaint,
         out string reason, order: -100, files: new[] { myCarrierFile }))
-    InstallOwnHook(reason);   // the broker refused or is missing: keep your previous path
+    LogPaintUnavailable(reason);
 
 static void AfterPaint(ref BodySpritePaint paint)
 {
@@ -31,16 +31,17 @@ static void AfterPaint(ref BodySpritePaint paint)
 }
 ```
 
-The callback receives the paint by reference and must not keep or copy it. It runs on the
-painting thread (the Unity main thread for every current caller), after the game's method and
-every hook installed beneath the broker, outside any lock.
+The callback receives the paint by reference. Use its methods to claim or change the result
+during the call. Assigning the entire value or retaining it is outside the callback contract.
+It runs on the painting thread after the game's method and every hook installed beneath the
+broker, outside any lock.
 
 ### Sites
 
 | Site | Game method | When your callback runs | What you may change | File filter |
 |---|---|---|---|---|
 | `BodySprite` | `SpriteMapping.SetBodySprite` | After the renderer's sprite, shared material and colour were set, including Script Extender's custom-material hook | The renderer's sprite and material (claim first), colour or other renderer state | Yes |
-| `TileGraphic` | `SpriteMapping.setGenericBuildingTileGraphic` | After the tile's image was chosen | `Tile.tileImage` (claim first) | Yes |
+| `TileGraphic` | `SpriteMapping.setGenericBuildingTileGraphic` | After the tile's image was chosen | `Tile.tileImage` (claim first and preserve construction references when changing visible art) | Yes |
 | `Chevron` | `SpriteMapping.getChevronImage` | After the chevron sprite was looked up | The returned sprite, through `TryReplace` | Yes |
 | `TileColour` | `gameTile.setTileColour` | After the cell colour was written to the tile's tilemap, including Script Extender's visualizers | The cell colour on `Tile.tilemapRef`; claim it for exclusive use | No |
 | `PixieLayer`, `FlyLayer`, `OrgLayer`, `BuildingAnimLayer` | `GameMap.addUpdatePixie`, `addUpdateFly`, `addUpdateOrg`, `addUpdateBuildingAnim` | After the draw-list entry was added or updated, outside the update's scope | The entry's renderer (claim first) | Yes |
@@ -49,6 +50,23 @@ A file filter lists the sprite files (GM numbers, 0 to 1023) a registration want
 any other file never reaches it, and a paint whose file no registration asked for costs one
 table lookup. Pass `null` to receive every file, for example to record every paint of a
 renderer you track.
+
+### Tile paint passes
+
+Call `PaintEvents.TryEnableTileGraphicPass` once during Unity startup if your
+registration needs to distinguish construction geometry from visible tile art.
+This opts the process into a shared, validated IL edit of the map renderer.
+In each tile callback, check `TileGraphicPaint.Pass`. Vanilla stores a
+`ConstructionReference` image for hit testing. A `VisibleTile` paint draws the
+tile or its overlay. The reference may still contain the previous map record's
+image while its replacement is being painted. A nonnull reference alone cannot
+identify a visible preview.
+
+The broker still delivers every matching paint. Calls outside the qualified
+map renderer, and changed managed IL that the qualifier refuses, report
+`Unknown`. A mod that needs the pass to change construction preview art should
+leave that preview alone on `Unknown`. The pass is consumed by the matching
+tile call and does not propagate to nested paints begun from a callback.
 
 ### Order and claims
 
@@ -91,17 +109,16 @@ renderer its native frame back when your identity leaves it. Calling
 
 ### Failures and refusal
 
-A throwing callback is counted (`GetCallbackFailures`), its own claim (and chevron
-replacement) is undone and the next registration runs; writes it made to Unity objects are
-not undone. Repeated failures are logged at exponentially spaced counts. An exception from
-the game's method propagates and skips the callbacks.
+A throwing callback is counted (`GetCallbackFailures`). The broker restores the full paint
+value, including earlier claims and chevron replacements, before running the next registration.
+Writes to Unity objects persist. Repeated failures are logged at exponentially spaced counts.
+An exception from the game's method propagates and skips the callbacks.
 
 Registration returns false with a reason when the arguments are invalid, the owner/ID pair is
-taken, or the site cannot be installed. Installation is refused, and logged as
-`PAINT_SITE_REFUSED`, when the method's signature changed or its compiled entry was redirected
-by something other than MonoMod. A later registration retries. Keep your own hook as the
-fallback for a refusal and for APIShared versions without this broker. `GetStatus` reports
-`Dormant`, `Installed` or `Unavailable: reason`.
+taken, or the site cannot be installed. `PAINT_SITE_REFUSED` records installation refusals
+such as a changed signature or a suspected foreign detour. Leave a refused site alone and
+review its diagnostic before considering a different integration. A later registration retries.
+`GetStatus` reports `Dormant`, `Installed` or `Unavailable: reason`.
 
 ## Limitations
 
@@ -117,8 +134,9 @@ fallback for a refusal and for APIShared versions without this broker. `GetStatu
   that keep their own hooks are not ordered against registrations.
 - A paint started from inside a callback is dispatched like any other paint. Do not repaint
   the same renderer from its own callback.
-- Not yet tested in a running game: actual rendering, composition with Script Extender
-  materials and frame-time effects are unverified.
+- SkinTest verified the building tile and construction preview passes in a running game,
+  including preservation of the game's construction hit-test sprite. Broker composition
+  with Script Extender body materials and frame-time effects still need measurement.
 
 ## Implementation
 
@@ -132,11 +150,12 @@ paint value on the stack and calls each registration through its delegate. Keepi
 out of the hook method matters: a struct holding references is zeroed in the prologue of the
 method that declares it, on every call.
 
-The claim state inside each paint value stores registration positions as integers; marking the
-running registration writes one integer, and only a successful claim remembers the claim it
-replaced, which is what a failed callback rolls back. Layer sites save and restore a
-thread-static scope around the original call. Nothing in the dispatch path allocates, takes a
-lock or touches game state.
+The claim state inside each paint value stores registration positions as integers. The dispatcher
+copies the value to a local before each callback and restores that copy if the callback throws.
+This protects the request, claim and replacement even when a failed callback overwrites the
+whole value. The copy is on the observed path, after the check for matching registrations.
+Layer sites save and restore a thread-static scope around the original call. Normal dispatch
+uses no heap allocation or lock of its own.
 
 ### Installation guard
 
@@ -147,17 +166,21 @@ is installed:
    parameter types the site was written for.
 2. The native-site registry seam (`PaintSiteGuard.OwnershipVeto`) has no objection. It is
    unset until a registry can name an exclusive owner of a managed method.
-3. The compiled entry is not redirected outside MonoMod. MonoMod hooks on one method compose
-   (Script Extender already hooks `SetBodySprite` and `setTileColour`; HarmonyX patches apply
-   as MonoMod `ILHook`s), so applied MonoMod detours, counted from MonoMod's detour registry,
-   mean the entry is MonoMod's. Without them, on Mono, an entry that starts with a jump was
-   written by another patcher, which installing would overwrite: the site is refused. On
-   .NET Framework and CoreCLR (test hosts) a method's stable entry can itself be a jump stub,
-   so this last check is not applied there.
+3. The guard looks for an unexpected redirect. On Mono, when no applied MonoMod detour is
+   known, an unreadable entry or a recognized jump at its start causes refusal. A positive
+   MonoMod count permits composition with the existing chain. Modifying the entry outside
+   MonoMod can leave that count unchanged, so this check cannot establish exclusive ownership
+   or detect every mixed chain. Script Extender uses MonoMod on `SetBodySprite` and
+   `setTileColour`, and HarmonyX patches apply through `ILHook`s. On .NET Framework and
+   CoreCLR (test hosts), a stable entry may itself be a jump stub, so the Mono jump check
+   does not apply.
 
 `PAINT_SITE_READY` logs the MonoMod detour count, the runtime and whether the entry jumps.
 
 ### Measurements
+
+The historical timing figures below predate full paint-value rollback. The same performance
+tests cover the current dispatcher.
 
 `PaintPerformanceTests` binds sites to static stand-ins with the game methods' parameters and
 an identical trivial body, and compares them with today's consumer pattern on the same host:

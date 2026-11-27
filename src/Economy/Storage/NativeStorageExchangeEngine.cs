@@ -28,6 +28,27 @@ namespace APIShared.Economy
             return world != null;
         }
 
+        internal bool ProbeExchangeReceipt(NativeStorageState state, CustomGoodId good, NativeStorageSnapshot expected,
+            long sequence, int quantityDelta, int goldDelta, out GoodsTransactionStatus status, out string reason)
+        {
+            try
+            {
+                if (!state.ProbeExchangeReceipt(good, sequence, expected.Probe, quantityDelta, goldDelta, out status, out reason))
+                    return false;
+                if (!Context(out object world, out reason) || !ReferenceEquals(expected.World, world))
+                {
+                    status = GoodsTransactionStatus.InvalidRequest;
+                    if (string.IsNullOrEmpty(reason)) reason = "The native world changed while checking the retained receipt.";
+                }
+            }
+            catch (Exception error)
+            {
+                status = GoodsTransactionStatus.InvalidRequest;
+                reason = "Storage exchange receipt preparation failed: " + error.Message;
+            }
+            return true;
+        }
+
         internal bool TryExchange(NativeStorageState state, CustomGoodId good, NativeStorageSnapshot expected,
             NativeStorageProbe current, long sequence, int quantityDelta, int goldDelta,
             out GoodsTransactionStatus status, out string reason)

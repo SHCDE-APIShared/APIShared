@@ -157,7 +157,7 @@ namespace APISharedTests
                     ("APIShared.Commands.GameActionEvents", "DispatchObserved", "APIShared.Commands.GameActionPreEventArgs"),
                     ("APIShared.Economy.MarketPriceEvents", "DispatchObserved", "APIShared.Economy.MarketPricePreEventArgs"),
                     ("APIShared.Presentation.PresentationEvents", "ExecuteObserved", null),
-                    ("APIShared.Presentation.PresentationEvents/Site", "DispatchObservedView", "APIShared.Presentation.PresentationPreEventArgs"),
+                    ("APIShared.Presentation.PresentationEvents", "ExecuteObservedView", "APIShared.Presentation.PresentationPreEventArgs"),
                     ("APIShared.Presentation.PresentationEvents/Site", "DispatchObservedHud", "APIShared.Presentation.PresentationPreEventArgs"),
                     ("APIShared.Presentation.PresentationEvents/Site", "DispatchObservedGui", "APIShared.Presentation.PresentationPreEventArgs")
                 };

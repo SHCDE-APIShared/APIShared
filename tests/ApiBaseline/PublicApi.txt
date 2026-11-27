@@ -755,6 +755,8 @@ APIShared.Economy.AllyTransfers | public static bool IsAvailable { get; }
 APIShared.Economy.AllyTransfers | public static bool IsSupportedGood(SHCDESE.Interop.eGoods good)
 APIShared.Economy.AllyTransfers | public static bool TryExecute(APIShared.Economy.AllyTransferRequest request, out APIShared.Economy.AllyTransferResult result, out string reason)
 APIShared.Economy.AllyTransfers | public static bool TryGetCapacity(int recipientId, SHCDESE.Interop.eGoods good, out APIShared.Economy.AllyTransferCapacity capacity, out string reason)
+APIShared.Economy.AutoTrade | public static class APIShared.Economy.AutoTrade
+APIShared.Economy.AutoTrade | public static bool TryGetPermission(out bool allowed)
 APIShared.Economy.FearPopularity | public static class APIShared.Economy.FearPopularity
 APIShared.Economy.FearPopularity | public static bool TryRegister(string ownerGuid, string registrationId, out APIShared.Economy.FearPopularityRegistration registration, out string diagnostic, int order = 0)
 APIShared.Economy.FearPopularity | public static int CalculatePoints(int fearLevel, decimal multiplier)
@@ -3459,6 +3461,7 @@ APIShared.Presentation.PackagedLordPresentationRegistration | public void SetEnt
 APIShared.Presentation.PaintEvents | public static class APIShared.Presentation.PaintEvents
 APIShared.Presentation.PaintEvents | public static APIShared.Presentation.PaintLayerScope CurrentLayer { get; }
 APIShared.Presentation.PaintEvents | public static bool IsInstalled(APIShared.Presentation.PaintSite site)
+APIShared.Presentation.PaintEvents | public static bool TryEnableTileGraphicPass(out string reason)
 APIShared.Presentation.PaintEvents | public static bool TryRegisterBodySprite(string ownerGuid, string registrationId, APIShared.Presentation.PaintHandler<APIShared.Presentation.BodySpritePaint> afterPaint, out string reason, int order = 0, int[] files = null)
 APIShared.Presentation.PaintEvents | public static bool TryRegisterChevron(string ownerGuid, string registrationId, APIShared.Presentation.PaintHandler<APIShared.Presentation.ChevronPaint> afterPaint, out string reason, int order = 0, int[] files = null)
 APIShared.Presentation.PaintEvents | public static bool TryRegisterLayer(APIShared.Presentation.PaintLayer layer, string ownerGuid, string registrationId, APIShared.Presentation.PaintHandler<APIShared.Presentation.LayerPaint> afterUpdate, out string reason, int order = 0, int[] files = null)
@@ -3491,6 +3494,7 @@ APIShared.Presentation.PaintSite | TileColour = 3
 APIShared.Presentation.PaintSite | TileGraphic = 1
 APIShared.Presentation.PresentationEvents | public static class APIShared.Presentation.PresentationEvents
 APIShared.Presentation.PresentationEvents | public static bool TryRegister(APIShared.Presentation.PresentationOperation operation, string ownerGuid, string registrationId, System.Action<APIShared.Presentation.PresentationPreEventArgs> pre, System.Action<APIShared.Presentation.PresentationPostEventArgs> post, out string reason, int order = 0)
+APIShared.Presentation.PresentationEvents | public static bool TryRegisterViewInputGuard(APIShared.Presentation.PresentationOperation operation, string ownerGuid, string registrationId, System.Func<CrusaderDE.MainViewModel, object, bool> allows, out string reason, int order = 0)
 APIShared.Presentation.PresentationEvents | public static long GetCallbackFailures(APIShared.Presentation.PresentationOperation operation)
 APIShared.Presentation.PresentationOperation | public enum APIShared.Presentation.PresentationOperation : int
 APIShared.Presentation.PresentationOperation | BuildingRollover = 1
@@ -3543,6 +3547,7 @@ APIShared.Presentation.TileColourPaint | public gameTile Source { get; }
 APIShared.Presentation.TileColourPaint | public int Light { get; }
 APIShared.Presentation.TileColourPaint | public string ClaimedBy { get; }
 APIShared.Presentation.TileGraphicPaint | public struct APIShared.Presentation.TileGraphicPaint : APIShared.Presentation.IPaintNotification
+APIShared.Presentation.TileGraphicPaint | public APIShared.Presentation.TileGraphicPass Pass { get; }
 APIShared.Presentation.TileGraphicPaint | public GameMapTile Tile { get; }
 APIShared.Presentation.TileGraphicPaint | public bool ClaimOver(string currentOwnerGuid)
 APIShared.Presentation.TileGraphicPaint | public bool IsClaimed { get; }
@@ -3551,6 +3556,10 @@ APIShared.Presentation.TileGraphicPaint | public int File { get; }
 APIShared.Presentation.TileGraphicPaint | public int Image { get; }
 APIShared.Presentation.TileGraphicPaint | public int Light { get; }
 APIShared.Presentation.TileGraphicPaint | public string ClaimedBy { get; }
+APIShared.Presentation.TileGraphicPass | public enum APIShared.Presentation.TileGraphicPass : int
+APIShared.Presentation.TileGraphicPass | ConstructionReference = 1
+APIShared.Presentation.TileGraphicPass | Unknown = 0
+APIShared.Presentation.TileGraphicPass | VisibleTile = 2
 APIShared.Presentation.TooltipAnchor | public static class APIShared.Presentation.TooltipAnchor
 APIShared.Presentation.TooltipAnchor | public static readonly Noesis.DependencyProperty AnchorProperty
 APIShared.Presentation.TooltipAnchor | public static string GetAnchor(Noesis.DependencyObject value)

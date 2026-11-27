@@ -56,7 +56,8 @@ authorizing control of that player.
 Positive sequences belong to the registering owner. `TryGetLastSequence` reads
 the current high-watermark in an authorized simulation context. Allocate and
 execute in one deterministic stream; that read reserves no number. Retained exact
-retries return `AlreadyApplied` without another gold or goods effect. Retain the
+retries return `AlreadyApplied` without another gold or goods effect. In an already
+bound world this receipt check precedes storage-loss maintenance. Retain the
 original snapshot, sequence, quantity and price for an in-world retry; re-observing
 a destroyed or captured building cannot recover that old observation. Changing
 the building, price, player or quantity conflicts. Expired sequences reject and

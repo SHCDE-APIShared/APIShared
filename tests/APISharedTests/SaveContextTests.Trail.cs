@@ -21,6 +21,25 @@ namespace APISharedTests
 {
     public sealed partial class SaveContextTests
     {
+        [TestMethod]
+        public void RequiredAtomicCaptureUsesTrailSourceContextForMapRecordsOnly()
+        {
+            using (var fixture = new TrailControlledMethods())
+            {
+                const string source = @"C:\Trails\loaded.map";
+                const string destination = @"C:\Export\new.trail";
+                fixture.NativeAction = call => AssertRequiredAtomicTransport(fixture.Reader, source, false, () =>
+                {
+                    fixture.DispatchFactory(source, false, false);
+                    return fixture.Delivered.Single();
+                });
+                fixture.Producer(null, source, "display name", destination, null);
+                Assert.AreEqual(1, fixture.RawCalls);
+                CollectionAssert.AreEqual(Encoding.Unicode.GetBytes(destination), fixture.RawArguments.Single().PathBytes);
+                Assert.AreEqual(0, fixture.Provider.Calls);
+            }
+        }
+
         // These are generated copies of the installed producer, production helper,
         // wrapper and SE archive factory. Only UI/load/encode boundaries and the
         // P/Invoke are controlled. They do not execute a native writer, establish
@@ -509,6 +528,8 @@ namespace APISharedTests
                 read.Success = reader.TryReadSnapshot(out read.Context, out read.Source, out read.Reason);
                 return read;
             }
+
+            internal PreCaptureSaveContextReader Reader => reader;
 
             internal void DispatchFactory(string path = LegacyPath, bool save = true, bool editor = true)
             {

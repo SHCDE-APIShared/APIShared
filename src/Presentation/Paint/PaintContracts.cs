@@ -40,9 +40,9 @@ namespace APIShared.Presentation
         BuildingAnim
     }
 
-    /// <summary>Receives one completed paint by reference. The value is valid only during the call: do not
-    /// keep or copy it to claim later. Runs synchronously on the painting thread (the Unity main thread for
-    /// every current caller), after the game's method and every hook installed beneath the broker.</summary>
+    /// <summary>Receives one completed paint by reference. Use its methods during the callback to claim
+    /// or update the result. Do not assign a new paint value or keep it for later use. Runs synchronously on
+    /// the painting thread, after the game's method and every hook installed beneath the broker.</summary>
     /// <typeparam name="TPaint">The site's paint value.</typeparam>
     /// <param name="paint">The request, the enclosing layer and the claim state shared by all registrations
     /// of this call.</param>
@@ -66,42 +66,34 @@ namespace APIShared.Presentation
         public bool IsActive => Layer != PaintLayer.None;
     }
 
-    // Lets the shared dispatcher mark the running registration and roll back a failed callback's claim
-    // without boxing: generic dispatch calls these through a constrained call on the struct.
+    // Marks the running registration through a constrained call on the struct, without boxing.
     internal interface IPaintNotification
     {
         void Enter(int registration);
-        void Rollback();
     }
 
     // The claim protocol shared by every paint value. Registrations are 1-based indexes into the dispatched
-    // list, so marking the caller writes one integer; 0 means none. A claim remembers the claim it replaced,
-    // so a failed callback's claim can be undone without a checkpoint per callback.
+    // list, so marking the caller writes one integer; 0 means none. The dispatcher restores the entire
+    // paint value when a callback fails.
     internal struct PaintClaimState
     {
         private readonly PaintEntry[] registrations;
-        private int caller, claim, replaced;
-        internal PaintClaimState(PaintEntry[] registrations) { this.registrations = registrations; caller = claim = replaced = 0; }
+        private int caller, claim;
+        internal PaintClaimState(PaintEntry[] registrations) { this.registrations = registrations; caller = claim = 0; }
         internal bool IsClaimed => claim != 0;
         internal string ClaimedBy => claim == 0 ? null : registrations[claim - 1].Owner;
         internal bool TryClaim()
         {
             if (claim != 0 || caller == 0) return false;
-            replaced = 0; claim = caller; return true;
+            claim = caller; return true;
         }
         internal bool ClaimOver(string currentOwner)
         {
             if (caller == 0 || claim == 0 || claim == caller ||
                 !string.Equals(registrations[claim - 1].Owner, currentOwner, System.StringComparison.Ordinal)) return false;
-            replaced = claim; claim = caller; return true;
+            claim = caller; return true;
         }
         internal void Enter(int registration) => caller = registration;
-        // Only the failing registration's own claim is undone; it can have made at most one.
-        internal bool Rollback()
-        {
-            if (claim != caller || caller == 0) return false;
-            claim = replaced; replaced = 0; return true;
-        }
     }
 
     /// <summary>One completed <c>SpriteMapping.SetBodySprite</c> call. The game has already set the renderer's
@@ -148,7 +140,17 @@ namespace APIShared.Presentation
         /// unclaimed or claimed by anyone else.</summary>
         public bool ClaimOver(string currentOwnerGuid) => claim.ClaimOver(currentOwnerGuid);
         void IPaintNotification.Enter(int registration) => claim.Enter(registration);
-        void IPaintNotification.Rollback() => claim.Rollback();
+    }
+
+    /// <summary>How the audited map renderer uses the tile image from a paint call.</summary>
+    public enum TileGraphicPass
+    {
+        /// <summary>No qualified call-site context is available.</summary>
+        Unknown,
+        /// <summary>Vanilla will store the resulting sprite for construction geometry and hit testing.</summary>
+        ConstructionReference,
+        /// <summary>Vanilla is painting a visible tile or a visible tile overlay.</summary>
+        VisibleTile
     }
 
     /// <summary>One completed <c>SpriteMapping.setGenericBuildingTileGraphic</c> call; the game has set the
@@ -156,8 +158,9 @@ namespace APIShared.Presentation
     public struct TileGraphicPaint : IPaintNotification
     {
         private PaintClaimState claim;
-        internal TileGraphicPaint(GameMapTile tile, int file, int image, int light, PaintEntry[] registrations)
-        { Tile = tile; File = file; Image = image; Light = light; claim = new PaintClaimState(registrations); }
+        internal TileGraphicPaint(GameMapTile tile, int file, int image, int light, PaintEntry[] registrations,
+            TileGraphicPass pass = TileGraphicPass.Unknown)
+        { Tile = tile; File = file; Image = image; Light = light; Pass = pass; claim = new PaintClaimState(registrations); }
         /// <summary>The painted tile.</summary>
         public GameMapTile Tile { get; }
         /// <summary>The requested sprite file (GM number).</summary>
@@ -166,6 +169,9 @@ namespace APIShared.Presentation
         public int Image { get; }
         /// <summary>The requested light value.</summary>
         public int Light { get; }
+        /// <summary>Qualified caller context when <see cref="PaintEvents.TryEnableTileGraphicPass"/> was enabled.
+        /// Leave construction references intact when changing only visible art.</summary>
+        public TileGraphicPass Pass { get; }
         /// <summary>True when a registration claimed the tile image.</summary>
         public bool IsClaimed => claim.IsClaimed;
         /// <summary>The owner GUID that claimed the tile image, or null.</summary>
@@ -175,7 +181,6 @@ namespace APIShared.Presentation
         /// <summary>Takes over a claim held by exactly <paramref name="currentOwnerGuid"/>.</summary>
         public bool ClaimOver(string currentOwnerGuid) => claim.ClaimOver(currentOwnerGuid);
         void IPaintNotification.Enter(int registration) => claim.Enter(registration);
-        void IPaintNotification.Rollback() => claim.Rollback();
     }
 
     /// <summary>One completed <c>SpriteMapping.getChevronImage</c> call. The broker returns <see cref="Result"/>
@@ -183,11 +188,11 @@ namespace APIShared.Presentation
     public struct ChevronPaint : IPaintNotification
     {
         private PaintClaimState claim;
-        private Sprite result, replacedResult;
+        private Sprite result;
         internal ChevronPaint(GameMapTile tile, int file, int image, Sprite nativeResult, PaintEntry[] registrations)
         {
             Tile = tile; File = file; Image = image; NativeResult = result = nativeResult;
-            claim = new PaintClaimState(registrations); replacedResult = null;
+            claim = new PaintClaimState(registrations);
         }
         /// <summary>The tile whose chevron is requested.</summary>
         public GameMapTile Tile { get; }
@@ -207,16 +212,15 @@ namespace APIShared.Presentation
         public bool TryReplace(Sprite sprite)
         {
             if (!claim.TryClaim()) return false;
-            replacedResult = result; result = sprite; return true;
+            result = sprite; return true;
         }
         /// <summary>Replaces a result already replaced by exactly <paramref name="currentOwnerGuid"/>.</summary>
         public bool ReplaceOver(string currentOwnerGuid, Sprite sprite)
         {
             if (!claim.ClaimOver(currentOwnerGuid)) return false;
-            replacedResult = result; result = sprite; return true;
+            result = sprite; return true;
         }
         void IPaintNotification.Enter(int registration) => claim.Enter(registration);
-        void IPaintNotification.Rollback() { if (claim.Rollback()) result = replacedResult; }
     }
 
     /// <summary>One completed <c>gameTile.setTileColour</c> call; the game (and every hook beneath the broker,
@@ -245,7 +249,6 @@ namespace APIShared.Presentation
         /// <summary>Takes over a claim held by exactly <paramref name="currentOwnerGuid"/>.</summary>
         public bool ClaimOver(string currentOwnerGuid) => claim.ClaimOver(currentOwnerGuid);
         void IPaintNotification.Enter(int registration) => claim.Enter(registration);
-        void IPaintNotification.Rollback() => claim.Rollback();
     }
 
     /// <summary>One completed <c>GameMap.addUpdate*</c> call. Members that the layer's method does not take
@@ -315,6 +318,5 @@ namespace APIShared.Presentation
         /// <summary>Takes over a claim held by exactly <paramref name="currentOwnerGuid"/>.</summary>
         public bool ClaimOver(string currentOwnerGuid) => claim.ClaimOver(currentOwnerGuid);
         void IPaintNotification.Enter(int registration) => claim.Enter(registration);
-        void IPaintNotification.Rollback() => claim.Rollback();
     }
 }

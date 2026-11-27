@@ -6,8 +6,11 @@ using System.Runtime.CompilerServices;
 using System.Runtime.Serialization;
 using APIShared.Presentation;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using Mono.Cecil;
+using Mono.Cecil.Cil;
 using MonoMod.Cil;
 using MonoMod.RuntimeDetour;
+using MonoMod.Utils;
 using UnityEngine;
 
 namespace APISharedTests
@@ -37,6 +40,7 @@ namespace APISharedTests
         private struct ChainedSlot { }
         private struct ChevronSlot { }
         private struct TileSlot { }
+        private struct TilePassSlot { }
         private struct ColourSlot { }
         private struct InLayerSlot { }
         private struct PixieSlot { }
@@ -59,6 +63,10 @@ namespace APISharedTests
         [MethodImpl(MethodImplOptions.NoInlining)] private static void BodyChained(SpriteRenderer r, int file, int image, int colour, bool alt, int chop, int transparency) => Trace.Add("original");
         [MethodImpl(MethodImplOptions.NoInlining)] private static void BodyWrongShape(SpriteRenderer r, int file, int image, int colour, bool alt, int chop) => Trace.Add("original");
         [MethodImpl(MethodImplOptions.NoInlining)] private static void TileGraphic(GameMapTile tile, int file, int image, int light) => Trace.Add("original:" + file);
+        private static Sprite referenceTile, visibleTile;
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static void TilePassGraphic(GameMapTile tile, int file, int image, int light) =>
+            tile.tileImage = image == 1 ? referenceTile : visibleTile;
         [MethodImpl(MethodImplOptions.NoInlining)] private static Sprite Chevron(GameMapTile tile, int file, int image) { Trace.Add("original"); return nativeChevron; }
         [MethodImpl(MethodImplOptions.NoInlining)] private static void TileColour(gameTile self, GameMapTile tile, Vector3Int location, int light) => Trace.Add("original:" + location.x);
         [MethodImpl(MethodImplOptions.NoInlining)]
@@ -137,14 +145,20 @@ namespace APISharedTests
         }
 
         [TestMethod]
-        public void FailingCallbackRollsBackItsClaimAndLaterRegistrationsRun()
+        public void FailingCallbackRestoresTheWholeBodyPaintAndLaterRegistrationsRun()
         {
             PaintRegistry<BodySpritePaint> site = Body<FailureSlot>(nameof(BodyFailure));
-            Assert.IsTrue(site.TryRegister("broken", "a", (ref BodySpritePaint p) => { p.TryClaim(); throw new InvalidOperationException("boom"); }, 0, null, false, out _));
-            Assert.IsTrue(site.TryRegister("next", "b", (ref BodySpritePaint p) => Trace.Add("next:" + p.TryClaim() + ":" + p.ClaimedBy), 1, null, false, out _));
+            Assert.IsTrue(site.TryRegister("broken", "a", (ref BodySpritePaint p) =>
+            {
+                p.TryClaim();
+                p = default;
+                throw new InvalidOperationException("boom");
+            }, 0, null, false, out _));
+            Assert.IsTrue(site.TryRegister("next", "b", (ref BodySpritePaint p) =>
+                Trace.Add("next:" + p.File + ":" + p.Image + ":" + p.TryClaim() + ":" + p.ClaimedBy), 1, null, false, out _));
             BodyFailure(null, 3, 1, 0, false, 0, 0);
             BodyFailure(null, 3, 1, 0, false, 0, 0);
-            CollectionAssert.AreEqual(new[] { "original", "next:True:next", "original", "next:True:next" }, Trace);
+            CollectionAssert.AreEqual(new[] { "original", "next:3:1:True:next", "original", "next:3:1:True:next" }, Trace);
             Assert.AreEqual(2L, site.CallbackFailures);
         }
 
@@ -188,12 +202,18 @@ namespace APISharedTests
             Assert.IsTrue(site.TryRegister("second", "x", (ref ChevronPaint p) => Trace.Add("second:" + p.TryReplace(c)), 1, null, false, out _));
             Assert.IsTrue(site.TryRegister("third", "x", (ref ChevronPaint p) => Trace.Add("third:" + p.ReplaceOver("first", c)), 2, null, false, out _));
             Assert.IsTrue(site.TryRegister("fourth", "x", (ref ChevronPaint p) => { p.ReplaceOver("third", d); throw new InvalidOperationException("boom"); }, 3, null, false, out _));
+            Assert.IsTrue(site.TryRegister("overwrites", "x", (ref ChevronPaint p) =>
+            {
+                p = default;
+                throw new InvalidOperationException("overwritten paint");
+            }, 4, null, false, out _));
             Assert.IsTrue(site.TryRegister("observer", "x", (ref ChevronPaint p) =>
-                Trace.Add("observer:" + ReferenceEquals(p.NativeResult, nativeChevron) + ":" + ReferenceEquals(p.Result, c) + ":" + p.ClaimedBy), 4, null, false, out _));
+                Trace.Add("observer:" + p.File + ":" + p.Image + ":" + ReferenceEquals(p.NativeResult, nativeChevron) + ":" + ReferenceEquals(p.Result, c) + ":" + p.ClaimedBy),
+                5, null, false, out _));
             Sprite returned = Chevron(null, 5, 1);
             Assert.AreSame(c, returned);
-            CollectionAssert.AreEqual(new[] { "original", "first:True", "second:False", "third:True", "observer:True:True:third" }, Trace);
-            Assert.AreEqual(1L, site.CallbackFailures);
+            CollectionAssert.AreEqual(new[] { "original", "first:True", "second:False", "third:True", "observer:5:1:True:True:third" }, Trace);
+            Assert.AreEqual(2L, site.CallbackFailures);
         }
 
         [TestMethod]
@@ -212,6 +232,65 @@ namespace APISharedTests
             Assert.IsTrue(TileColourSite<ColourSlot>.Registry.TryRegister("fog", "tint", (ref TileColourPaint p) => Trace.Add("fog:" + p.Location.x + ":" + p.Location.y + ":" + p.Light), 0, null, false, out _));
             TileColour(null, null, new Vector3Int(7, 8, 0), 2);
             CollectionAssert.AreEqual(new[] { "original:7", "fog:7:8:2" }, Trace);
+        }
+
+        [TestMethod]
+        public void TilePassUsesRealGameCallSitesAndRejectsUnfamiliarCapture()
+        {
+            MethodInfo method = typeof(GameMap).GetMethod(nameof(GameMap.processTestMap),
+                new[] { typeof(short[]), typeof(int), typeof(EngineInterface.PlayState), typeof(byte[]) });
+            Assert.IsNotNull(method);
+            using (var copy = new DynamicMethodDefinition(method))
+            using (var il = new ILContext(copy.Definition))
+            {
+                TileGraphicPassRuntime.Apply(il);
+                var bridges = il.Body.Instructions.Select(i => i.Operand as MethodReference)
+                    .Where(m => m?.DeclaringType.FullName == typeof(TileGraphicPassRuntime).FullName)
+                    .Select(m => m.Name).ToArray();
+                CollectionAssert.AreEqual(new[] { "PaintReference", "PaintVisible", "PaintVisible" }, bridges);
+                Assert.IsNotNull(copy.Generate());
+            }
+            using (var copy = new DynamicMethodDefinition(method))
+            using (var il = new ILContext(copy.Definition))
+            {
+                Instruction capture = il.Body.Instructions.Single(i => i.OpCode == OpCodes.Stfld &&
+                    i.Previous.OpCode == OpCodes.Ldfld && i.Operand is FieldReference field &&
+                    field.Name == "constructionOrigImage");
+                capture.Previous.Operand = capture.Operand;
+                Assert.ThrowsExactly<InvalidOperationException>(() => TileGraphicPassRuntime.Apply(il));
+                Assert.AreEqual(3, il.Body.Instructions.Count(i => i.Operand is MethodReference target &&
+                    target.Name == nameof(SpriteMapping.setGenericBuildingTileGraphic)));
+            }
+        }
+
+        [TestMethod]
+        public void ConsecutiveTileRecordsKeepTheirConstructionReferenceAndDoNotTagNestedPaints()
+        {
+            referenceTile = Fake<Sprite>();
+            visibleTile = Fake<Sprite>();
+            var replacement = Fake<Sprite>();
+            var tile = Fake<GameMapTile>();
+            var other = Fake<GameMapTile>();
+            TileGraphicSite<TilePassSlot>.Bind(PaintBinding.StandIn(() => Target(nameof(TilePassGraphic)), typeof(void), PaintCalls.TileGraphicSignature));
+            Assert.IsTrue(TileGraphicSite<TilePassSlot>.Registry.TryRegister("towers", "paint", (ref TileGraphicPaint paint) =>
+            {
+                Trace.Add(paint.Pass.ToString());
+                if (paint.Pass != TileGraphicPass.VisibleTile) return;
+                TilePassGraphic(other, paint.File, paint.Image, paint.Light);
+                Assert.IsTrue(paint.TryClaim());
+                paint.Tile.tileImage = replacement;
+            }, 0, null, false, out string reason), reason);
+            for (int record = 0; record < 2; record++)
+            {
+                TileGraphicPassRuntime.Invoke(tile, 52, 1, 0, TileGraphicPass.ConstructionReference, TilePassGraphic);
+                tile.constructionOrigImage = tile.tileImage;
+                TileGraphicPassRuntime.Invoke(tile, 52, 2, 0, TileGraphicPass.VisibleTile, TilePassGraphic);
+                Assert.AreSame(referenceTile, tile.constructionOrigImage);
+                Assert.AreSame(replacement, tile.tileImage);
+                Assert.AreSame(visibleTile, other.tileImage);
+            }
+            CollectionAssert.AreEqual(new[] { "ConstructionReference", "VisibleTile", "Unknown",
+                "ConstructionReference", "VisibleTile", "Unknown" }, Trace);
         }
 
         [TestMethod]
