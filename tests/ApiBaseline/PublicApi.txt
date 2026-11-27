@@ -3069,6 +3069,19 @@ APIShared.Presentation.AllyPanelButtonPreEventArgs | public sealed class APIShar
 APIShared.Presentation.AllyPanelButtonPreEventArgs | public CrusaderDE.HUD_AlliesPanel Panel { get; }
 APIShared.Presentation.AllyPanelButtonPreEventArgs | public bool TryClaim(System.Action<APIShared.Presentation.AllyPanelButtonInvocation> execute)
 APIShared.Presentation.AllyPanelButtonPreEventArgs | public string Button { get; }
+APIShared.Presentation.BodySpritePaint | public struct APIShared.Presentation.BodySpritePaint : APIShared.Presentation.IPaintNotification
+APIShared.Presentation.BodySpritePaint | public APIShared.Presentation.PaintLayerScope Layer { get; }
+APIShared.Presentation.BodySpritePaint | public UnityEngine.SpriteRenderer Renderer { get; }
+APIShared.Presentation.BodySpritePaint | public bool AlternateFrame { get; }
+APIShared.Presentation.BodySpritePaint | public bool ClaimOver(string currentOwnerGuid)
+APIShared.Presentation.BodySpritePaint | public bool IsClaimed { get; }
+APIShared.Presentation.BodySpritePaint | public bool TryClaim()
+APIShared.Presentation.BodySpritePaint | public int ChopFeet { get; }
+APIShared.Presentation.BodySpritePaint | public int Colour { get; }
+APIShared.Presentation.BodySpritePaint | public int File { get; }
+APIShared.Presentation.BodySpritePaint | public int Image { get; }
+APIShared.Presentation.BodySpritePaint | public int Transparency { get; }
+APIShared.Presentation.BodySpritePaint | public string ClaimedBy { get; }
 APIShared.Presentation.BuildingPanelActionSubmit | public delegate bool APIShared.Presentation.BuildingPanelActionSubmit(APIShared.Buildings.BuildingActionRequest request, out string reason)
 APIShared.Presentation.BuildingPanelContext | public sealed class APIShared.Presentation.BuildingPanelContext
 APIShared.Presentation.BuildingPanelContext | public SHCDESE.Interop.eStructs BuildingType { get; }
@@ -3140,6 +3153,16 @@ APIShared.Presentation.BuildingTooltipText | public string Text { get; }
 APIShared.Presentation.BuildingTooltipVariant | public enum APIShared.Presentation.BuildingTooltipVariant : int
 APIShared.Presentation.BuildingTooltipVariant | Compact = 0
 APIShared.Presentation.BuildingTooltipVariant | Detailed = 1
+APIShared.Presentation.ChevronPaint | public struct APIShared.Presentation.ChevronPaint : APIShared.Presentation.IPaintNotification
+APIShared.Presentation.ChevronPaint | public GameMapTile Tile { get; }
+APIShared.Presentation.ChevronPaint | public UnityEngine.Sprite NativeResult { get; }
+APIShared.Presentation.ChevronPaint | public UnityEngine.Sprite Result { get; }
+APIShared.Presentation.ChevronPaint | public bool IsClaimed { get; }
+APIShared.Presentation.ChevronPaint | public bool ReplaceOver(string currentOwnerGuid, UnityEngine.Sprite sprite)
+APIShared.Presentation.ChevronPaint | public bool TryReplace(UnityEngine.Sprite sprite)
+APIShared.Presentation.ChevronPaint | public int File { get; }
+APIShared.Presentation.ChevronPaint | public int Image { get; }
+APIShared.Presentation.ChevronPaint | public string ClaimedBy { get; }
 APIShared.Presentation.ITroopActionButtonRegistration | public interface APIShared.Presentation.ITroopActionButtonRegistration
 APIShared.Presentation.ITroopActionButtonRegistration | public void RequestButtonRefresh()
 APIShared.Presentation.ITroopActionButtonRegistration | public void SetEnabled(bool enabled)
@@ -3205,6 +3228,32 @@ APIShared.Presentation.IngameMenuSlotState | public sealed class APIShared.Prese
 APIShared.Presentation.IngameMenuSlotState | public APIShared.Presentation.IngameMenuActionInfo Current { get; }
 APIShared.Presentation.IngameMenuSlotState | public APIShared.Presentation.IngameMenuSlot Slot { get; }
 APIShared.Presentation.IngameMenuSlotState | public System.Collections.Generic.IReadOnlyList<APIShared.Presentation.IngameMenuActionInfo> Claims { get; }
+APIShared.Presentation.LayerPaint | public struct APIShared.Presentation.LayerPaint : APIShared.Presentation.IPaintNotification
+APIShared.Presentation.LayerPaint | public APIShared.Presentation.PaintLayer Layer { get; }
+APIShared.Presentation.LayerPaint | public GameMap Map { get; }
+APIShared.Presentation.LayerPaint | public bool ClaimOver(string currentOwnerGuid)
+APIShared.Presentation.LayerPaint | public bool HasSubSpecial { get; }
+APIShared.Presentation.LayerPaint | public bool HiMode { get; }
+APIShared.Presentation.LayerPaint | public bool IsClaimed { get; }
+APIShared.Presentation.LayerPaint | public bool TryClaim()
+APIShared.Presentation.LayerPaint | public float Height { get; }
+APIShared.Presentation.LayerPaint | public int AnimLayer { get; }
+APIShared.Presentation.LayerPaint | public int Colour { get; }
+APIShared.Presentation.LayerPaint | public int Delay { get; }
+APIShared.Presentation.LayerPaint | public int File { get; }
+APIShared.Presentation.LayerPaint | public int GameObjectType { get; }
+APIShared.Presentation.LayerPaint | public int HalfPixelX { get; }
+APIShared.Presentation.LayerPaint | public int HalfPixelY { get; }
+APIShared.Presentation.LayerPaint | public int Image { get; }
+APIShared.Presentation.LayerPaint | public int InfoData { get; }
+APIShared.Presentation.LayerPaint | public int InfoType { get; }
+APIShared.Presentation.LayerPaint | public int ObjectId { get; }
+APIShared.Presentation.LayerPaint | public int TileX { get; }
+APIShared.Presentation.LayerPaint | public int TileY { get; }
+APIShared.Presentation.LayerPaint | public int Transparency { get; }
+APIShared.Presentation.LayerPaint | public int X { get; }
+APIShared.Presentation.LayerPaint | public int Y { get; }
+APIShared.Presentation.LayerPaint | public string ClaimedBy { get; }
 APIShared.Presentation.LordMessageAudio | public sealed class APIShared.Presentation.LordMessageAudio
 APIShared.Presentation.LordMessageAudio | public APIShared.Presentation.LordMessageSourceKind Kind { get; }
 APIShared.Presentation.LordMessageAudio | public bool IsReady { get; }
@@ -3322,6 +3371,39 @@ APIShared.Presentation.PackagedLordPresentationEntry | public string MetadataJso
 APIShared.Presentation.PackagedLordPresentationEntry | public string ResolveName(string locale, int nickname)
 APIShared.Presentation.PackagedLordPresentationRegistration | public sealed class APIShared.Presentation.PackagedLordPresentationRegistration
 APIShared.Presentation.PackagedLordPresentationRegistration | public void SetEntries(System.Collections.Generic.IReadOnlyList<APIShared.Presentation.PackagedLordPresentationEntry> entries)
+APIShared.Presentation.PaintEvents | public static class APIShared.Presentation.PaintEvents
+APIShared.Presentation.PaintEvents | public static APIShared.Presentation.PaintLayerScope CurrentLayer { get; }
+APIShared.Presentation.PaintEvents | public static bool IsInstalled(APIShared.Presentation.PaintSite site)
+APIShared.Presentation.PaintEvents | public static bool TryRegisterBodySprite(string ownerGuid, string registrationId, APIShared.Presentation.PaintHandler<APIShared.Presentation.BodySpritePaint> afterPaint, out string reason, int order = 0, int[] files = null)
+APIShared.Presentation.PaintEvents | public static bool TryRegisterChevron(string ownerGuid, string registrationId, APIShared.Presentation.PaintHandler<APIShared.Presentation.ChevronPaint> afterPaint, out string reason, int order = 0, int[] files = null)
+APIShared.Presentation.PaintEvents | public static bool TryRegisterLayer(APIShared.Presentation.PaintLayer layer, string ownerGuid, string registrationId, APIShared.Presentation.PaintHandler<APIShared.Presentation.LayerPaint> afterUpdate, out string reason, int order = 0, int[] files = null)
+APIShared.Presentation.PaintEvents | public static bool TryRegisterTileColour(string ownerGuid, string registrationId, APIShared.Presentation.PaintHandler<APIShared.Presentation.TileColourPaint> afterColour, out string reason, int order = 0)
+APIShared.Presentation.PaintEvents | public static bool TryRegisterTileGraphic(string ownerGuid, string registrationId, APIShared.Presentation.PaintHandler<APIShared.Presentation.TileGraphicPaint> afterPaint, out string reason, int order = 0, int[] files = null)
+APIShared.Presentation.PaintEvents | public static long GetCallbackFailures(APIShared.Presentation.PaintSite site)
+APIShared.Presentation.PaintEvents | public static string GetStatus(APIShared.Presentation.PaintSite site)
+APIShared.Presentation.PaintEvents | public static void CallOriginalBodySprite(UnityEngine.SpriteRenderer renderer, int file, int image, int colour, bool alternateFrame, int chopFeet, int transparency)
+APIShared.Presentation.PaintHandler<TPaint> | public delegate void APIShared.Presentation.PaintHandler<TPaint>(ref TPaint paint) where TPaint : struct
+APIShared.Presentation.PaintLayer | public enum APIShared.Presentation.PaintLayer : int
+APIShared.Presentation.PaintLayer | BuildingAnim = 4
+APIShared.Presentation.PaintLayer | Fly = 2
+APIShared.Presentation.PaintLayer | None = 0
+APIShared.Presentation.PaintLayer | Org = 3
+APIShared.Presentation.PaintLayer | Pixie = 1
+APIShared.Presentation.PaintLayerScope | public struct APIShared.Presentation.PaintLayerScope
+APIShared.Presentation.PaintLayerScope | public APIShared.Presentation.PaintLayer Layer { get; }
+APIShared.Presentation.PaintLayerScope | public bool IsActive { get; }
+APIShared.Presentation.PaintLayerScope | public int File { get; }
+APIShared.Presentation.PaintLayerScope | public int Image { get; }
+APIShared.Presentation.PaintLayerScope | public int ObjectId { get; }
+APIShared.Presentation.PaintSite | public enum APIShared.Presentation.PaintSite : int
+APIShared.Presentation.PaintSite | BodySprite = 0
+APIShared.Presentation.PaintSite | BuildingAnimLayer = 7
+APIShared.Presentation.PaintSite | Chevron = 2
+APIShared.Presentation.PaintSite | FlyLayer = 5
+APIShared.Presentation.PaintSite | OrgLayer = 6
+APIShared.Presentation.PaintSite | PixieLayer = 4
+APIShared.Presentation.PaintSite | TileColour = 3
+APIShared.Presentation.PaintSite | TileGraphic = 1
 APIShared.Presentation.PresentationEvents | public static class APIShared.Presentation.PresentationEvents
 APIShared.Presentation.PresentationEvents | public static bool TryRegister(APIShared.Presentation.PresentationOperation operation, string ownerGuid, string registrationId, System.Action<APIShared.Presentation.PresentationPreEventArgs> pre, System.Action<APIShared.Presentation.PresentationPostEventArgs> post, out string reason, int order = 0)
 APIShared.Presentation.PresentationEvents | public static long GetCallbackFailures(APIShared.Presentation.PresentationOperation operation)
@@ -3366,6 +3448,24 @@ APIShared.Presentation.SideHudVisibilityState | public enum APIShared.Presentati
 APIShared.Presentation.SideHudVisibilityState | Hidden = 0
 APIShared.Presentation.SideHudVisibilityState | HiddenByHudMode = 2
 APIShared.Presentation.SideHudVisibilityState | Visible = 1
+APIShared.Presentation.TileColourPaint | public struct APIShared.Presentation.TileColourPaint : APIShared.Presentation.IPaintNotification
+APIShared.Presentation.TileColourPaint | public GameMapTile Tile { get; }
+APIShared.Presentation.TileColourPaint | public UnityEngine.Vector3Int Location { get; }
+APIShared.Presentation.TileColourPaint | public bool ClaimOver(string currentOwnerGuid)
+APIShared.Presentation.TileColourPaint | public bool IsClaimed { get; }
+APIShared.Presentation.TileColourPaint | public bool TryClaim()
+APIShared.Presentation.TileColourPaint | public gameTile Source { get; }
+APIShared.Presentation.TileColourPaint | public int Light { get; }
+APIShared.Presentation.TileColourPaint | public string ClaimedBy { get; }
+APIShared.Presentation.TileGraphicPaint | public struct APIShared.Presentation.TileGraphicPaint : APIShared.Presentation.IPaintNotification
+APIShared.Presentation.TileGraphicPaint | public GameMapTile Tile { get; }
+APIShared.Presentation.TileGraphicPaint | public bool ClaimOver(string currentOwnerGuid)
+APIShared.Presentation.TileGraphicPaint | public bool IsClaimed { get; }
+APIShared.Presentation.TileGraphicPaint | public bool TryClaim()
+APIShared.Presentation.TileGraphicPaint | public int File { get; }
+APIShared.Presentation.TileGraphicPaint | public int Image { get; }
+APIShared.Presentation.TileGraphicPaint | public int Light { get; }
+APIShared.Presentation.TileGraphicPaint | public string ClaimedBy { get; }
 APIShared.Presentation.TooltipAnchor | public static class APIShared.Presentation.TooltipAnchor
 APIShared.Presentation.TooltipAnchor | public static readonly Noesis.DependencyProperty AnchorProperty
 APIShared.Presentation.TooltipAnchor | public static string GetAnchor(Noesis.DependencyObject value)

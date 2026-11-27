@@ -62,4 +62,5 @@
   <ItemGroup><Compile Include="UnitSettledExample.cs" /></ItemGroup>
   <ItemGroup><Compile Include="NativeSiteExample.cs" /></ItemGroup>
   <ItemGroup><Compile Include="IngameMenuExample.cs" /></ItemGroup>
+  <ItemGroup><Compile Include="PaintExample.cs" /></ItemGroup>
 </Project>

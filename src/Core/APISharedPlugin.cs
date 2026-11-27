@@ -46,6 +46,8 @@ namespace APIShared
             Presentation.BuildingTooltipPresentation.Initialize(RuntimeLogger);
             // Logging only: unit-settled SE subscriptions start with the first consumer registration.
             Units.UnitSettledEvents.Initialize(RuntimeLogger);
+            // Logging only: each paint site hooks at its first consumer registration.
+            Presentation.PaintEvents.Initialize(RuntimeLogger);
             Workshop.WorkshopRuntime.Initialize(this, RuntimeLogger);
             ApiSharedRuntime.ProcessInstance.InitializeManaged(RuntimeLogger);
             Audio.UnitVoiceRuntime.InitializeManaged(RuntimeLogger);
