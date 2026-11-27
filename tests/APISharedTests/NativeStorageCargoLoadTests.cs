@@ -128,6 +128,23 @@ namespace APISharedTests
             Assert.IsTrue(NativeStorageRuntime.CargoSaveCheckpointRequired(true,
                 binding.Prepared.Blocked && binding.Prepared.MayContainCargo, null, null));
         }
+        // Compatibility boundary of the cargo save refusal: a save without the
+        // APIShared.NativeStorage.v1 record (every save made without this service) and a
+        // process in which no consumer registered a storage good never require it.
+        [TestMethod]
+        public void SavesWithoutAStorageRecordNeverRequireTheCargoCheckpoint()
+        {
+            var state = State(false, out _); var binding = new Binding(state.GetRegistrations());
+            binding.Read(null);
+            Assert.IsFalse(binding.Prepared.Blocked); Assert.IsFalse(binding.Prepared.MayContainCargo);
+            Assert.IsNotNull(binding.Prepared.State); Assert.IsFalse(binding.Prepared.State.HasCargoHistory);
+            Assert.IsFalse(binding.Handle.KeepsLoadedRecord);
+            Assert.IsFalse(NativeStorageRuntime.CargoSaveCheckpointRequired(true,
+                binding.Prepared.Blocked && binding.Prepared.MayContainCargo, binding.Prepared.State, null));
+            var history = State(true, out _);
+            Assert.IsFalse(NativeStorageRuntime.CargoSaveCheckpointRequired(false, true, history, history),
+                "Without a registered storage good the service never initializes and adds no save demand.");
+        }
         [TestMethod]
         public void ANewNoRecordWorldClearsThePreviousPassiveClassification()
         {
