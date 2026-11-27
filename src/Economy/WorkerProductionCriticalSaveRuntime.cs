@@ -33,6 +33,7 @@ namespace APIShared.Economy
         private static HookTransaction transaction;
         private static IntPtr module;
         private static ManualLogSource log;
+        private static PreCaptureSaveContextReader preCaptureContext;
         private static readonly Action endProductionCapture = EndProductionCapture;
         private static readonly Action endWorkshopCapture = EndWorkshopCapture;
         private static readonly Action endStorageCapture = EndStorageCapture;
@@ -61,6 +62,8 @@ namespace APIShared.Economy
             if (!PlayerViewSaveScope.IsReady)
                 throw new InvalidOperationException("Critical production saves require the published shared participant-identity writer scope.");
             module = context.ModuleHandle; log = logger;
+            // Resolve optional managed metadata once, never on a native save path.
+            preCaptureContext = PreCaptureSaveContextReader.Create(out _);
             NativeIndirectEntry.VerifyBytes(module + WriteRva, IoEntry);
             NativeIndirectEntry.VerifyBytes(module + CloseRva, IoEntry);
             ApiSharedNativeSites.Claim(ApiSharedRuntime.ProcessInstance.NativeOwnership, SiteGroup, Spans(), m => new InvalidOperationException(m));
@@ -115,16 +118,19 @@ namespace APIShared.Economy
             // own map/save scope has no required records. Preserve the outer path/I/O proof.
             if (saving) return Failed("Nested protected save rejected; the previous save remains untouched.");
             bool requiredRecords = VersionedSaveDataRuntime.RequiresAtomicWrite(map != 0);
-            bool externalCargo = NativeStorageRuntime.Instance.HasExternalCargoSaveDemand;
+            bool externalCargo = NativeStorageRuntime.Instance.HasExternalCargoSaveDemand ||
+                NativeStorageRuntime.Instance.HasUnreadyArchiveSaveDemand;
+            bool criticalCohort = VersionedSaveDataRuntime.HasCriticalWriterDemand;
             if (!IsAvailable)
             {
-                if (!externalCargo && !requiredRecords) return original(archive, sections, map);
-                if (!externalCargo) return Failed("Required atomic save support is unavailable.");
+                if (!externalCargo && !criticalCohort && !requiredRecords) return original(archive, sections, map);
+                if (!externalCargo && !criticalCohort) return Failed("Required atomic save support is unavailable.");
                 sequence++; lastFailed = false;
-                return Failed("Cargo saving requires the available verified critical writer.");
+                return Failed("Enrolled storage/cargo saving requires the available verified critical writer.");
             }
             var requirements = new WorkerProductionSaveRequirements(WorkerProductionStateRuntime.IsExtended,
                 WorkerProductionWorldSafety.IsFaulted, WeaponProductionRuntime.HasStoredOutputDemand, externalCargo,
+                criticalCohort, criticalCohort && NativeStorageRuntime.Instance.HasCriticalWriterEnrollment,
                 requiredRecords);
             sequence++; lastFailed = false;
             if (!requirements.Transaction) return original(archive, sections, map);
@@ -146,6 +152,7 @@ namespace APIShared.Economy
             // Retain the exact optional owner across Original. Looking up TLS
             // only afterwards would let a callback-pop hide a failed frame.
             VersionedSaveFactoryFrame factoryFrame = VersionedSaveFactoryFrame.Current;
+            bool ownsFactoryFrame = false;
             VersionedSaveDataRegistry.AtomicSnapshot required = null;
             Exception primary = null;
             WorkerProductionSaveCleanupReport cleanup = default;
@@ -167,13 +174,28 @@ namespace APIShared.Economy
                         throw new InvalidOperationException("Critical saving requires the actual engine monitor.");
                     // A fault is rejected before capture or ANY native file open/truncation.
                     if (requirements.Faulted) throw new InvalidOperationException("The production world is faulted.");
+                    if (requirements.CriticalCohort)
+                    {
+                        if (preCaptureContext == null) throw new InvalidOperationException("The pre-capture reader is unavailable.");
+                        if (!preCaptureContext.TryReadSnapshot(out var logical, out _, out string contextReason))
+                            throw new InvalidOperationException(contextReason);
+                        factoryFrame = VersionedSaveDataRuntime.BeginCriticalWriterFrame(logical);
+                        ownsFactoryFrame = true;
+                    }
                     if (requirements.Production)
                     {
                         payload = WorkerProductionStateRuntime.FreezeForSave();
                         if (payload == null) throw new InvalidOperationException("The extended world has no production snapshot.");
                     }
                     if (requirements.Workshops) WeaponProductionRuntime.FreezeSave();
-                    if (requirements.Storage) NativeStorageRuntime.Instance.FreezeProductionSave();
+                    if (requirements.Storage) NativeStorageRuntime.Instance.FreezeProductionSave(requirements.CriticalCohort);
+                    if (requirements.CriticalCohort)
+                    {
+                        VersionedSaveDataRuntime.RequireCriticalWriterReady();
+                        // Reentrant factory dispatch while freezing is an earlier
+                        // failure, never permission to enter Original/open a file.
+                        factoryFrame.CompleteOwnedPreparation();
+                    }
                     selector = Marshal.ReadInt32(module + SelectorRva);
                     if (selector != 1) throw new InvalidDataException("The native save path selector differs from the audited save callers.");
                     var chars = new ReadOnlySpan<char>((void*)(module + PathSlotRva), PathCapacity);
@@ -215,9 +237,14 @@ namespace APIShared.Economy
                 }
                 catch (Exception error)
                 {
-                    primary = error;
-                    Failed((requirements.Production || requirements.Storage ? "Production save failed: " :
-                        "Required simulation save failed: ") + DescribeCleanupError(error));
+                    if (ownsFactoryFrame)
+                    {
+                        factoryFrame.RecordFailure(error);
+                        primary = factoryFrame.Failure;
+                    }
+                    else primary = error;
+                    Failed((requirements.Production || requirements.Storage || requirements.CriticalCohort ?
+                        "Production save failed: " : "Required simulation save failed: ") + DescribeCleanupError(primary));
                 }
                 finally
                 {
@@ -228,7 +255,8 @@ namespace APIShared.Economy
                         {
                             try { VersionedSaveDataRuntime.EndAtomicSave(required); }
                             finally { if (requirements.Storage) EndStorageCapture(); }
-                        }));
+                        }),
+                        ownsFactoryFrame ? (Action)factoryFrame.Dispose : null);
                     if (temporary != null)
                         try { if (File.Exists(temporary)) File.Delete(temporary); }
                         catch (Exception error)
@@ -258,16 +286,22 @@ namespace APIShared.Economy
         // This is the actual transaction's cleanup entry, also exercised by the
         // maintained cargo-save fixture. It calls no native APIs by itself.
         internal static WorkerProductionSaveCleanupReport CompleteSaveCleanup(ulong actualWriterResult, bool committed,
-            Exception primary, Action restore, Action production, Action workshops, Action storage)
+            Exception primary, Action restore, Action production, Action workshops, Action storage) =>
+            CompleteSaveCleanup(actualWriterResult, committed, primary, restore, production, workshops, storage, null);
+
+        internal static WorkerProductionSaveCleanupReport CompleteSaveCleanup(ulong actualWriterResult, bool committed,
+            Exception primary, Action restore, Action production, Action workshops, Action storage, Action frame)
         {
-            Exception restoreError = null, productionError = null, workshopError = null, storageError = null;
+            Exception restoreError = null, productionError = null, workshopError = null, storageError = null, frameError = null;
             try { restore?.Invoke(); } catch (Exception error) { restoreError = error; }
             try { production?.Invoke(); } catch (Exception error) { productionError = error; }
             try { workshops?.Invoke(); } catch (Exception error) { workshopError = error; }
             try { storage?.Invoke(); } catch (Exception error) { storageError = error; }
+            // Frame release is independent of every earlier protection cleanup.
+            try { frame?.Invoke(); } catch (Exception error) { frameError = error; }
             return new WorkerProductionSaveCleanupReport(actualWriterResult, committed,
-                primary ?? restoreError ?? productionError ?? workshopError ?? storageError,
-                restoreError, productionError, workshopError, storageError);
+                primary ?? restoreError ?? productionError ?? workshopError ?? storageError ?? frameError,
+                restoreError, productionError, workshopError, storageError, frameError);
         }
 
         private static void ReportCleanupProtectionFailure(WorkerProductionSaveCleanupReport report,
@@ -282,7 +316,8 @@ namespace APIShared.Economy
                 "; restore=" + DescribeCleanupError(report.RestoreError) +
                 "; production=" + DescribeCleanupError(report.ProductionError) +
                 "; workshops=" + DescribeCleanupError(report.WorkshopError) +
-                "; storage=" + DescribeCleanupError(report.StorageError); } catch { }
+                "; storage=" + DescribeCleanupError(report.StorageError) +
+                "; factoryFrame=" + DescribeCleanupError(report.FactoryFrameError); } catch { }
             try { NativeApiLog.Error(log, detail); } catch { }
             try
             {
@@ -426,29 +461,35 @@ namespace APIShared.Economy
     {
         internal readonly ulong ActualWriterResult;
         internal readonly bool Committed;
-        internal readonly Exception Primary, RestoreError, ProductionError, WorkshopError, StorageError;
+        internal readonly Exception Primary, RestoreError, ProductionError, WorkshopError, StorageError, FactoryFrameError;
         internal WorkerProductionSaveCleanupReport(ulong actual, bool committed, Exception primary,
-            Exception restore, Exception production, Exception workshop, Exception storage)
+            Exception restore, Exception production, Exception workshop, Exception storage, Exception factoryFrame = null)
         {
             ActualWriterResult = actual; Committed = committed; Primary = primary;
-            RestoreError = restore; ProductionError = production; WorkshopError = workshop; StorageError = storage;
+            RestoreError = restore; ProductionError = production; WorkshopError = workshop; StorageError = storage; FactoryFrameError = factoryFrame;
         }
-        internal bool CleanupFailed => RestoreError != null || ProductionError != null || WorkshopError != null || StorageError != null;
+        internal bool CleanupFailed => RestoreError != null || ProductionError != null || WorkshopError != null || StorageError != null || FactoryFrameError != null;
         internal ulong ReturnValue => Committed ? ActualWriterResult : 0;
     }
 
     internal readonly struct WorkerProductionSaveRequirements
     {
-        internal readonly bool Production, Workshops, Storage, Faulted, AtomicRecords;
-        internal bool Transaction => Production || Storage || Faulted || AtomicRecords;
+        internal readonly bool Production, Workshops, Storage, Faulted, CriticalCohort, AtomicRecords;
+        internal bool Transaction => Production || Storage || Faulted || CriticalCohort || AtomicRecords;
         internal WorkerProductionSaveRequirements(bool extended, bool faulted, bool storedOutput, bool externalCargo)
-            : this(extended, faulted, storedOutput, externalCargo, false) { }
+            : this(extended, faulted, storedOutput, externalCargo, false, false, false) { }
         internal WorkerProductionSaveRequirements(bool extended, bool faulted, bool storedOutput, bool externalCargo,
             bool atomicRecords)
+            : this(extended, faulted, storedOutput, externalCargo, false, false, atomicRecords) { }
+        internal WorkerProductionSaveRequirements(bool extended, bool faulted, bool storedOutput, bool externalCargo,
+            bool criticalCohort, bool criticalStorage)
+            : this(extended, faulted, storedOutput, externalCargo, criticalCohort, criticalStorage, false) { }
+        internal WorkerProductionSaveRequirements(bool extended, bool faulted, bool storedOutput, bool externalCargo,
+            bool criticalCohort, bool criticalStorage, bool atomicRecords)
         {
             AtomicRecords = atomicRecords;
             Production = extended; Workshops = extended || storedOutput || atomicRecords;
-            Storage = storedOutput || externalCargo; Faulted = faulted;
+            Storage = storedOutput || externalCargo || criticalStorage; Faulted = faulted; CriticalCohort = criticalCohort;
         }
     }
 

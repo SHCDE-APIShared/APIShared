@@ -9,6 +9,12 @@ The service owns physical rows, its private ledger and matching save entries.
 Recipes, hauling, art, player authorization and command transport remain consumer
 responsibilities. Existing overlapping private capacity detours must be migrated.
 
+Follow the [NativeStorage save-policy contract](NATIVE_STORAGE.md#material-save-policy-compatibility-change):
+ordinary registrations keep reader 2 and their real-multiplayer path. Only explicit
+internal protected startup joins the SP/editor writer cohort and requires reader 3.
+Public consumer enrollment, legacy import and private-ledger retirement remain
+required follow-up work.
+
 For a per-building display or withdrawal plan, observe the exact store and call
 the registered good's `TryGetQuantity`; combined virtual occupancy is not that
 good's quantity. Follow the [protected read workflow](NATIVE_STORAGE.md#read-one-good-in-one-store),

@@ -19,6 +19,7 @@ public partial class VersionedSaveDataTests
         internal VersionedSavePreparedOrigin Origin;
         internal int Captures;
         internal VersionedSaveCapture DuringCapture;
+        internal Action<VersionedSaveLoad> DuringPrepared;
         internal Action<VersionedSaveLoad> DuringLoaded;
         internal byte Value = 1;
         internal string OriginError;
@@ -37,6 +38,7 @@ public partial class VersionedSaveDataTests
             registration.Prepared = load =>
             {
                 if (!PreparedSource.TryGetCurrent(load, out Origin, out string reason)) OriginError = reason;
+                DuringPrepared?.Invoke(load);
             };
             Mod = Extender.Register(registration);
             Assert.IsTrue(Extender.Registry.TryTrackPreparedSource("owner", Mod.Handle, out var prepared, out string detail), detail);
@@ -536,6 +538,418 @@ public partial class VersionedSaveDataTests
             next.Dispose();
         }
         finally { frame.Dispose(); }
+        Assert.IsNull(VersionedSaveFactoryFrame.Current);
+    }
+
+    [TestMethod]
+    public void CriticalWriterDemandRequiresAnExplicitCohortJoinAndCapturesStateOnlySources()
+    {
+        var fixture = new CriticalSourceFixture("Critical.Writer.StateOnly");
+        Assert.IsFalse(fixture.Extender.Registry.HasCriticalWriterDemand,
+            "Tracking and enrollment alone must retain their dormant standalone behavior.");
+        Assert.IsTrue(fixture.Extender.Registry.TryJoinCriticalWriterCohort(fixture.Enrollment, out string reason), reason);
+        Assert.IsTrue(fixture.Extender.Registry.HasCriticalWriterDemand);
+        Assert.IsFalse(fixture.Extender.Registry.TryJoinCriticalWriterCohort(fixture.Enrollment, out _));
+        fixture.Load();
+        Assert.IsNull(fixture.Mod.SaveCallback(CriticalLogicalContext), "A joined source cannot capture outside its owned frame.");
+        Assert.AreEqual(VersionedSaveWriteStatus.CaptureFailed, fixture.Mod.Handle.LastWriteStatus);
+        Assert.AreEqual(0, fixture.Captures);
+        fixture.Extender.Registry.RequireCriticalWriterReady();
+        using (var frame = fixture.Extender.Registry.BeginCriticalWriterFrame(CriticalLogicalContext))
+        {
+            frame.CompleteOwnedPreparation();
+            Assert.AreEqual(0, fixture.Captures, "Opening the owned frame must not run a source before the factory callback.");
+            frame.Capture(CriticalLogicalContext);
+            Assert.IsNull(frame.Failure);
+            Assert.AreEqual(1, fixture.Captures);
+            byte[] bytes = fixture.Mod.SaveCallback(CriticalLogicalContext);
+            Assert.IsTrue(frame.TryGetWrittenCapture(out var capture, out reason), reason);
+            Assert.IsTrue(capture.MatchesRecord(fixture.Enrollment, bytes, out reason), reason);
+            var decoded = VersionedSaveRecordCodec.Decode(bytes, 3);
+            Assert.AreEqual(3, decoded.RecordVersion); Assert.AreEqual(3, decoded.MinimumReaderVersion);
+            Assert.AreEqual(VersionedSaveRecordCodec.DecodeStatus.TooNew, VersionedSaveRecordCodec.Decode(bytes, 2).Status);
+        }
+        Assert.IsNull(VersionedSaveFactoryFrame.Current);
+    }
+
+    [TestMethod]
+    [DataRow(1)]
+    [DataRow(2)]
+    public void UnjoinedStorageStyleCaptureRetainsLegacyVersionsAndUnknownEntryPolicy(int storesSchema)
+    {
+        var extender = new FakeExtender();
+        var registration = extender.Registration("Critical.Writer.Unjoined", 2, 1, new[] { "value" }, writer =>
+        {
+            writer.UseVersion(storesSchema, storesSchema);
+            writer.Write("value", new byte[] { 9 }); return true;
+        });
+        var mod = extender.Register(registration);
+        Assert.IsFalse(extender.Registry.HasCriticalWriterDemand);
+        byte[] initial = extender.Save(mod);
+        var decoded = VersionedSaveRecordCodec.Decode(initial, 2);
+        Assert.AreEqual(storesSchema, decoded.RecordVersion); Assert.AreEqual(storesSchema, decoded.MinimumReaderVersion);
+        CollectionAssert.AreEqual(SaveWith(storesSchema, storesSchema, new[] { "value" },
+            new Dictionary<string, byte[]> { ["value"] = new byte[] { 9 } }), initial);
+
+        byte[] loaded = SaveWith(storesSchema, storesSchema, new[] { "value", "future" },
+            new Dictionary<string, byte[]> { ["value"] = new byte[] { 1 }, ["future"] = new byte[] { 7 } });
+        extender.LoadSave(loaded, mod);
+        byte[] saved = extender.Save(mod);
+        if (storesSchema == 1)
+        {
+            Assert.IsNull(saved, "An older schema may not relabel retained unknown entries.");
+            Assert.AreEqual(VersionedSaveWriteStatus.CaptureFailed, mod.Handle.LastWriteStatus);
+        }
+        else
+            CollectionAssert.AreEqual(SaveWith(2, 2, new[] { "value", "future" },
+                new Dictionary<string, byte[]> { ["value"] = new byte[] { 9 }, ["future"] = new byte[] { 7 } }), saved);
+    }
+
+    [TestMethod]
+    public void CriticalWriterKeepsProtectedBytesWhenAnOriginalCohortParticipantIsMissing()
+    {
+        var original = new FakeExtender();
+        var first = new CriticalSourceFixture("Critical.Writer.First", original);
+        var second = new CriticalSourceFixture("Critical.Writer.Second", original);
+        Assert.IsTrue(original.Registry.TryJoinCriticalWriterCohort(first.Enrollment, out string reason), reason);
+        Assert.IsTrue(original.Registry.TryJoinCriticalWriterCohort(second.Enrollment, out reason), reason);
+        first.Load();
+        byte[] savedFirst;
+        using (var frame = original.Registry.BeginCriticalWriterFrame(CriticalLogicalContext))
+        {
+            frame.CompleteOwnedPreparation();
+            frame.Capture(CriticalLogicalContext);
+            savedFirst = first.Mod.SaveCallback(CriticalLogicalContext);
+            byte[] savedSecond = second.Mod.SaveCallback(CriticalLogicalContext);
+            Assert.IsNotNull(savedFirst); Assert.IsNotNull(savedSecond);
+            Assert.IsTrue(frame.TryGetWrittenCapture(out _, out reason), reason);
+        }
+        var replacement = new CriticalSourceFixture("Critical.Writer.First");
+        Assert.IsTrue(replacement.Extender.Registry.TryJoinCriticalWriterCohort(replacement.Enrollment, out reason), reason);
+        replacement.Extender.Registry.BeginLoad(VersionedSaveLoadSource.SaveGame, "protected.sav", 41);
+        replacement.Mod.Load(savedFirst);
+        replacement.Extender.Registry.PrepareLoad(); replacement.Extender.Registry.EndLoad();
+        Assert.AreEqual(VersionedSaveLoadStatus.MigrationFailed, replacement.Mod.Loads[0].Status);
+        Assert.IsTrue(replacement.Mod.Handle.KeepsLoadedRecord);
+        CollectionAssert.AreEqual(savedFirst, replacement.Mod.SaveCallback(CriticalLogicalContext),
+            "A smaller current cohort must not drop the original participant marker or downgrade its floor.");
+        Assert.ThrowsExactly<InvalidOperationException>(() => replacement.Extender.Registry.RequireCriticalWriterReady());
+        using (var frame = replacement.Extender.Registry.BeginCriticalWriterFrame(CriticalLogicalContext))
+        {
+            frame.CompleteOwnedPreparation();
+            frame.Capture(CriticalLogicalContext);
+            Assert.IsNotNull(frame.Failure);
+            Assert.IsFalse(frame.TryGetWrittenCapture(out _, out _));
+            Assert.AreEqual(0, replacement.Captures);
+        }
+        Assert.IsNull(VersionedSaveFactoryFrame.Current);
+    }
+
+    [TestMethod]
+    public void CriticalCreatedWorldCanSaveRepeatedlyWithoutInventingAnArchiveCallbackOrMarker()
+    {
+        var fixture = new CriticalSourceFixture("Critical.Writer.Created");
+        Assert.IsTrue(fixture.Extender.Registry.TryJoinCriticalWriterCohort(fixture.Enrollment, out string reason), reason);
+        Assert.IsNull(fixture.Mod.SaveCallback(CriticalLogicalContext), "An unprepared joined source still cannot capture outside its frame.");
+        Assert.AreEqual(VersionedSaveWriteStatus.CaptureFailed, fixture.Mod.Handle.LastWriteStatus);
+        Assert.AreEqual(0, fixture.Captures);
+        Assert.ThrowsExactly<InvalidOperationException>(() => fixture.Extender.Registry.RequireCriticalWriterReady());
+        object world = new object();
+        Assert.IsFalse(fixture.Extender.Registry.TryAuthorizeCriticalCreatedWorld(fixture.PreparedSource, null, 11, out _));
+        Assert.IsFalse(fixture.Extender.Registry.TryAuthorizeCriticalCreatedWorld(fixture.PreparedSource, world, 0, out _));
+        Assert.IsTrue(fixture.Extender.Registry.TryAuthorizeCriticalCreatedWorld(fixture.PreparedSource, world, 11, out reason), reason);
+        fixture.Extender.Registry.RequireCriticalWriterReady();
+        Assert.IsNull(fixture.Origin); Assert.AreEqual(0, fixture.Mod.Loads.Count);
+        Assert.IsFalse(fixture.Extender.Registry.TryReadCriticalPreparedMarker(fixture.Enrollment, fixture.Origin, out _, out _, out _),
+            "An owner-authorized created world has no original stored envelope to confirm.");
+        for (int pass = 1; pass <= 2; pass++)
+        {
+            using (var frame = fixture.Extender.Registry.BeginCriticalWriterFrame(CriticalLogicalContext))
+            {
+                frame.CompleteOwnedPreparation();
+                frame.Capture(CriticalLogicalContext);
+                byte[] bytes = fixture.Mod.SaveCallback(CriticalLogicalContext);
+                Assert.AreEqual(pass, fixture.Captures);
+                Assert.IsTrue(frame.TryGetWrittenCapture(out var capture, out reason), reason);
+                Assert.IsTrue(capture.MatchesRecord(fixture.Enrollment, bytes, out reason), reason);
+            }
+            fixture.Extender.Registry.RequireCriticalWriterReady();
+        }
+        Assert.IsNull(fixture.Origin); Assert.AreEqual(0, fixture.Mod.Loads.Count);
+        Assert.IsFalse(fixture.PreparedSource.TryValidateCompleted(fixture.Origin, out _));
+        Assert.IsNull(VersionedSaveFactoryFrame.Current);
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void CriticalCreatedWorldAuthorityIsRevokedByLoadOrUnloadAndCannotReplaceAnActiveCapture(bool unload)
+    {
+        var fixture = new CriticalSourceFixture("Critical.Writer.CreatedRevocation");
+        Assert.IsTrue(fixture.Extender.Registry.TryJoinCriticalWriterCohort(fixture.Enrollment, out string reason), reason);
+        object world = new object();
+        Assert.IsTrue(fixture.Extender.Registry.TryAuthorizeCriticalCreatedWorld(fixture.PreparedSource, world, 21, out reason), reason);
+        using (var frame = fixture.Extender.Registry.BeginCriticalWriterFrame(CriticalLogicalContext))
+        {
+            frame.CompleteOwnedPreparation();
+            frame.Capture(CriticalLogicalContext);
+            Assert.IsNull(frame.Failure);
+            Assert.IsFalse(fixture.Extender.Registry.TryAuthorizeCriticalCreatedWorld(fixture.PreparedSource, new object(), 22, out _),
+                "World replacement cannot revoke bytes underneath an active bundle.");
+        }
+        if (unload) fixture.Extender.Registry.Unload();
+        else fixture.Extender.Registry.BeginLoad(VersionedSaveLoadSource.SaveGame, "next.sav", 22);
+        try
+        {
+            Assert.ThrowsExactly<InvalidOperationException>(() => fixture.Extender.Registry.RequireCriticalWriterReady());
+            if (!unload)
+                Assert.IsFalse(fixture.Extender.Registry.TryAuthorizeCriticalCreatedWorld(fixture.PreparedSource, new object(), 23, out _),
+                    "A missing load callback cannot be replaced with created-world authority inside that archive window.");
+            using (var frame = fixture.Extender.Registry.BeginCriticalWriterFrame(CriticalLogicalContext))
+            {
+                frame.CompleteOwnedPreparation();
+                frame.Capture(CriticalLogicalContext);
+                Assert.IsNotNull(frame.Failure);
+                Assert.IsFalse(frame.TryGetWrittenCapture(out _, out _));
+            }
+            Assert.AreEqual(1, fixture.Captures, "Revoked authority must fail before recapturing a source.");
+        }
+        finally { if (!unload) { fixture.Extender.Registry.PrepareLoad(); fixture.Extender.Registry.EndLoad(); } }
+        Assert.IsNull(VersionedSaveFactoryFrame.Current);
+    }
+
+    [TestMethod]
+    public void CriticalCreatedWorldCannotBorrowAnotherParticipantsArchiveOrigin()
+    {
+        var extender = new FakeExtender();
+        var first = new CriticalSourceFixture("Critical.Writer.MixedFirst", extender);
+        var second = new CriticalSourceFixture("Critical.Writer.MixedSecond", extender);
+        Assert.IsTrue(extender.Registry.TryJoinCriticalWriterCohort(first.Enrollment, out string reason), reason);
+        Assert.IsTrue(extender.Registry.TryJoinCriticalWriterCohort(second.Enrollment, out reason), reason);
+        first.Load();
+        VersionedSavePreparedOrigin oldFirst = first.Origin;
+        object world = new object();
+        Assert.IsTrue(extender.Registry.TryAuthorizeCriticalCreatedWorld(first.PreparedSource, world, 31, out reason), reason);
+        Assert.IsFalse(first.PreparedSource.TryValidateCompleted(oldFirst, out _));
+        Assert.IsFalse(extender.Registry.TryReadCriticalPreparedMarker(first.Enrollment, oldFirst, out _, out _, out _));
+        Assert.ThrowsExactly<InvalidOperationException>(() => extender.Registry.RequireCriticalWriterReady());
+        using (var frame = extender.Registry.BeginCriticalWriterFrame(CriticalLogicalContext))
+        {
+            frame.CompleteOwnedPreparation();
+            frame.Capture(CriticalLogicalContext);
+            Assert.IsNotNull(frame.Failure); Assert.IsFalse(frame.TryGetWrittenCapture(out _, out _));
+            Assert.AreEqual(0, first.Captures); Assert.AreEqual(0, second.Captures);
+        }
+        Assert.IsTrue(extender.Registry.TryAuthorizeCriticalCreatedWorld(second.PreparedSource, world, 31, out reason), reason);
+        extender.Registry.RequireCriticalWriterReady();
+        using (var frame = extender.Registry.BeginCriticalWriterFrame(CriticalLogicalContext))
+        {
+            frame.CompleteOwnedPreparation();
+            frame.Capture(CriticalLogicalContext);
+            Assert.IsNotNull(first.Mod.SaveCallback(CriticalLogicalContext));
+            Assert.IsNotNull(second.Mod.SaveCallback(CriticalLogicalContext));
+            Assert.IsTrue(frame.TryGetWrittenCapture(out _, out reason), reason);
+        }
+        Assert.IsNull(VersionedSaveFactoryFrame.Current);
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void CriticalWriterRejectsAProtectedCohortWithAMissingOrLegacyPartner(bool legacyPartner)
+    {
+        var original = new FakeExtender();
+        var originalFirst = new CriticalSourceFixture("Critical.Writer.MixedProtectedFirst", original);
+        var originalSecond = new CriticalSourceFixture("Critical.Writer.MixedProtectedSecond", original);
+        Assert.IsTrue(original.Registry.TryJoinCriticalWriterCohort(originalFirst.Enrollment, out string reason), reason);
+        Assert.IsTrue(original.Registry.TryJoinCriticalWriterCohort(originalSecond.Enrollment, out reason), reason);
+        originalFirst.Load();
+        byte[] protectedFirst;
+        using (var frame = original.Registry.BeginCriticalWriterFrame(CriticalLogicalContext))
+        {
+            frame.CompleteOwnedPreparation();
+            frame.Capture(CriticalLogicalContext);
+            protectedFirst = originalFirst.Mod.SaveCallback(CriticalLogicalContext);
+            Assert.IsNotNull(originalSecond.Mod.SaveCallback(CriticalLogicalContext));
+            Assert.IsTrue(frame.TryGetWrittenCapture(out _, out reason), reason);
+        }
+        byte[] legacySecond = legacyPartner ? SaveWith(2, 2, new[] { "value" },
+            new Dictionary<string, byte[]> { ["value"] = new byte[] { 7 } }) : null;
+        var replacement = new FakeExtender();
+        var first = new CriticalSourceFixture("Critical.Writer.MixedProtectedFirst", replacement);
+        var second = new CriticalSourceFixture("Critical.Writer.MixedProtectedSecond", replacement);
+        Assert.IsTrue(replacement.Registry.TryJoinCriticalWriterCohort(first.Enrollment, out reason), reason);
+        Assert.IsTrue(replacement.Registry.TryJoinCriticalWriterCohort(second.Enrollment, out reason), reason);
+        // Each source can decode separately; only the completed archive pass can
+        // reject the protected cohort's missing/unmarked partner without inventing state.
+        replacement.Registry.BeginLoad(VersionedSaveLoadSource.SaveGame, "mixed-protected.sav", 61);
+        first.Mod.Load(protectedFirst);
+        if (legacyPartner) second.Mod.Load(legacySecond);
+        replacement.Registry.PrepareLoad(); replacement.Registry.EndLoad();
+        Assert.IsTrue(first.Mod.Handle.KeepsLoadedRecord); Assert.IsTrue(second.Mod.Handle.KeepsLoadedRecord);
+        Assert.IsFalse(first.PreparedSource.TryValidateCompleted(first.Origin, out _));
+        Assert.IsFalse(second.PreparedSource.TryValidateCompleted(second.Origin, out _));
+        CollectionAssert.AreEqual(protectedFirst, first.Mod.SaveCallback(CriticalLogicalContext));
+        byte[] secondSaved = second.Mod.SaveCallback(CriticalLogicalContext);
+        if (legacyPartner)
+        {
+            CollectionAssert.AreEqual(legacySecond, secondSaved);
+            Assert.AreEqual(VersionedSaveWriteStatus.KeptLoadedRecord, second.Mod.Handle.LastWriteStatus);
+        }
+        else
+        {
+            Assert.IsNull(secondSaved);
+            Assert.AreEqual(VersionedSaveWriteStatus.NotWritten, second.Mod.Handle.LastWriteStatus);
+        }
+        Assert.ThrowsExactly<InvalidOperationException>(() => replacement.Registry.RequireCriticalWriterReady());
+        using (var frame = replacement.Registry.BeginCriticalWriterFrame(CriticalLogicalContext))
+        {
+            frame.CompleteOwnedPreparation();
+            frame.Capture(CriticalLogicalContext);
+            Assert.IsNotNull(frame.Failure); Assert.IsFalse(frame.TryGetWrittenCapture(out _, out _));
+            Assert.AreEqual(0, first.Captures); Assert.AreEqual(0, second.Captures);
+        }
+        Assert.IsNull(VersionedSaveFactoryFrame.Current);
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void CriticalWorldGateWaitsForEveryActualLoadCallbackAndRejectsMixedProtection(bool legacyPartner)
+    {
+        var extender = new FakeExtender();
+        var first = new CriticalSourceFixture("Critical.Writer.WorldGateFirst", extender);
+        var second = new CriticalSourceFixture("Critical.Writer.WorldGateSecond", extender);
+        Assert.IsTrue(extender.Registry.TryJoinCriticalWriterCohort(first.Enrollment, out string reason), reason);
+        Assert.IsTrue(extender.Registry.TryJoinCriticalWriterCohort(second.Enrollment, out reason), reason);
+        object world = new object();
+        long session = 77;
+        var stages = new List<string>();
+        var callbackResults = new List<bool>();
+        var callbackCreatedResults = new List<bool>();
+        first.DuringPrepared = load =>
+        {
+            stages.Add("PreparedA");
+            callbackResults.Add(extender.Registry.TryValidateCriticalWorld(first.PreparedSource, world, session, out _));
+        };
+        first.DuringLoaded = load =>
+        {
+            stages.Add("LoadedA");
+            callbackResults.Add(extender.Registry.TryValidateCriticalWorld(first.PreparedSource, world, session, out _));
+            callbackCreatedResults.Add(extender.Registry.TryAuthorizeCriticalCreatedWorld(first.PreparedSource, new object(), 79, out _));
+        };
+        second.DuringLoaded = load =>
+        {
+            stages.Add("LoadedB");
+            callbackResults.Add(extender.Registry.TryValidateCriticalWorld(second.PreparedSource, world, session, out _));
+            callbackCreatedResults.Add(extender.Registry.TryAuthorizeCriticalCreatedWorld(second.PreparedSource, new object(), 79, out _));
+        };
+        // B has no delivered record when A's Prepared callback probes the gate.
+        // Only completion of both NoRecord callbacks can establish the pair's absence.
+        extender.Registry.BeginLoad(VersionedSaveLoadSource.SaveGame, "world-gate.sav", session);
+        extender.Registry.PrepareLoad(); extender.Registry.EndLoad();
+        CollectionAssert.AreEqual(new[] { "PreparedA", "LoadedA", "LoadedB" }, stages);
+        foreach (bool result in callbackResults) Assert.IsFalse(result, "No callback may publish a partially finalized cohort.");
+        Assert.AreEqual(2, callbackCreatedResults.Count);
+        foreach (bool result in callbackCreatedResults) Assert.IsFalse(result, "A running Loaded callback cannot borrow created-world authority.");
+        Assert.IsTrue(extender.Registry.TryValidateCriticalWorld(first.PreparedSource, world, session, out reason), reason);
+        Assert.IsTrue(extender.Registry.TryValidateCriticalWorld(second.PreparedSource, world, session, out reason), reason);
+        Assert.IsFalse(extender.Registry.TryValidateCriticalWorld(first.PreparedSource, world, 0, out _));
+        Assert.IsFalse(extender.Registry.TryValidateCriticalWorld(first.PreparedSource, world, session + 1, out _));
+        byte[] protectedFirst;
+        using (var frame = extender.Registry.BeginCriticalWriterFrame(CriticalLogicalContext))
+        {
+            frame.CompleteOwnedPreparation();
+            frame.Capture(CriticalLogicalContext);
+            protectedFirst = first.Mod.SaveCallback(CriticalLogicalContext);
+            Assert.IsNotNull(second.Mod.SaveCallback(CriticalLogicalContext));
+            Assert.IsTrue(frame.TryGetWrittenCapture(out _, out reason), reason);
+        }
+
+        session = 78;
+        extender.Registry.BeginLoad(VersionedSaveLoadSource.SaveGame, "mixed-world-gate.sav", session);
+        first.Mod.Load(protectedFirst);
+        if (legacyPartner)
+            second.Mod.Load(SaveWith(2, 2, new[] { "value" },
+                new Dictionary<string, byte[]> { ["value"] = new byte[] { 7 } }));
+        extender.Registry.PrepareLoad(); extender.Registry.EndLoad();
+        Assert.AreEqual(6, stages.Count); Assert.AreEqual(6, callbackResults.Count);
+        foreach (bool result in callbackResults) Assert.IsFalse(result);
+        Assert.AreEqual(4, callbackCreatedResults.Count);
+        foreach (bool result in callbackCreatedResults) Assert.IsFalse(result);
+        Assert.IsFalse(extender.Registry.TryValidateCriticalWorld(first.PreparedSource, world, session, out _));
+        Assert.IsFalse(extender.Registry.TryValidateCriticalWorld(second.PreparedSource, world, session, out _));
+        Assert.AreEqual(1, first.Captures); Assert.AreEqual(1, second.Captures);
+
+        // A separately authorized new blank world has its own exact world/session;
+        // it does not rehabilitate this rejected archive or the previous identity.
+        object createdWorld = new object();
+        Assert.IsTrue(extender.Registry.TryAuthorizeCriticalCreatedWorld(first.PreparedSource, createdWorld, 79, out reason), reason);
+        Assert.IsFalse(extender.Registry.TryValidateCriticalWorld(first.PreparedSource, createdWorld, 79, out _),
+            "The other participant still belongs to the rejected archive.");
+        Assert.IsTrue(extender.Registry.TryAuthorizeCriticalCreatedWorld(second.PreparedSource, createdWorld, 79, out reason), reason);
+        Assert.IsTrue(extender.Registry.TryValidateCriticalWorld(first.PreparedSource, createdWorld, 79, out reason), reason);
+        Assert.IsTrue(extender.Registry.TryValidateCriticalWorld(second.PreparedSource, createdWorld, 79, out reason), reason);
+        Assert.IsFalse(extender.Registry.TryValidateCriticalWorld(first.PreparedSource, world, 79, out _));
+        Assert.IsFalse(extender.Registry.TryValidateCriticalWorld(first.PreparedSource, createdWorld, session, out _));
+        Assert.IsNull(VersionedSaveFactoryFrame.Current);
+    }
+
+    [TestMethod]
+    [DataRow(3)]
+    [DataRow(5)]
+    public void CriticalWriterUpgradesMarkerlessReaderTwoRecordsWithoutLosingFutureEntries(int recordVersion)
+    {
+        var fixture = new CriticalSourceFixture("Critical.Writer.MarkerlessFuture");
+        Assert.IsTrue(fixture.Extender.Registry.TryJoinCriticalWriterCohort(fixture.Enrollment, out string reason), reason);
+        byte[] original = SaveWith(recordVersion, 2, new[] { "value", "future" },
+            new Dictionary<string, byte[]> { ["value"] = new byte[] { 1 }, ["future"] = new byte[] { 7 } });
+        fixture.Value = 9;
+        fixture.Load(original);
+        Assert.AreEqual(VersionedSaveLoadStatus.Restored, fixture.Mod.Loads[0].Status);
+        Assert.IsFalse(fixture.Mod.Handle.KeepsLoadedRecord);
+        fixture.Extender.Registry.RequireCriticalWriterReady();
+        using (var frame = fixture.Extender.Registry.BeginCriticalWriterFrame(CriticalLogicalContext))
+        {
+            frame.CompleteOwnedPreparation();
+            frame.Capture(CriticalLogicalContext);
+            Assert.IsNull(frame.Failure);
+            byte[] bytes = fixture.Mod.SaveCallback(CriticalLogicalContext);
+            Assert.AreEqual(1, fixture.Captures);
+            Assert.IsTrue(frame.TryGetWrittenCapture(out var capture, out reason), reason);
+            Assert.IsTrue(capture.MatchesRecord(fixture.Enrollment, bytes, out reason), reason);
+            var decoded = VersionedSaveRecordCodec.Decode(bytes, 3);
+            Assert.AreEqual(VersionedSaveRecordCodec.DecodeStatus.Valid, decoded.Status);
+            Assert.AreEqual(3, decoded.RecordVersion); Assert.AreEqual(3, decoded.MinimumReaderVersion);
+            Assert.IsTrue(decoded.Entries.TryGet("value", out byte[] value)); CollectionAssert.AreEqual(new byte[] { 9 }, value);
+            Assert.IsTrue(decoded.Entries.TryGet("future", out byte[] future)); CollectionAssert.AreEqual(new byte[] { 7 }, future);
+            Assert.IsTrue(decoded.Entries.TryGet("cutover", out byte[] marker)); Assert.IsTrue(marker.Length > 0);
+            Assert.AreEqual(VersionedSaveRecordCodec.DecodeStatus.TooNew, VersionedSaveRecordCodec.Decode(bytes, 2).Status);
+        }
+        Assert.IsNull(VersionedSaveFactoryFrame.Current);
+    }
+
+    [TestMethod]
+    public void OwnedFactoryPreparationRefusesEarlyDispatchAndCompletionRetainsItsExactFailure()
+    {
+        Assert.IsNull(VersionedSaveFactoryFrame.Current);
+        int preparations = 0, continuation = 0;
+        using (var frame = VersionedSaveFactoryFrame.BeginOwnedPreparation(context => { preparations++; return null; }))
+        {
+            frame.Capture(CriticalLogicalContext);
+            Assert.AreEqual(0, preparations);
+            Assert.IsInstanceOfType<InvalidOperationException>(frame.Failure);
+            Exception primary = frame.Failure;
+            var rejected = Assert.ThrowsExactly<InvalidOperationException>(() =>
+            {
+                frame.CompleteOwnedPreparation(); continuation++;
+            });
+            Assert.AreSame(primary, rejected); Assert.AreSame(primary, frame.Failure);
+            Assert.AreEqual(0, continuation);
+            frame.Capture(CriticalLogicalContext);
+            Assert.AreEqual(0, preparations); Assert.AreSame(primary, frame.Failure);
+            Assert.IsFalse(frame.TryGetWrittenCapture(out _, out _));
+        }
         Assert.IsNull(VersionedSaveFactoryFrame.Current);
     }
 }

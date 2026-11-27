@@ -41,6 +41,7 @@ namespace APIShared.Savegames
         // Closing the transport window precedes Loaded callbacks. Critical cold
         // operations wait for the entire matching EndLoad pass instead.
         private long finalizedLoadGeneration = -1;
+        private long deliveringLoadGeneration = -1;
         private VersionedSaveLoadSource windowSource;
         private string windowFile;
         private long windowMissionSessionId;
@@ -311,11 +312,16 @@ namespace APIShared.Savegames
                     pending[i] = snapshot[i].Pending; snapshot[i].Pending = null;
                     prepared[i] = snapshot[i].PreparedOutcome;
                 }
-                loadGeneration = generation;
+                loadGeneration = generation; deliveringLoadGeneration = loadGeneration;
                 source = windowSource;
                 file = windowFile;
                 missionSessionId = windowMissionSessionId;
             }
+            // Archive completeness is known now. Mark a mixed protected cohort
+            // passive before any Loaded callback; full readiness still waits for
+            // every callback and the final matching generation publication below.
+            string cohortRefusal = ValidateOriginalWriterCohort(loadGeneration, snapshot, pending, prepared);
+            if (!string.IsNullOrEmpty(cohortRefusal)) Warn(cohortRefusal);
             for (int i = 0; i < snapshot.Length; i++)
             {
                 Slot slot = snapshot[i];
@@ -354,7 +360,7 @@ namespace APIShared.Savegames
                 // A nested load/unload may already own a replacement generation.
                 // Publish only after every Loaded callback in this pass returned.
                 if (generation == loadGeneration && !windowOpen)
-                    finalizedLoadGeneration = loadGeneration;
+                { finalizedLoadGeneration = loadGeneration; deliveringLoadGeneration = -1; }
             }
         }
 
@@ -394,6 +400,8 @@ namespace APIShared.Savegames
                 version = decoded.RecordVersion;
                 minimumReader = decoded.MinimumReaderVersion;
             }
+            if (!ValidateWriterCohortRecord(slot, entries, version, minimumReader, out string cohortReason))
+                return Kept(VersionedSaveLoadStatus.MigrationFailed, source, file, data, version, minimumReader, cohortReason, missionSessionId);
             for (int from = version; from < slot.Current; from++)
             {
                 VersionedSaveMigration step = slot.Migrations[from];
@@ -460,10 +468,16 @@ namespace APIShared.Savegames
                 keep = windowOpen || slot.KeepLoaded;
                 unknown = slot.Unknown;
                 frozen = slot.CriticalCapture;
-                trackedCapture = frozen == null && !keep && slot.CriticalSource != null;
+                trackedCapture = frozen == null && !keep && slot.CriticalSource != null && !slot.CriticalSource.WriterCohortJoined;
                 if (trackedCapture) slot.ActiveCriticalSourceCaptures++;
             }
             if (frozen != null) return ServeCriticalRecord(slot, context, frozen);
+            if (!keep && slot.CriticalSource?.WriterCohortJoined == true)
+            {
+                // Never downgrade a joined source through an ordinary callback.
+                slot.Handle.SetLastWrite(VersionedSaveWriteStatus.CaptureFailed);
+                return null;
+            }
             if (keep)
             {
                 slot.Handle.SetLastWrite(loaded != null ? VersionedSaveWriteStatus.KeptLoadedRecord : VersionedSaveWriteStatus.NotWritten);
@@ -607,6 +621,7 @@ namespace APIShared.Savegames
             internal bool PreparedFailed;
             internal VersionedSavePreparedSource PreparedSource;
             internal VersionedSavePreparedOrigin PreparedOrigin;
+            internal VersionedSaveCriticalCreatedWorldOrigin CreatedWorldOrigin;
             internal VersionedSaveCriticalSource CriticalSource;
             internal VersionedSaveCriticalCapture CriticalCapture;
             internal int ActiveCriticalSourceCaptures;
@@ -616,7 +631,7 @@ namespace APIShared.Savegames
 
             internal void ResetMission()
             {
-                PreparedOrigin?.Invalidate(); PreparedOrigin = null;
+                PreparedOrigin?.Invalidate(); PreparedOrigin = null; CreatedWorldOrigin = null;
                 if (CriticalCapture != null)
                 {
                     CriticalCapture.Failed = true;

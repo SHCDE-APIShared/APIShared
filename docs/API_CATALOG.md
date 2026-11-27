@@ -8,6 +8,12 @@ gold/stock exchanges and joint ledger/allocation persistence. No native goods ID
 recipe, art or hauling policy is invented. See [contracts and limits](NATIVE_STORAGE.md)
 and the [compiled example](../examples/ThirdPartyMod/NativeStorageExample.cs).
 
+Ordinary NativeStorage retains its physical-stock/save behavior, including real
+multiplayer. The internal protected-writer opt-in is SP/editor-only and uses
+container version 3/minimum reader 3; public enrollment and consumer migration
+remain required follow-up work. See
+[save-policy compatibility](NATIVE_STORAGE.md#material-save-policy-compatibility-change).
+
 `NativeStoredGood.TryGetQuantity` reads one registered good in an exact observed
 store under the existing [protected read contract](NATIVE_STORAGE.md#read-one-good-in-one-store).
 

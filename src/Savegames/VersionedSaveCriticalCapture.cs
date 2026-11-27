@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Text;
 using System.Threading;
 
 namespace APIShared.Savegames
@@ -14,16 +16,31 @@ namespace APIShared.Savegames
         internal VersionedSavePreparedSource PreparedSource { get; }
         internal string ReservedEntry { get; }
         internal int MinimumCutoverReader { get; }
+        internal bool WriterCohortJoined; // Startup-only; standalone captures stay independent.
     }
 
     internal readonly struct VersionedSaveCriticalRecord
     {
         internal VersionedSaveCriticalRecord(VersionedSaveCriticalSource source,
             VersionedSavePreparedOrigin origin, byte[] marker)
-        { Source = source; Origin = origin; Marker = marker; }
+        { Source = source; Origin = origin; CreatedOrigin = null; Marker = marker; }
         internal VersionedSaveCriticalSource Source { get; }
         internal VersionedSavePreparedOrigin Origin { get; }
+        internal VersionedSaveCriticalCreatedWorldOrigin CreatedOrigin { get; }
+        internal VersionedSaveCriticalRecord(VersionedSaveCriticalSource source, VersionedSaveCriticalCreatedWorldOrigin origin, byte[] marker, bool createdWorld)
+        { Source = source; Origin = null; CreatedOrigin = origin; Marker = marker; }
         internal byte[] Marker { get; }
+    }
+
+    // Explicit creation has no archive receiver, original bytes/digest or cold-marker authority.
+    // Only the existing native owner may mint this after exact EditorCreated/world validation.
+    internal sealed class VersionedSaveCriticalCreatedWorldOrigin
+    {
+        internal VersionedSaveCriticalCreatedWorldOrigin(VersionedSavePreparedSource source, long generation, object world, long session)
+        { Source = source; Generation = generation; World = world; Session = session; }
+        internal readonly VersionedSavePreparedSource Source;
+        internal readonly long Generation, Session;
+        internal readonly object World;
     }
 
     // One same-registry bundle belongs to the already-existing critical save owner.
@@ -35,6 +52,7 @@ namespace APIShared.Savegames
         {
             internal VersionedSaveCriticalSource Source;
             internal VersionedSavePreparedOrigin Origin;
+            internal VersionedSaveCriticalCreatedWorldOrigin CreatedOrigin;
             internal byte[] Marker, Bytes;
             internal List<KeyValuePair<string, byte[]>> Unknown;
             internal bool Served;
@@ -84,15 +102,16 @@ namespace APIShared.Savegames
         private readonly int threadId;
         private VersionedSaveCriticalCapture capture;
         private Exception failure;
-        private bool observed, closed;
+        private bool observed, closed, preparationReady;
 
         internal static VersionedSaveFactoryFrame Current => current;
         internal static object PreparationTag => preparingTag;
         internal Exception Failure => Volatile.Read(ref failure);
 
-        private VersionedSaveFactoryFrame(Func<VersionedSaveContext, VersionedSaveCriticalCapture> prepare)
+        private VersionedSaveFactoryFrame(Func<VersionedSaveContext, VersionedSaveCriticalCapture> prepare, bool preparationReady)
         {
             this.prepare = prepare ?? throw new ArgumentNullException(nameof(prepare));
+            this.preparationReady = preparationReady;
             threadId = Thread.CurrentThread.ManagedThreadId;
             previous = current;
             if (previous != null)
@@ -107,7 +126,27 @@ namespace APIShared.Savegames
         // newly prepared, unserved bundle for the supplied context. If it throws
         // before returning, it owns its own cleanup.
         internal static VersionedSaveFactoryFrame Begin(
-            Func<VersionedSaveContext, VersionedSaveCriticalCapture> prepare) => new VersionedSaveFactoryFrame(prepare);
+            Func<VersionedSaveContext, VersionedSaveCriticalCapture> prepare) => new VersionedSaveFactoryFrame(prepare, true);
+
+        // The native owner opens this before freezing participants. A reentrant
+        // factory during preparation must not capture their partially frozen state.
+        // Standalone Begin retains its immediate preparation contract.
+        internal static VersionedSaveFactoryFrame BeginOwnedPreparation(
+            Func<VersionedSaveContext, VersionedSaveCriticalCapture> prepare) => new VersionedSaveFactoryFrame(prepare, false);
+
+        // Called only by the owning transaction after all freezes and readiness
+        // checks, before Original or native path access. An earlier factory failure
+        // remains exact even if the Extender swallowed the dispatch exception.
+        internal void CompleteOwnedPreparation()
+        {
+            if (!IsActive() || Failure != null) throw Failure;
+            if (observed)
+            {
+                RecordFailure(new InvalidOperationException("The critical factory dispatched before owned preparation completed."));
+                throw Failure;
+            }
+            preparationReady = true;
+        }
 
         internal void RecordFailure(Exception error)
         {
@@ -135,6 +174,11 @@ namespace APIShared.Savegames
                 return;
             }
             observed = true;
+            if (!preparationReady)
+            {
+                RecordFailure(new InvalidOperationException("The critical factory dispatched before owned preparation completed."));
+                return;
+            }
             try
             {
                 VersionedSaveCriticalCapture prepared;
@@ -208,6 +252,230 @@ namespace APIShared.Savegames
 
     internal sealed partial class VersionedSaveDataRegistry
     {
+        private VersionedSaveCriticalSource[] writerCohort = Array.Empty<VersionedSaveCriticalSource>();
+        private bool criticalCreatedWorldStarted;
+        internal bool HasCriticalWriterDemand => Volatile.Read(ref writerCohort).Length != 0;
+
+        // Tracking/enrollment alone still adds no writer demand. Joining is an
+        // explicit internal process-lifetime startup choice, not consumer import.
+        internal bool TryJoinCriticalWriterCohort(VersionedSaveCriticalSource source, out string reason)
+        {
+            lock (sync)
+            {
+                Slot slot = FindPreparedSource(source?.PreparedSource);
+                if (generation != 0 || windowOpen || criticalCreatedWorldStarted || slot == null || !ReferenceEquals(slot.CriticalSource, source) || source.WriterCohortJoined)
+                { reason = "Join one exact enrolled source before the first world/load."; return false; }
+                var next = new List<VersionedSaveCriticalSource>();
+                foreach (Slot registered in slots)
+                    if (registered.CriticalSource?.WriterCohortJoined == true || ReferenceEquals(registered.CriticalSource, source))
+                        next.Add(registered.CriticalSource);
+                var published = next.ToArray(); // Allocate before irreversible publication.
+                source.WriterCohortJoined = true;
+                Volatile.Write(ref writerCohort, published);
+                reason = string.Empty; return true;
+            }
+        }
+
+        // Only the exact existing EditorCreated boundary may call this. This is
+        // intentionally not a Prepared delivery and never finalizes an archive.
+        internal bool TryAuthorizeCriticalCreatedWorld(VersionedSavePreparedSource source, object world,
+            long sessionId, out string reason)
+        {
+            lock (sync)
+            {
+                Slot slot = FindPreparedSource(source);
+                if (world == null || sessionId <= 0 || windowOpen || deliveringLoadGeneration == generation || slot?.CriticalSource?.WriterCohortJoined != true ||
+                    slot.CriticalCapture != null || slot.ActiveCriticalSourceCaptures != 0)
+                { reason = "An exact idle joined source and explicit created world/session are required."; return false; }
+                if (slot.CreatedWorldOrigin != null && ReferenceEquals(slot.CreatedWorldOrigin.World, world) && slot.CreatedWorldOrigin.Session == sessionId)
+                { reason = string.Empty; return true; }
+                criticalCreatedWorldStarted = true;
+                slot.PreparedOrigin?.Invalidate(); slot.PreparedOrigin = null;
+                slot.PreparedOutcome = null; slot.PreparedFailed = false;
+                slot.LoadedBytes = null; slot.Unknown = null; slot.KeepLoaded = false; slot.Handle.SetKeepsLoaded(false);
+                slot.CreatedWorldOrigin = new VersionedSaveCriticalCreatedWorldOrigin(source, generation, world, sessionId);
+                reason = string.Empty; return true;
+            }
+        }
+
+        // Exact cohort identities/floors are stored together. A missing participant
+        // must not turn a protected archive into a smaller, falsely certified set.
+        private byte[] WriterCohortMarker()
+        {
+            using (var bytes = new MemoryStream())
+            using (var writer = new BinaryWriter(bytes, Encoding.UTF8, true))
+            {
+                writer.Write(0x31484343); // CCH1, internal marker format 1.
+                writer.Write(writerCohort.Length);
+                foreach (VersionedSaveCriticalSource source in writerCohort)
+                {
+                    Slot slot = FindPreparedSource(source.PreparedSource);
+                    WriteCohortName(writer, slot.Owner); WriteCohortName(writer, slot.Identifier);
+                    WriteCohortName(writer, source.ReservedEntry); writer.Write(source.MinimumCutoverReader);
+                }
+                writer.Flush(); return bytes.ToArray();
+            }
+        }
+
+        private static void WriteCohortName(BinaryWriter writer, string value)
+        {
+            // Registration identity uses ordinal .NET strings. Persist exact UTF-16
+            // code units so replacement encoders cannot alias different owners.
+            writer.Write(value.Length);
+            for (int i = 0; i < value.Length; i++) writer.Write((ushort)value[i]);
+        }
+
+        private static bool SameCohortMarker(byte[] left, byte[] right)
+        {
+            if (left == null || right == null || left.Length != right.Length) return false;
+            for (int i = 0; i < left.Length; i++) if (left[i] != right[i]) return false;
+            return true;
+        }
+
+        // Read validates original bytes before migration or known-entry partition.
+        private bool ValidateWriterCohortRecord(Slot slot, VersionedSaveEntries entries,
+            int version, int minimumReader, out string reason)
+        {
+            lock (sync)
+            {
+                VersionedSaveCriticalSource source = slot.CriticalSource;
+                if (source == null) { reason = string.Empty; return true; }
+                bool marked = entries.TryGet(source.ReservedEntry, out byte[] marker);
+                bool cohortMarker = marked && marker.Length >= 4 && marker[0] == 0x43 && marker[1] == 0x43 && marker[2] == 0x48 && marker[3] == 0x31;
+                if (!source.WriterCohortJoined)
+                {
+                    reason = cohortMarker ? "The stored protected cohort is unavailable; retain its original bytes." : string.Empty;
+                    return !cohortMarker;
+                }
+                if (!marked && minimumReader < source.MinimumCutoverReader)
+                { reason = string.Empty; return true; }
+                if (!marked || version < source.MinimumCutoverReader || minimumReader < source.MinimumCutoverReader ||
+                    !SameCohortMarker(marker, WriterCohortMarker()))
+                { reason = "The stored protected cohort or reader floor differs; retain its original bytes."; return false; }
+                reason = string.Empty; return true;
+            }
+        }
+
+        // One protected archive must contain the same original protection mode for
+        // every participant. NoRecord/legacy for one member cannot supply the
+        // missing half of another member's already protected checkpoint.
+        private string ValidateOriginalWriterCohort(long loadGeneration, Slot[] snapshot, byte[][] pending, Outcome[] prepared)
+        {
+            lock (sync)
+            {
+                if (generation != loadGeneration || windowOpen || writerCohort.Length == 0) return null;
+                bool anyProtected = false, everyProtected = true;
+                foreach (VersionedSaveCriticalSource source in writerCohort)
+                {
+                    Slot slot = FindPreparedSource(source.PreparedSource);
+                    int index = Array.IndexOf(snapshot, slot);
+                    byte[] original = prepared[index]?.LoadedBytes ?? pending[index];
+                    bool marked = false;
+                    if (original != null && VersionedSaveRecordCodec.HasSignature(original))
+                    {
+                        var decoded = VersionedSaveRecordCodec.Decode(original, slot.Current);
+                        marked = decoded.Status == VersionedSaveRecordCodec.DecodeStatus.Valid &&
+                            decoded.RecordVersion >= source.MinimumCutoverReader && decoded.MinimumReaderVersion >= source.MinimumCutoverReader &&
+                            decoded.Entries.TryGet(source.ReservedEntry, out byte[] marker) && SameCohortMarker(marker, WriterCohortMarker());
+                    }
+                    anyProtected |= marked; everyProtected &= marked;
+                }
+                if (!anyProtected || everyProtected) return null;
+                foreach (VersionedSaveCriticalSource source in writerCohort)
+                {
+                    Slot slot = FindPreparedSource(source.PreparedSource);
+                    slot.PreparedFailed = true; slot.KeepLoaded = true; slot.Handle.SetKeepsLoaded(true); slot.PreparedOrigin?.Invalidate();
+                }
+                return "The protected archive omits or mixes a cohort participant; retain every available original record.";
+            }
+        }
+
+        private bool TryGetWriterRecords(out VersionedSaveCriticalRecord[] records, out string reason)
+        {
+            records = null;
+            lock (sync)
+            {
+                if (writerCohort.Length == 0 || windowOpen)
+                { reason = "An idle joined cohort is required."; return false; }
+                byte[] marker = WriterCohortMarker();
+                var selected = new VersionedSaveCriticalRecord[writerCohort.Length];
+                VersionedSaveCriticalCreatedWorldOrigin created = null;
+                bool? createdCohort = null;
+                for (int i = 0; i < selected.Length; i++)
+                {
+                    VersionedSaveCriticalSource source = writerCohort[i];
+                    Slot slot = FindPreparedSource(source.PreparedSource);
+                    if (slot == null || slot.KeepLoaded)
+                    { reason = "A joined source retains unavailable loaded bytes."; return false; }
+                    bool isCreated = slot.CreatedWorldOrigin != null;
+                    if (createdCohort.HasValue && createdCohort.Value != isCreated)
+                    { reason = "Archive and created-world sources cannot be mixed."; return false; }
+                    createdCohort = isCreated;
+                    if (isCreated)
+                    {
+                        var origin = slot.CreatedWorldOrigin;
+                        if (origin.Generation != generation || (created != null &&
+                            (!ReferenceEquals(created.World, origin.World) || created.Session != origin.Session)))
+                        { reason = "Created-world sources must share the exact current world/session."; return false; }
+                        created = origin; selected[i] = new VersionedSaveCriticalRecord(source, origin, marker, true);
+                    }
+                    else
+                    {
+                        if (finalizedLoadGeneration != generation || slot.PreparedOrigin == null ||
+                            !slot.PreparedOrigin.Completed || !slot.PreparedOrigin.IsReadable)
+                        { reason = "Every archive source needs its complete current readable origin."; return false; }
+                        selected[i] = new VersionedSaveCriticalRecord(source, slot.PreparedOrigin, marker);
+                    }
+                }
+                records = selected; reason = string.Empty; return true;
+            }
+        }
+
+        // State publication is stricter than successful early decoding. Reentrant
+        // Prepared/Loaded observers cannot activate one source while another can
+        // still reject the same load. A created world has a separate exact token.
+        internal bool TryValidateCriticalWorld(VersionedSavePreparedSource source, object world, long sessionId, out string reason)
+        {
+            lock (sync)
+            {
+                Slot slot = FindPreparedSource(source);
+                if (slot?.CriticalSource?.WriterCohortJoined != true || world == null || sessionId <= 0)
+                { reason = "An exact joined source and current world/session are required."; return false; }
+                if (slot.CreatedWorldOrigin != null)
+                {
+                    if (!ReferenceEquals(slot.CreatedWorldOrigin.World, world) || slot.CreatedWorldOrigin.Session != sessionId)
+                    { reason = "The created-world origin belongs to another world/session."; return false; }
+                }
+                else if (slot.PreparedOutcome?.Load.MissionSessionId != sessionId)
+                { reason = "The archive origin belongs to another mission attempt."; return false; }
+                return TryGetWriterRecords(out _, out reason);
+            }
+        }
+
+        internal void RequireCriticalWriterReady()
+        {
+            if (!TryGetWriterRecords(out _, out string reason)) throw new InvalidOperationException(reason);
+        }
+
+        // Open after demanded engine/fault/pre-capture guards, before native
+        // freezes. Storage freezing can establish a first explicit blank origin;
+        // the owner rechecks all origins before Original opens the temporary file.
+        internal VersionedSaveFactoryFrame BeginCriticalWriterFrame(VersionedSaveContext pinned)
+        {
+            if (!HasCriticalWriterDemand || VersionedSaveFactoryFrame.Current != null)
+                throw new InvalidOperationException("The demanded critical writer must own its factory frame.");
+            return VersionedSaveFactoryFrame.BeginOwnedPreparation(actual =>
+            {
+                if (actual.IsSaveFile != pinned.IsSaveFile || actual.IsMapEditorSave != pinned.IsMapEditorSave ||
+                    !string.Equals(actual.FilePath, pinned.FilePath, StringComparison.Ordinal))
+                    throw new InvalidOperationException("The actual factory differs from the owned pre-capture context.");
+                if (!TryGetWriterRecords(out var requested, out string reason) ||
+                    !TryFreezeCriticalRecordsCore(requested, actual, VersionedSaveRecordCodec.MaximumRecordBytes, true, out var capture, out reason))
+                    throw new InvalidOperationException(reason);
+                return capture;
+            });
+        }
+
         internal bool TryEnrollCriticalSource(VersionedSavePreparedSource source, string reservedEntry,
             int minimumCutoverReader, out VersionedSaveCriticalSource enrollment, out string reason)
         {
@@ -234,6 +502,11 @@ namespace APIShared.Savegames
         // The aggregate bound is explicit, at most the existing 8-MiB record bound.
         internal bool TryFreezeCriticalRecords(IReadOnlyList<VersionedSaveCriticalRecord> requested,
             VersionedSaveContext context, int maximumTotalBytes,
+            out VersionedSaveCriticalCapture capture, out string reason) =>
+            TryFreezeCriticalRecordsCore(requested, context, maximumTotalBytes, false, out capture, out reason);
+
+        private bool TryFreezeCriticalRecordsCore(IReadOnlyList<VersionedSaveCriticalRecord> requested,
+            VersionedSaveContext context, int maximumTotalBytes, bool allowCreated,
             out VersionedSaveCriticalCapture capture, out string reason)
         {
             capture = null;
@@ -243,22 +516,26 @@ namespace APIShared.Savegames
             VersionedSaveCriticalCapture bundle;
             lock (sync)
             {
-                if (windowOpen || finalizedLoadGeneration != generation)
-                { reason = "Critical capture requires the complete current load pass."; return false; }
+                bool created = allowCreated && requested[0].CreatedOrigin != null;
+                if (windowOpen || (!created && finalizedLoadGeneration != generation))
+                { reason = "Critical capture requires the complete current load pass or an explicit created world."; return false; }
                 var selected = new Dictionary<VersionedSaveCriticalSource, VersionedSaveCriticalCapture.Record>();
                 foreach (VersionedSaveCriticalRecord item in requested)
                 {
                     Slot slot = FindPreparedSource(item.Source?.PreparedSource);
                     if (slot == null || !ReferenceEquals(slot.CriticalSource, item.Source) ||
-                        item.Origin == null || !ReferenceEquals(slot.PreparedOrigin, item.Origin) ||
-                        item.Origin.Generation != generation || !item.Origin.Completed || !item.Origin.IsReadable ||
+                        (created ? (item.CreatedOrigin == null || !ReferenceEquals(slot.CreatedWorldOrigin, item.CreatedOrigin) ||
+                            item.CreatedOrigin.Generation != generation || !ReferenceEquals(item.CreatedOrigin.World, requested[0].CreatedOrigin.World) ||
+                            item.CreatedOrigin.Session != requested[0].CreatedOrigin.Session) :
+                            (item.CreatedOrigin != null || item.Origin == null || !ReferenceEquals(slot.PreparedOrigin, item.Origin) ||
+                            item.Origin.Generation != generation || !item.Origin.Completed || !item.Origin.IsReadable)) ||
                         slot.KeepLoaded || slot.CriticalCapture != null || slot.ActiveCriticalSourceCaptures != 0 ||
                         item.Marker == null || item.Marker.Length == 0 || item.Marker.Length > VersionedSaveRecordCodec.MaximumEntryBytes ||
                         selected.ContainsKey(item.Source))
                     { reason = "An exact completed readable source, unique marker and idle capture slot are required."; return false; }
                     selected.Add(item.Source, new VersionedSaveCriticalCapture.Record
                     {
-                        Source = item.Source, Origin = item.Origin, Marker = (byte[])item.Marker.Clone(),
+                        Source = item.Source, Origin = item.Origin, CreatedOrigin = item.CreatedOrigin, Marker = (byte[])item.Marker.Clone(),
                         Unknown = slot.Unknown == null ? null : new List<KeyValuePair<string, byte[]>>(slot.Unknown)
                     });
                 }
@@ -326,14 +603,15 @@ namespace APIShared.Savegames
         private bool CriticalCurrent(VersionedSaveCriticalCapture bundle, out string reason)
         {
             if (bundle == null || !ReferenceEquals(bundle.Registry, this) || bundle.Closed || bundle.Failed || windowOpen ||
-                finalizedLoadGeneration != generation || bundle.Generation != generation ||
+                (bundle.Records[0].CreatedOrigin == null && finalizedLoadGeneration != generation) || bundle.Generation != generation ||
                 bundle.ThreadId != Thread.CurrentThread.ManagedThreadId)
             { reason = bundle == null || string.IsNullOrEmpty(bundle.Failure) ? "The critical capture lifetime/thread changed." : bundle.Failure; return false; }
             foreach (var record in bundle.Records)
             {
                 Slot slot = FindPreparedSource(record.Source.PreparedSource);
                 if (slot == null || !ReferenceEquals(slot.CriticalCapture, bundle) || slot.KeepLoaded ||
-                    !ReferenceEquals(slot.PreparedOrigin, record.Origin) || !record.Origin.Completed || !record.Origin.IsReadable)
+                    (record.CreatedOrigin != null ? (!ReferenceEquals(slot.CreatedWorldOrigin, record.CreatedOrigin) || record.CreatedOrigin.Generation != generation) :
+                        (!ReferenceEquals(slot.PreparedOrigin, record.Origin) || record.Origin == null || !record.Origin.Completed || !record.Origin.IsReadable)))
                 { reason = "A critical source origin or loaded-record state changed."; return false; }
             }
             reason = string.Empty; return true;
