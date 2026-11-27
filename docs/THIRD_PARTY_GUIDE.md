@@ -1103,6 +1103,9 @@ APIShared corrects selected Script Extender defects without consumer registratio
 [Script Extender fixes](SCRIPT_EXTENDER_FIXES.md). Save handlers in particular receive
 `SaveContext.IsSaveFile=true` with a null `FilePath` for synchronized native saves, including
 autosaves; branch on the explicit context rather than assuming autosaves are maps.
+The optional [internal early producer](SCRIPT_EXTENDER_FIXES.md#internal-early-save-context)
+pins only explicitly queried normal/editor saves and adds no public consumer query
+or native-save permission. Unqueried ordinary save callbacks retain their existing context.
 
 ## Plugin entry points with optional APIShared
 

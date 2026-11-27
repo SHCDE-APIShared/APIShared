@@ -13,6 +13,7 @@ namespace APIShared.Savegames
         ExtenderExport = 1,
         SynchronizedPolicy = 2,
         FrameworkTrail = 3,
+        FrameworkNormal = 4,
     }
 
     // Optional startup binding only. No hook, registry, callback, reflection on a
@@ -106,6 +107,14 @@ namespace APIShared.Savegames
                     reason = string.Empty;
                     return true;
                 }
+                if (SaveContextRuntime.TryGetNormalSaveContext(out observed, out bool normalActive))
+                {
+                    context = new VersionedSaveContext(observed.IsSaveFile, observed.IsMapEditorSave, observed.FilePath);
+                    source = PreCaptureSaveContextSource.FrameworkNormal;
+                    reason = string.Empty;
+                    return true;
+                }
+                if (normalActive) { reason = NoContext; return false; }
                 if (SaveContextRuntime.TryGetTrailSaveContext(out observed, out bool trailActive))
                 {
                     observed = SaveContextRuntime.NormalizeSnapshot(observed);
