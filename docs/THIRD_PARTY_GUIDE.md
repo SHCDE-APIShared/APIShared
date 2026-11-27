@@ -82,6 +82,7 @@ See the [compiled example](../examples/ThirdPartyMod/CustomGoodsExample.cs).
 - [Script Extender bugfixes](SCRIPT_EXTENDER_FIXES.md)
 - [Plugin entry points with optional APIShared](#plugin-entry-points-with-optional-apishared)
 - [Versioned save data](#versioned-save-data)
+- [Steam game dependencies](#steam-game-dependencies)
 - [Workshop package cleanup](#workshop-package-cleanup)
 - [Loose Workshop packages](#loose-workshop-packages)
 - [HUD integration](#hud-integration)
@@ -1174,6 +1175,61 @@ verified. Continue applying ordinary loaded state at its supported lifecycle
 boundary; do not add a competing native save hook.
 Framework implementation work should follow the
 [managed Trail metadata and limits](SAVE_DATA.md#internal-managed-trail-producer-metadata).
+
+## Steam game dependencies
+
+A client-side asset mod can add `SteamAppDependencies` to its `info.json`.
+This example uses Stronghold: Definitive Edition as the required Steam app:
+
+```json
+{
+  "GUID": "Example_SH1Graphics",
+  "Name": "Stronghold graphics",
+  "Version": "1.0.0",
+  "Manifest": 0,
+  "NetworkMode": 0,
+  "SteamAppDependencies": [2140020]
+}
+```
+
+Keep the usual asset-mod layout, for example `Override/Atlas/tile_buildings1/`
+with the atlas texture and `atlas.json`. The same manifest works inside an
+asset-only `.semod`. Install both the APIShared plugin and its matching
+preloader from version 0.75.0 or later. With the gate active, the
+Extender registers the package only when Steam reports access to every listed
+app. An absent field or empty list leaves ordinary registration in place.
+Use an array of positive integer Steam app IDs.
+
+**An older, missing or incompatible APIShared preloader can leave the mod
+active.** The stock Extender can load the usual mod layout and ignore this
+field. The gate controls in-game registration. Files already distributed with
+the package remain accessible. Ordinary mod-dependency checks may still see
+the installed manifest, so avoid hard dependencies on gated asset packages.
+Older lobby compatibility checks that compare the entire mod hash can also
+reject different active mod lists.
+
+For a DLL mod, retain its ordinary manifest and apply the result to local
+features in code, for example on the Unity thread after Steam initializes:
+
+```csharp
+using APIShared;
+using APIShared.Steam;
+
+var steam = ApiShared.ForMod(PluginGuid).Steam;
+if (steam.GetAppAccess(2140020) == SteamAppAccess.Available)
+    EnableLocalGraphics();
+```
+
+`NotAvailable` means Steam answered that the active account lacks access.
+`SteamUnavailable` means the query could not run, for example before the
+Steamworks session is ready. Code can retry after the Extender's
+`OnSteamworksInitialized` Post event. An asset package skipped at startup
+can be retried by restarting the game with Steam available. Access reported by
+Steam may be temporary and says nothing about local installation. Keep local
+Steam access decisions out of synchronized gameplay.
+
+See [preloader diagnostics](DEPENDENCY_BOOTSTRAP.md#steam-app-dependencies)
+for startup troubleshooting.
 
 ## Workshop package cleanup
 

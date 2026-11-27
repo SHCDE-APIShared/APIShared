@@ -998,6 +998,14 @@ retains [explicit cleanup/commit outcomes](SAVE_DATA.md#critical-save-cleanup-ou
 The [internal managed Trail metadata](SAVE_DATA.md#internal-managed-trail-producer-metadata)
 has a separate binding and supplies no public pre-capture or enrollment API.
 
+## Steam app access
+
+`ApiShared.ForMod(guid).Steam.GetAppAccess(appId)` reads the current local
+Steam user's access to a related app on the Unity main thread. It distinguishes
+available access, no access and an unavailable Steam session. See
+[Steam game dependencies](THIRD_PARTY_GUIDE.md#steam-game-dependencies) for the
+C# and asset-manifest examples.
+
 ## Workshop inventory
 
 `APIShared.Workshop.WorkshopInventory` exposes the schema-1 file inventory.

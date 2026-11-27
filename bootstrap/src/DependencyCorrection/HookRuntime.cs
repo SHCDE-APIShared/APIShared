@@ -149,6 +149,7 @@ namespace APIShared.DependencyBootstrap
                 ShadowRuntime.Failed = new HashSet<string>((HashSet<string>)failed, StringComparer.Ordinal);
                 extenderSeen = true;
                 if (!snapshotSeen || activation == null || !activation.CanCorrect()) { ProbeTrace.Warning("snapshot or selected owner mismatch"); return; }
+                SteamDependencyRegistration.TryInstall(type.Assembly);
                 var method = ValidateCompatibilityMethod(type.Assembly);
                 var manager = method.DeclaringType;
                 using (var copy = new DynamicMethodDefinition(method))

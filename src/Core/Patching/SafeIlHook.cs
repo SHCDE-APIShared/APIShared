@@ -2,7 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Threading;
+#if !API_SHARED_BOOTSTRAP
 using APIShared.Internal;
+#endif
 using BepInEx.Logging;
 using Mono.Cecil;
 using Mono.Cecil.Cil;
@@ -29,7 +31,12 @@ namespace APIShared.Patching
     /// Each rebuild sees the edits of hooks ordered before this one, so later rebuilds can fail even
     /// when the first one succeeded. Check <see cref="IsApplied"/> or confirm the first patched call.</para>
     /// </remarks>
-    public sealed class SafeIlHook
+#if API_SHARED_BOOTSTRAP
+    internal
+#else
+    public
+#endif
+    sealed class SafeIlHook
     {
         private readonly ILContext.Manipulator manipulator;
         private readonly ManualLogSource log;
@@ -199,9 +206,13 @@ namespace APIShared.Patching
 
         private void Report(string message)
         {
+#if API_SHARED_BOOTSTRAP
+            DependencyBootstrap.ProbeTrace.Error("IL hook " + Id + " (" + OwnerGuid + "): " + message);
+#else
             try { RuntimeHealth.Failure(log ?? RuntimeHealth.ProcessLogger, "Patching/" + OwnerGuid + "/" + Id, true, "IL hook " + Id + " (" + OwnerGuid + ") on " +
                 Target.DeclaringType?.FullName + "." + Target.Name + ": " + message); }
             catch { }
+#endif
         }
 
         // Everything a manipulator can change through ILContext. Instruction objects are reused, so
