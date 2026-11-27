@@ -258,7 +258,9 @@ namespace APISharedTests
             }
             using (var assembly = AssemblyDefinition.ReadAssembly(typeof(WeaponProduction).Assembly.Location))
             {
-                var read = assembly.MainModule.GetType("APIShared.Economy.WeaponProductionRuntime").Methods.Single(method => method.Name == "TryGetWorkerBatch");
+                var read = assembly.MainModule.GetType("APIShared.Economy.WeaponProductionRuntime").Methods.Single(method => method.Name == "TryGetWorkerBatch" &&
+                    // The delivery path has its own internal option overload; inspect the public observation.
+                    method.Parameters.Count == 3 && method.Parameters[2].ParameterType.FullName == "APIShared.Economy.WeaponProductionWorkerBatch&");
                 Assert.IsFalse(read.Body.Instructions.Any(instruction => instruction.OpCode.Code == Code.Newobj ||
                     instruction.OpCode.Code == Code.Newarr || instruction.OpCode.Code == Code.Box),
                     "The read admission must not hoist an allocation ahead of the dormant/monitor guards.");
