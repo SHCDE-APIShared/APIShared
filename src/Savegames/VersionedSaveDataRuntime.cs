@@ -119,6 +119,18 @@ namespace APIShared.Savegames
             return current.TryRegister(registration, out handle, out reason);
         }
 
+        // Metadata-only startup tracking. It neither creates another registry nor
+        // enrolls a native writer; public migration remains unavailable at this step.
+        internal static bool TryTrackPreparedSource(string owner, VersionedSaveDataHandle handle,
+            out VersionedSavePreparedSource source, out string reason)
+        {
+            VersionedSaveDataRegistry current;
+            lock (Sync) current = registry;
+            if (current == null)
+            { source = null; reason = "Register the exact versioned source first."; return false; }
+            return current.TryTrackPreparedSource(owner, handle, out source, out reason);
+        }
+
         // Digests of the declared simulation-relevant records as stored in one save file, for the save
         // readiness agreement. Reads the file's appended archive once, like SavegameModSettings.ReadRecord;
         // with no declared record nothing is read. Entry names follow ModSaveDataAPI.cs:67, :272-275.

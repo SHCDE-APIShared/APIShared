@@ -252,9 +252,20 @@ and meanings rather than relying on renamed placeholder SDK fields.
 
 All five native finders select Armories. A Granary-bound custom workshop output
 must be rejected until destination selection has a separately qualified owner.
-The new custom Tanner capability requires the original adjacent route call;
-changed ImprovedHunters routing disables that optional capability, preserving
-legacy/native Tanner compatibility rather than guessing the carried product.
+The new custom Tanner capability requires the original yield call at `13EBF7`
+and a qualified storage route at `13EF38/16`. The load snapshot must retain both
+original blocks. Live code may retain the original storage block or the exact
+published built-in production-receipt owner at that block. Its preparation and
+publication keep the full generator/backend checks; frequent route checks compare
+the same module, published handle/stub, jump and NOPs, frozen continuation and
+published relay bytes without allocation or code installation. Receipt demand zero
+remains a valid original-forwarding route; receipt availability is not used here
+because weapon readiness depends on this same Tanner owner. Unpublished, partial,
+changed or foreign routes refuse. A continuation with a non-inline indirect target
+has no composition attestation; the receipt owner's existing boundary support is
+unchanged. Changed ImprovedHunters yield/routing still
+disables only this optional stored-output capability, preserving legacy/native
+Tanner compatibility rather than guessing the carried product.
 
 The existing critical production save owner freezes the workshop and pooled
 storage pair before native serialization, rejects reentrant mutations, verifies

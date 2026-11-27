@@ -87,7 +87,7 @@ namespace APIShared.Economy
 
     /// <summary>Owner-bound startup registration and protected native-storage observations.
     /// Obtaining a client installs nothing. Registered services and hooks have process lifetime.</summary>
-    public sealed class NativeStorageClient
+    public sealed partial class NativeStorageClient
     {
         private readonly string owner;
         internal NativeStorageClient(string ownerGuid) { owner = ownerGuid; }

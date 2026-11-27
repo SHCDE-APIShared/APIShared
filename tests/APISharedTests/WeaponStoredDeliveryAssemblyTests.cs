@@ -3,10 +3,20 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Runtime.InteropServices;
+using APIShared;
 using APIShared.Economy;
+using APIShared.Internal;
 using Iced.Intel;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using RedBird.Abstractions.Hooks;
+using RedBird.Abstractions.Hooks.Transaction;
+using RedBird.Backends.NativeX64;
+using RedBird.Core.Memory;
+using RedBird.X64.Hooks;
+using RedBird.X64.Hooks.Transaction;
+using SHCDESE.API.LowLevel;
 using SHCDESE.Interop;
 using static Iced.Intel.AssemblerRegisters;
 
@@ -51,6 +61,7 @@ namespace APISharedTests
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate void ExecuteFixture();
         [DllImport("kernel32.dll", SetLastError = true)] private static extern IntPtr VirtualAlloc(IntPtr address, UIntPtr size, uint allocation, uint protection);
         [DllImport("kernel32.dll", SetLastError = true)] private static extern bool VirtualFree(IntPtr address, UIntPtr size, uint freeType);
+        [DllImport("kernel32.dll", SetLastError = true)] private static extern bool VirtualProtect(IntPtr address, UIntPtr size, uint protection, out uint previous);
         [DllImport("kernel32.dll")] private static extern IntPtr GetCurrentProcess();
         [DllImport("kernel32.dll")] private static extern uint GetErrorMode();
         [DllImport("kernel32.dll")] private static extern uint SetErrorMode(uint mode);
@@ -221,6 +232,284 @@ namespace APISharedTests
                 Reject(site, original, back, TestImage, Enabled, BuildingDemand, 0);
                 Reject(site, original, back, TestImage, Enabled, BuildingDemand, Callback, 0, StoredOptions);
                 Reject(site, original, back, TestImage, Enabled, BuildingDemand, Callback, WorkerWire, 0);
+            }
+        }
+
+        [TestMethod]
+        public void TannerStoredDeliveryComposesOnlyWithThePublishedReceiptOwnerWithoutAllocating()
+        {
+            using (var fixture = new TannerReceiptOwnerFixture())
+            {
+                Assert.IsTrue(fixture.Compatible, "The pristine original Tanner route remains available before publication.");
+                Assert.IsFalse(fixture.PublishedSource, "An attached prepared hook is not a published receipt owner.");
+                fixture.Publish();
+                Assert.IsTrue(fixture.PublishedSource);
+                Assert.IsTrue(fixture.Compatible, "The exact APIShared receipt source preserves the stored-output route.");
+                Assert.IsFalse(fixture.Pristine, "The positive control must exercise the real installed jump, not raw bytes.");
+                Assert.AreEqual(0, Marshal.ReadInt32(fixture.Demand), "Receipt demand stays zero; no observer or game route is activated.");
+                for (int i = 0; i < 1000; i++)
+                { if (!fixture.PublishedSource || !fixture.Compatible) Assert.Fail("Warm owner validation failed."); }
+                long before = GC.GetAllocatedBytesForCurrentThread();
+                bool accepted = true;
+                for (int i = 0; i < 10000; i++) accepted &= fixture.PublishedSource && fixture.Compatible;
+                long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+                Assert.IsTrue(accepted);
+                Assert.AreEqual(0L, allocated, "Warm exact-owner validation must use its prepared metadata without managed allocations.");
+            }
+        }
+
+        [TestMethod]
+        public void TannerReceiptCompositionRejectsChangedOrUnavailableOwnedBoundaries()
+        {
+            using (var fixture = new TannerReceiptOwnerFixture())
+            {
+                fixture.Publish();
+                Assert.IsFalse(ProductionGoodsReceivedNativeRuntime.HasPublishedTannerSource(IntPtr.Zero));
+                Assert.IsFalse(ProductionGoodsReceivedNativeRuntime.HasPublishedTannerSource(fixture.Module + 16), "A different module cannot borrow the owner.");
+                fixture.WithOwner(null, fixture.Refused);
+                fixture.WithTannerOwner(null, fixture.Refused);
+                fixture.WithTannerDecision("TannerPending", fixture.Refused);
+                fixture.WithTannerDecision("TannerExternal", fixture.Refused);
+                fixture.WithTannerDecision("TannerFailed", fixture.Refused);
+                fixture.WithFailedRootPublication(fixture.Refused);
+                fixture.WithOwnerField("tannerStubBytes", null, fixture.Refused);
+                fixture.WithUnpublishedRelay(fixture.Refused);
+                fixture.WithFailedPublication(fixture.Refused);
+                fixture.WithChangedByte(fixture.Entry, fixture.Refused);
+                fixture.WithChangedByte(fixture.Entry + 6, fixture.Refused);
+                fixture.WithChangedByte(fixture.Entry + NativeInlineStub.JumpLength, fixture.Refused);
+                fixture.WithChangedByte(fixture.Stub, fixture.Refused);
+                fixture.WithChangedByte(fixture.Continuation + 13, fixture.Refused);
+                fixture.WithChangedByte(fixture.Relay, fixture.Refused);
+                fixture.WithChangedByte(fixture.Yield, () => {
+                    Assert.IsTrue(fixture.PublishedSource, "Receipt ownership cannot itself certify the earlier Tanner yield route.");
+                    Assert.IsFalse(fixture.Compatible, "The original yield boundary remains mandatory.");
+                });
+                fixture.WithStaleAttachedHook(fixture.Refused);
+                Assert.IsTrue(fixture.PublishedSource);
+                Assert.IsTrue(fixture.Compatible, "Every controlled refusal must restore the actual source.");
+            }
+        }
+
+        [TestMethod]
+        public void TannerOpaqueIndirectContinuationDoesNotGrantStoredOutputAttestation()
+        {
+            using (var fixture = new TannerReceiptOwnerFixture(opaqueContinuation: true))
+            {
+                fixture.Publish();
+                Assert.IsTrue(fixture.ReceiptOwnerReady, "Declining optional attestation must not revoke the existing receipt publication.");
+                Assert.IsFalse(fixture.PublishedSource, "An indirect destination outside the complete inline boundary is not attested.");
+                Assert.IsFalse(fixture.Compatible);
+            }
+        }
+
+        // Only the real Tanner inline source is installed on this nonexecuted, privately
+        // allocated image. No Original, relay, callback or game routine is invoked. The
+        // real owner cache preparer and NativeInlineStub.Verify inspect the genuine hook;
+        // other receipt sources/world availability are deliberately not represented.
+        private sealed class TannerReceiptOwnerFixture : IDisposable
+        {
+            private const int ImageBytes = 0x140000;
+            private const BindingFlags PrivateInstance = BindingFlags.Instance | BindingFlags.NonPublic;
+            private static readonly FieldInfo OwnerField = typeof(ProductionGoodsReceivedNativeRuntime).GetField("owner", BindingFlags.Static | BindingFlags.NonPublic);
+            private static readonly FieldInfo TannerOwnerField = typeof(ProductionGoodsReceivedNativeRuntime).GetField("tannerOwner", BindingFlags.Static | BindingFlags.NonPublic);
+            private static readonly FieldInfo TannerStateField = typeof(ProductionGoodsReceivedNativeRuntime).GetField("tannerState", BindingFlags.Static | BindingFlags.NonPublic);
+            private readonly object previousOwner, previousTannerOwner, previousTannerState;
+            private readonly ProductionGoodsReceivedNativeRuntime rootOwner;
+            private readonly bool opaqueContinuation;
+            private readonly ProductionGoodsReceivedNativeRuntime owner;
+            private readonly ProductionGoodsReceivedNativeDefinition.Site site;
+            private readonly HookHandle<X64InlineHook>[] handles;
+            private readonly HookHandle<X64InlineHook> handle;
+            private readonly int index;
+            private readonly NativeHookPublicationState publication, rootPublication;
+            private NativeHookPublicationTests.PublicationFixture publicationSnapshot;
+            private ProductionGoodsReceivedNativeCode relay;
+            private HookTransaction pending;
+            private CommitResult committed;
+            private X64InlineHook hook;
+            private X64InlineHook replacementHook;
+            private bool ownerAssigned;
+            internal IntPtr Module { get; private set; }
+            internal IntPtr Demand => Module + 0x100;
+            internal IntPtr Yield => Module + WeaponProductionNativeDefinition.TannerStoredYieldBoundaryRva;
+            internal IntPtr Entry => Module + site.Rva;
+            internal IntPtr Continuation => Entry + site.Bytes.Length;
+            internal IntPtr Stub => hook.StubAddress;
+            internal IntPtr Relay => relay.Address;
+            internal bool PublishedSource => ProductionGoodsReceivedNativeRuntime.HasPublishedTannerSource(Module);
+            internal bool ReceiptOwnerReady => publication.IsReady;
+            internal bool Compatible => WeaponProductionNativeRuntime.HasCompatibleStoredDeliveryRoute(Module, eStructs.STRUCT_TANNERS_WORKSHOP);
+            internal unsafe bool Pristine => WeaponProductionNativeDefinition.HasVanillaStoredDeliveryRoute(new ReadOnlySpan<byte>((void*)Module, ImageBytes), eStructs.STRUCT_TANNERS_WORKSHOP);
+
+            internal TannerReceiptOwnerFixture(bool opaqueContinuation = false)
+            {
+                RequireWindowsX64();
+                this.opaqueContinuation = opaqueContinuation;
+                previousOwner = OwnerField.GetValue(null);
+                previousTannerOwner = TannerOwnerField.GetValue(null);
+                previousTannerState = TannerStateField.GetValue(null);
+                Module = VirtualAlloc(IntPtr.Zero, (UIntPtr)ImageBytes, 0x3000, 0x04);
+                if (Module == IntPtr.Zero) throw new Win32Exception(Marshal.GetLastWin32Error(), "Tanner source fixture allocation failed.");
+                try
+                {
+                    var snapshot = new byte[ImageBytes];
+                    site = ProductionGoodsReceivedNativeDefinition.Sites.Single(value => value.Name == "Tanner");
+                    Array.Copy(site.Bytes, 0, snapshot, site.Rva, site.Bytes.Length);
+                    Array.Copy(site.Next, 0, snapshot, site.Rva + site.Bytes.Length, site.Next.Length);
+                    Array.Copy(WeaponProductionNativeDefinition.TannerStoredYieldBoundaryBytes, 0, snapshot,
+                        WeaponProductionNativeDefinition.TannerStoredYieldBoundaryRva, WeaponProductionNativeDefinition.TannerStoredYieldBoundaryBytes.Length);
+                    Marshal.Copy(snapshot, 0, Module, snapshot.Length);
+                    if (opaqueContinuation)
+                    {
+                        var liveBoundary = new byte[NativeInlineStub.JumpLength];
+                        liveBoundary[0] = 0xFF; liveBoundary[1] = 0x25; liveBoundary[2] = 1;
+                        Marshal.Copy(liveBoundary, 0, Module + site.Rva + site.Bytes.Length, liveBoundary.Length);
+                    }
+                    var region = ScanRegion.FromMemory(snapshot, Address(Module), "Private nonexecuted Tanner source");
+                    var contextConstructor = typeof(CrusaderLibraryLoadContext).GetConstructor(PrivateInstance, null,
+                        new[] { typeof(IntPtr), typeof(ScanRegion) }, null);
+                    Assert.IsNotNull(contextConstructor, "The installed context must support its reviewed (IntPtr, ScanRegion) construction.");
+                    var context = (CrusaderLibraryLoadContext)contextConstructor.Invoke(new object[] { Module, region });
+                    var constructor = typeof(ProductionGoodsReceivedNativeRuntime).GetConstructor(PrivateInstance, null,
+                        new[] { typeof(CrusaderLibraryLoadContext), typeof(BepInEx.Logging.ManualLogSource), typeof(bool), typeof(ProductionGoodsReceivedNativeRuntime) }, null);
+                    Assert.IsNotNull(constructor);
+                    rootOwner = (ProductionGoodsReceivedNativeRuntime)constructor.Invoke(new object[] { context, null, false, null });
+                    owner = (ProductionGoodsReceivedNativeRuntime)constructor.Invoke(new object[] { context, null, true, rootOwner });
+                    Assert.AreSame(rootOwner, Field("adapterOwner").GetValue(owner));
+                    Assert.IsNull(Field("adapter").GetValue(owner), "The Tanner owner must borrow the startup owner's shared relay.");
+                    rootPublication = (NativeHookPublicationState)Field("publication").GetValue(rootOwner);
+                    var sites = (ProductionGoodsReceivedNativeDefinition.Site[])Field("sites").GetValue(owner);
+                    index = Array.FindIndex(sites, value => value.Name == "Tanner");
+                    handles = (HookHandle<X64InlineHook>[])Field("handles").GetValue(owner);
+                    handle = handles[index] = new HookHandle<X64InlineHook>();
+                    publication = (NativeHookPublicationState)Field("publication").GetValue(owner);
+                    publicationSnapshot = new NativeHookPublicationTests.PublicationFixture(publication);
+                    relay = new ProductionGoodsReceivedNativeCode(a => ProductionGoodsReceivedNativeAssembly.Relay(a,
+                        Address(Demand), Address(Module + 0x200), Address(Module) + WeaponProductionNativeDefinition.AddGoodRva));
+                    Field("adapter").SetValue(rootOwner, relay);
+                    pending = new HookTransaction(region, null,
+                        new HookTransactionOptions { InstallOnCommit = false, FailureMode = TransactionFailureMode.RollbackAndThrow, OwnsHooks = true,
+                            Backend = new NativeDetourBackend(new NativeDetourOptions { SuspendThreadsDuringPatch = false }) },
+                        "Private Tanner receipt composition");
+                    pending.AddInline(handle, HookTarget.FromAddress(Address(Entry)),
+                        (a, original, back) => ProductionGoodsReceivedNativeAssembly.Source(a, original, back, Address(Module), Address(relay.Address)),
+                        hookSize: site.Bytes.Length, name: "Actual Tanner receipt source");
+                    committed = pending.Commit();
+                    Assert.IsTrue(committed.IsCompleteSuccess);
+                    hook = handle.Hook;
+                    Invoke("Verify", index, false);
+                    Invoke("PrepareTannerSource", index);
+                    ownerAssigned = true;
+                    OwnerField.SetValue(null, rootOwner);
+                    TannerOwnerField.SetValue(null, owner);
+                    TannerStateField.SetValue(null, Decision("TannerPending"));
+                }
+                catch { Dispose(); throw; }
+            }
+
+            internal void Publish()
+            {
+                // Only root readiness is controlled. Non-Tanner source hooks are outside
+                // this fixture; the real Tanner jump, shared relay and attestation run below.
+                rootPublication.Complete();
+                relay.Publish();
+                NativeHookPublication.Enable(pending, committed, publication, owner, () => {
+                    Invoke("Verify", index, true);
+                    Assert.AreEqual(!opaqueContinuation,
+                        (bool)typeof(ProductionGoodsReceivedNativeRuntime).GetMethod("TannerSourceMatches", PrivateInstance).Invoke(owner, null),
+                        "The complete shared relay must validate during Publishing without requiring Tanner Ready.");
+                    WithTannerDecision("TannerOwned", () => {
+                        Assert.IsFalse(PublishedSource, "Publishing is not Ready even after the source jump was written.");
+                        Assert.IsFalse(Compatible, "A partially published owner cannot replace the pristine-route guard.");
+                    });
+                });
+                Assert.IsTrue(publication.IsReady);
+                Assert.IsFalse(PublishedSource, "A Ready source cannot attest until the delayed ownership decision is complete.");
+                TannerStateField.SetValue(null, Decision("TannerOwned"));
+            }
+
+            internal void Refused()
+            { Assert.IsFalse(PublishedSource); Assert.IsFalse(Compatible); }
+
+            internal void WithOwner(object value, Action check)
+            { object previous = OwnerField.GetValue(null); try { OwnerField.SetValue(null, value); check(); } finally { OwnerField.SetValue(null, previous); } }
+            internal void WithTannerOwner(object value, Action check)
+            { object previous = TannerOwnerField.GetValue(null); try { TannerOwnerField.SetValue(null, value); check(); } finally { TannerOwnerField.SetValue(null, previous); } }
+            private static object Decision(string name) => typeof(ProductionGoodsReceivedNativeRuntime).GetField(name, BindingFlags.Static | BindingFlags.NonPublic).GetRawConstantValue();
+            internal void WithTannerDecision(string name, Action check)
+            { object previous = TannerStateField.GetValue(null); try { TannerStateField.SetValue(null, Decision(name)); check(); } finally { TannerStateField.SetValue(null, previous); } }
+            internal void WithFailedRootPublication(Action check)
+            { using (var restore = new NativeHookPublicationTests.PublicationFixture(rootPublication)) { rootPublication.Fail(new InvalidOperationException("Controlled root receipt publication failure")); check(); } }
+            internal void WithOwnerField(string name, object value, Action check)
+            { var field = Field(name); object previous = field.GetValue(owner); try { field.SetValue(owner, value); check(); } finally { field.SetValue(owner, previous); } }
+            internal void WithUnpublishedRelay(Action check)
+            {
+                var field = typeof(ProductionGoodsReceivedNativeCode).GetField("published", PrivateInstance);
+                object previous = field.GetValue(relay);
+                try { field.SetValue(relay, false); check(); } finally { field.SetValue(relay, previous); }
+            }
+            internal void WithFailedPublication(Action check)
+            { using (var restore = new NativeHookPublicationTests.PublicationFixture(publication)) { publication.Fail(new InvalidOperationException("Controlled receipt publication failure")); check(); } }
+            internal void WithChangedByte(IntPtr address, Action check)
+            {
+                byte previous = Marshal.ReadByte(address);
+                if (!VirtualProtect(address, (UIntPtr)1, 0x40, out uint protection)) throw new Win32Exception(Marshal.GetLastWin32Error());
+                try { Marshal.WriteByte(address, (byte)(previous ^ 1)); check(); }
+                finally
+                {
+                    try { Marshal.WriteByte(address, previous); }
+                    finally { if (!VirtualProtect(address, (UIntPtr)1, protection, out _)) throw new Win32Exception(Marshal.GetLastWin32Error()); }
+                }
+            }
+            internal void WithStaleAttachedHook(Action check)
+            {
+                hook.Disable();
+                try
+                {
+                    replacementHook = new X64InlineHook(Address(Entry), site.Bytes.Length, null, "Different actual Tanner hook");
+                    replacementHook.Generate((a, original, back) => ProductionGoodsReceivedNativeAssembly.Source(a, original, back, Address(Module), Address(relay.Address)));
+                    var changed = new HookHandle<X64InlineHook>();
+                    typeof(HookHandle<X64InlineHook>).GetMethod("Attach", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+                        .Invoke(changed, new object[] { replacementHook, Address(Entry) });
+                    replacementHook.Enable(); handles[index] = changed;
+                    check();
+                }
+                finally { try { replacementHook?.Dispose(); } finally { handles[index] = handle; hook.Enable(); } }
+            }
+            private static ulong Address(IntPtr pointer) => unchecked((ulong)pointer.ToInt64());
+            private static FieldInfo Field(string name) => typeof(ProductionGoodsReceivedNativeRuntime).GetField(name, PrivateInstance);
+            private void Invoke(string name, params object[] arguments) => typeof(ProductionGoodsReceivedNativeRuntime).GetMethod(name, PrivateInstance).Invoke(owner, arguments);
+
+            public void Dispose()
+            {
+                var failures = new List<Exception>();
+                Action<Action> attempt = action => { try { action(); } catch (Exception error) { failures.Add(error); } };
+                if (ownerAssigned) attempt(() => {
+                    OwnerField.SetValue(null, previousOwner);
+                    TannerOwnerField.SetValue(null, previousTannerOwner);
+                    TannerStateField.SetValue(null, previousTannerState);
+                    ownerAssigned = false;
+                });
+                attempt(() => publicationSnapshot?.Dispose());
+                attempt(() => replacementHook?.Dispose());
+                attempt(() => pending?.Dispose());
+                if (hook != null && hook.IsInstalled) attempt(hook.Dispose);
+                bool detached = (hook == null || !hook.IsInstalled) && (replacementHook == null || !replacementHook.IsInstalled);
+                if (detached)
+                {
+                    if (relay != null) attempt(() => {
+                        // No entry can reach this private helper after hook teardown.
+                        typeof(ProductionGoodsReceivedNativeCode).GetField("published", PrivateInstance).SetValue(relay, false);
+                        relay.RollbackUnpublished();
+                    });
+                    if (Module != IntPtr.Zero) attempt(() => {
+                        if (!VirtualFree(Module, UIntPtr.Zero, 0x8000)) throw new Win32Exception(Marshal.GetLastWin32Error(), "Tanner source fixture release failed.");
+                        Module = IntPtr.Zero;
+                    });
+                }
+                else failures.Add(new InvalidOperationException("Retained the private image/helper because its hook did not detach."));
+                if (failures.Count != 0) throw new AggregateException("Tanner source fixture cleanup failed.", failures);
             }
         }
 

@@ -13,12 +13,12 @@ namespace APIShared.Economy
 
         internal void Capture(out byte[] goodsData, out byte[] storesData)
         {
-            if (activePlan != null) throw new InvalidOperationException("Cannot capture an unpublished exchange.");
+            if (activePlan != null || activeCargoPlan != null) throw new InvalidOperationException("Cannot capture an unpublished exchange.");
             goodsData = ledger.Capture();
             using (var stream = new MemoryStream())
             using (var writer = new BinaryWriter(stream, new UTF8Encoding(false, true), true))
             {
-                writer.Write(StoresMagic); writer.Write(1); writer.Write(catalog.Count);
+                writer.Write(StoresMagic); writer.Write(StoresSchema); writer.Write(catalog.Count);
                 var indices = new Dictionary<CustomGoodId, int>();
                 foreach (var entry in catalog)
                 {
@@ -32,6 +32,7 @@ namespace APIShared.Economy
                     writer.Write(indices[row.Good]); writer.Write(row.Slot); writer.Write(row.GlobalId);
                     writer.Write((byte)row.Player); writer.Write((byte)row.Kind); writer.Write(row.Quantity);
                 }
+                if (StoresSchema == 2) WriteCargo(writer, indices);
                 writer.Flush();
                 if (stream.Length > MaximumSnapshotBytes) throw new InvalidOperationException("Storage allocations exceed their bounded snapshot format.");
                 storesData = stream.ToArray();
@@ -56,7 +57,9 @@ namespace APIShared.Economy
                 using (var stream = new MemoryStream(ownedStores, false))
                 using (var reader = new BinaryReader(stream, new UTF8Encoding(false, true)))
                 {
-                    Require(reader.ReadInt32() == StoresMagic && reader.ReadInt32() == 1, "Unknown storage schema.");
+                    Require(reader.ReadInt32() == StoresMagic, "Unknown storage signature.");
+                    int schema = reader.ReadInt32();
+                    Require(schema == 1 || schema == 2, "Unknown storage schema.");
                     int count = ReadCount(reader, MaximumGoods);
                     var goods = new CustomGoodId[count];
                     for (int i = 0; i < count; i++)
@@ -77,6 +80,7 @@ namespace APIShared.Economy
                             "Unknown good or changed allocation pool.");
                         rows[i] = new Row(goods[goodIndex], slot, globalId, player, kind, quantity);
                     }
+                    if (schema == 2) next.ReadCargo(reader, goods);
                     Require(stream.Position == stream.Length, "Trailing storage bytes.");
                 }
                 for (int i = 0; i < registrations.Count; i++)
@@ -96,7 +100,7 @@ namespace APIShared.Economy
         internal bool Reconcile(Func<int, NativeStorageProbe> probe, out NativeStorageState candidate, out string reason)
         {
             candidate = this; reason = string.Empty;
-            if (activePlan != null) { reason = "An exchange is prepared."; return false; }
+            if (activePlan != null || activeCargoPlan != null) { reason = "An exchange is prepared."; return false; }
             if (probe == null) { reason = "A native building probe is required."; return false; }
             Published before = published;
             if (before.Rows.Length == 0) return true;

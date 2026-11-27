@@ -76,7 +76,7 @@ namespace APIShared.Economy
 
         internal bool TryRegister(CustomGoodId good, StoragePool kind, out string reason)
         {
-            if (activePlan != null) { reason = "An exchange is prepared."; return false; }
+            if (activePlan != null || activeCargoPlan != null) { reason = "An exchange is prepared."; return false; }
             if (!ValidKind(kind) || !ValidGood(good)) { reason = "Invalid storage good or pool."; return false; }
             if (catalog.TryGetValue(good, out CatalogEntry prior))
             {
@@ -127,7 +127,7 @@ namespace APIShared.Economy
             int quantityDelta, byte[] canonicalIntent, out PreparedExchange prepared, out string reason)
         {
             prepared = null; reason = string.Empty;
-            if (activePlan != null) return Reject(GoodsTransactionStatus.InvalidRequest, "An exchange is already prepared.", out reason);
+            if (activePlan != null || activeCargoPlan != null) return Reject(GoodsTransactionStatus.InvalidRequest, "An exchange is already prepared.", out reason);
             if (!catalog.TryGetValue(good, out CatalogEntry registration) || !registration.Active)
                 return Reject(GoodsTransactionStatus.UnknownGood, "This storage good is not currently registered.", out reason);
             if (quantityDelta == 0)

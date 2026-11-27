@@ -8,8 +8,10 @@ GUID without installing hooks or reserving a capability.
 
 `Economy/Storage` owns registered virtual stock in exact native Armory/Granary
 pools: its private Content ledger, physical allocations, shared capacity cohort
-and matching archive pair share one lifetime. Consumers retain recipes, hauling,
-visuals and authorization. See [native storage](docs/NATIVE_STORAGE.md).
+and matching archive pair share one lifetime. Bounded external cargo extends that
+same world-owned state and checkpoint, with its own creation replay stream;
+consumers retain production evidence, custody, hauling, visuals and authorization.
+See [native storage and external cargo](docs/NATIVE_STORAGE.md).
 
 `Economy/WeaponProduction` retains native recipe/batch/transport ownership and can
 bind a registered custom Armory output. Its optional early delivery cohorts use a
@@ -491,6 +493,13 @@ dialog registry and retains ownership of its map/trail data.
 Versioned save data belongs to Savegames. APIShared owns the record format, the migration
 order and the load window over Script Extender `ModSaveDataAPI`; consumers own their entries,
 migration steps and when they apply loaded state. See [Save data](docs/SAVE_DATA.md).
+The registry also owns internal Prepared-origin lifetimes, original-marker reads
+and once-only enrolled capture bundles; callbacks remain outside its locks. These
+are metadata/transport prerequisites, not native-world authority or an activated
+consumer migration. The existing `PlayerViewSaveScope` writer remains the single
+native critical-save entry. Its economy save owner independently restores and
+releases selected checkpoints and distinguishes committed files from later
+protection-cleanup faults. See the [save implementation contract](docs/SAVE_DATA.md#tracked-origins-and-enrolled-captures).
 
 Native-site registration belongs to Core. Shared services remain the way to avoid
 hook conflicts; the registry supplements them as a safeguard and diagnostic for hooks

@@ -9,6 +9,23 @@ The service owns physical rows, its private ledger and matching save entries.
 Recipes, hauling, art, player authorization and command transport remain consumer
 responsibilities. Existing overlapping private capacity detours must be migrated.
 
+## External production cargo
+
+Use the existing `NativeStorageClient` cargo methods when an external producer
+needs framework-owned undelivered quantity. Register the good, verify production,
+create one owner-sequenced lot and save its creation key with the consumer's actor.
+After loading, reacquire the lot by key. Use its `Remaining` as authoritative;
+there is no second consumer cargo balance to subtract after delivery.
+
+Every call requires an SP/editor world and the caller-held engine monitor. The
+consumer proves custody, player authorization and actual arrival; a framework
+receipt does not supply that evidence. Deposit uses exact cargo/destination
+checkpoints, so retain both original snapshots for the latest in-world retry.
+All pre-load snapshots become invalid. Cargo history also adds a qualified save
+requirement, including conservative handling of unreadable passive records.
+See [the cargo workflow and compatibility contract](NATIVE_STORAGE.md#external-production-cargo) and
+[compiled helpers](../examples/ThirdPartyMod/ExternalCargoExample.cs).
+
 ## Virtual custom goods
 
 For goods outside the native `eGoods` table, use the caller-owned Content
@@ -1090,6 +1107,11 @@ is ready, and treat `NoRecord` as a new mission. Follow the
 [record-version migration policy](SAVE_DATA.md#record-version-migration-policy) when the
 format changes, and add a legacy reader when you keep an identifier that already holds data.
 See [Save data](SAVE_DATA.md) and the [compiled example](../examples/ThirdPartyMod/SaveDataExample.cs).
+Keeping an identifier and adding a legacy reader only decodes that record; it
+does not atomically transfer stock, cargo or authority to another service. The
+[internal provenance/capture protocol](SAVE_DATA.md#tracked-origins-and-enrolled-captures)
+does not expose consumer enrollment. Continue applying ordinary loaded state at
+its supported lifecycle boundary; do not add a competing native save hook.
 
 ## Workshop package cleanup
 

@@ -88,7 +88,7 @@ namespace APIShared.Economy
                 if (!GoodsWalletNative.Instance.IsReady) throw new InvalidOperationException("The checked native wallet is unavailable.");
                 NativeStorageState.WarmPublication();
                 if (!NativeStorageNativeRuntime.EnsureInstalled(out reason)) throw new InvalidOperationException(reason);
-                var archive = new VersionedSaveDataRegistration(APISharedPlugin.PluginGuid, "APIShared.NativeStorage.v1", 1, 1,
+                var archive = new VersionedSaveDataRegistration(APISharedPlugin.PluginGuid, "APIShared.NativeStorage.v1", 2, 1,
                     new[] { "ledger", "stores" }, Capture, Loaded)
                 { Scope = VersionedSaveScope.SaveGamesAndMaps, SimulationRelevant = true, Prepared = Prepare };
                 if (!VersionedSaveData.TryRegister(archive, out saveHandle, out reason)) throw new InvalidOperationException(reason);
@@ -138,7 +138,7 @@ namespace APIShared.Economy
                 current.Mission == (MissionLifecycleService.ActiveContext?.SessionId ?? 0))
             {
                 var empty = CreateEmpty();
-                staged = empty; stagedSession = current.Mission; blocked = false; failure = null;
+                staged = empty; stagedSession = current.Mission; blocked = false; failure = null; passiveCargoRecord = false;
                 Volatile.Write(ref boundWorld, null);
             }
             if (blocked) { reason = failure ?? "The native-storage record is blocked."; return false; }
@@ -260,6 +260,8 @@ namespace APIShared.Economy
                 if (GoodsWalletNative.Instance.HasAuthorityContext && !Reconcile(out _)) return false;
                 state.Capture(out byte[] ledger, out byte[] stores);
                 if (!ReferenceEquals(world, MissionLifecycleService.NativeWorld) || blocked) return false;
+                // Cargo history requires reader 2; untouched worlds retain byte-identical v1 envelopes.
+                writer.UseVersion(state.StoresSchema, state.StoresSchema);
                 writer.Write("ledger", ledger); writer.Write("stores", stores); return true;
             }
         }
@@ -272,15 +274,14 @@ namespace APIShared.Economy
                 stagedSession = MissionLifecycleService.ActiveContext?.SessionId ?? 0;
                 Volatile.Write(ref boundWorld, null);
                 NativeStorageNativeRuntime.UpdateDemand(true);
-                if (load.Status == VersionedSaveLoadStatus.NoRecord || load.Status == VersionedSaveLoadStatus.OutOfScope)
+                var prepared = new NativeStoragePreparedLoad();
+                try { prepared.Prepare(definitions, load); }
+                finally
                 {
-                    staged = CreateEmpty(); return;
+                    staged = prepared.State;
+                    passiveCargoRecord = prepared.MayContainCargo;
+                    if (prepared.Blocked) Block(prepared.Reason);
                 }
-                if (load.Status != VersionedSaveLoadStatus.Restored) { Block("The native-storage save record cannot be read."); return; }
-                if (!load.Entries.TryGetValue("ledger", out byte[] ledger) || !load.Entries.TryGetValue("stores", out byte[] stores) ||
-                    !NativeStorageState.TryRestore(definitions, ledger, stores, out NativeStorageState next, out string reason))
-                { Block("Invalid native-storage ledger/allocation pair."); throw new InvalidDataException(failure); }
-                staged = next;
             }
         }
 

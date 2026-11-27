@@ -119,8 +119,12 @@ Custom acceptance bypasses native template stock, weapons-produced counters,
 weapon achievements, the native stock cue and the template AddGood event chain.
 Those would describe an item which was not delivered. Native recipes retain their
 complete original delivery and accounting behavior. A custom Tanner requires the
-original qualified route; if ImprovedHunters changes that route, only the new
-stored-output Tanner capability is unavailable. Legacy Tanner recipes remain
+original yield and either its original storage route or the exact published
+APIShared production-receipt relay. This internal composition observes deliveries
+without adding another hook; disabled receipt demand keeps the original path.
+Changed or foreign relay bytes refuse the capability. If ImprovedHunters changes
+the yield or route, only the new stored-output Tanner capability is unavailable.
+Legacy Tanner recipes remain
 available under their existing compatibility rules.
 
 Stored-output workshops currently support confirmed offline and editor worlds.

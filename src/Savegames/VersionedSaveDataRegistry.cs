@@ -27,7 +27,7 @@ namespace APIShared.Savegames
     // window belong to the load. Kept and unknown entries belong to one mission: they are dropped at
     // the next load and at an unload outside a load, as the Extender drops its archive
     // (GameMapArchiveManagerAPI.cs:105-111).
-    internal sealed class VersionedSaveDataRegistry
+    internal sealed partial class VersionedSaveDataRegistry
     {
         internal delegate bool Transport(string identifier, Func<VersionedSaveContext, byte[]> save, Action<byte[]> load);
 
@@ -229,29 +229,52 @@ namespace APIShared.Savegames
                     bytes = slot.Pending;
                 }
                 Outcome outcome = Read(slot, bytes, source, file);
+                // Only explicitly tracked sources allocate/hash origin metadata. Read's
+                // legacy/migration callbacks already own copies, so bytes stays original.
+                var origin = slot.PreparedSource == null ? null : new VersionedSavePreparedOrigin(
+                    slot.PreparedSource, currentGeneration, outcome.Load.Status, source, bytes);
                 lock (sync)
                 {
                     if (!windowOpen || generation != currentGeneration) return;
-                    slot.PreparedOutcome = outcome;
+                    slot.PreparedOutcome = outcome; slot.PreparedOrigin = origin;
                 }
-                // Each callback owns its byte arrays. The early consumer may retain or modify
-                // its copy without mutating the cached migration result delivered in Post.
-                try { slot.Prepared(CopyLoad(outcome.Load)); }
+                // Preserve the old independent receiver/Post bytes and callback timing.
+                // The exact receiver is bound only for this synchronous callback.
+                bool completed = false;
+                try
+                {
+                    var receiver = CopyLoad(outcome.Load, origin);
+                    lock (sync)
+                        if (windowOpen && generation == currentGeneration && ReferenceEquals(slot.PreparedOrigin, origin))
+                            origin?.Activate(receiver);
+                    using (new PreparedDispatchScope(origin)) slot.Prepared(receiver);
+                    completed = true;
+                }
                 catch (Exception ex)
                 {
                     Fail("Versioned save data prepared callback failed for " + slot.Identifier + ": " + ex);
                     lock (sync)
                         if (generation == currentGeneration) slot.PreparedFailed = true;
                 }
+                finally
+                {
+                    if (origin != null)
+                        lock (sync)
+                        {
+                            if (windowOpen && generation == currentGeneration && ReferenceEquals(slot.PreparedOrigin, origin))
+                                origin.Finish(completed);
+                            else origin.Invalidate();
+                        }
+                }
             }
         }
 
-        private static VersionedSaveLoad CopyLoad(VersionedSaveLoad load)
+        private static VersionedSaveLoad CopyLoad(VersionedSaveLoad load, VersionedSavePreparedOrigin origin = null)
         {
             var entries = new Dictionary<string, byte[]>(StringComparer.Ordinal);
             foreach (var entry in load.Entries) entries.Add(entry.Key, (byte[])entry.Value.Clone());
             return new VersionedSaveLoad(load.Status, load.Source, load.FilePath, load.RecordVersion,
-                load.MinimumReaderVersion, entries, load.KeptEntryCount, load.Detail);
+                load.MinimumReaderVersion, entries, load.KeptEntryCount, load.Detail, origin);
         }
 
         internal void EndLoad()
@@ -295,10 +318,12 @@ namespace APIShared.Savegames
                     outcome.Load.Status != VersionedSaveLoadStatus.OutOfScope)
                     Warn("Versioned save data " + slot.Identifier + ": " + outcome.Load.Status + " (" + outcome.Load.Detail + ")" +
                         (outcome.Keep ? "; later saves keep the loaded bytes unchanged." : "; the next save replaces it."));
-                try { slot.Loaded(outcome.Load); }
+                try { using (new PreparedDispatchScope(null)) slot.Loaded(outcome.Load); }
                 catch (Exception ex)
                 {
                     Fail("Versioned save data load callback failed for " + slot.Identifier + ": " + ex);
+                    lock (sync)
+                        if (generation == loadGeneration) slot.PreparedOrigin?.Invalidate();
                     if (outcome.Load.Status != VersionedSaveLoadStatus.Restored) continue;
                     lock (sync)
                     {
@@ -324,7 +349,7 @@ namespace APIShared.Savegames
                 if (slot.Legacy == null) return Kept(VersionedSaveLoadStatus.Unrecognized, source, file, data, 0, 0, "No legacy reader for unversioned data.");
                 entries = new VersionedSaveEntries();
                 bool accepted;
-                try { accepted = slot.Legacy((byte[])data.Clone(), entries, out version); }
+                try { using (new PreparedDispatchScope(null)) accepted = slot.Legacy((byte[])data.Clone(), entries, out version); }
                 catch (Exception ex)
                 {
                     Fail("Versioned save data legacy reader failed for " + slot.Identifier + ": " + ex);
@@ -351,7 +376,7 @@ namespace APIShared.Savegames
             {
                 VersionedSaveMigration step = slot.Migrations[from];
                 if (step == null) continue;
-                try { step(entries); }
+                try { using (new PreparedDispatchScope(null)) step(entries); }
                 catch (Exception ex)
                 {
                     Fail("Versioned save data migration " + from + " -> " + (from + 1) + " failed for " + slot.Identifier + ": " + ex);
@@ -395,13 +420,15 @@ namespace APIShared.Savegames
             }
             if (slot.RequireAtomicWrite && !freezing)
             {
-                AtomicSnapshot frozen = atomicSnapshot;
-                if (frozen == null || !ReferenceEquals(frozen.Owner, this) || !frozen.Records.TryGetValue(slot.Identifier, out byte[] frozenBytes))
+                AtomicSnapshot atomic = atomicSnapshot;
+                if (atomic == null || !ReferenceEquals(atomic.Owner, this) || !atomic.Records.TryGetValue(slot.Identifier, out byte[] frozenBytes))
                     throw new InvalidOperationException("Required record bypassed the protected atomic writer: " + slot.Identifier);
-                frozen.Delivered.Add(slot.Identifier);
+                atomic.Delivered.Add(slot.Identifier);
                 return (byte[])frozenBytes.Clone();
             }
             byte[] loaded;
+            VersionedSaveCriticalCapture frozen;
+            bool trackedCapture;
             bool keep;
             List<KeyValuePair<string, byte[]>> unknown;
             lock (sync)
@@ -410,26 +437,49 @@ namespace APIShared.Savegames
                 loaded = windowOpen ? slot.Pending : slot.LoadedBytes;
                 keep = windowOpen || slot.KeepLoaded;
                 unknown = slot.Unknown;
+                frozen = slot.CriticalCapture;
+                trackedCapture = frozen == null && !keep && slot.CriticalSource != null;
+                if (trackedCapture) slot.ActiveCriticalSourceCaptures++;
             }
+            if (frozen != null) return ServeCriticalRecord(slot, context, frozen);
             if (keep)
             {
                 slot.Handle.SetLastWrite(loaded != null ? VersionedSaveWriteStatus.KeptLoadedRecord : VersionedSaveWriteStatus.NotWritten);
                 return loaded == null ? null : (byte[])loaded.Clone();
             }
+            try
+            {
+                byte[] result = CaptureRecord(slot, context, unknown, slot.CriticalSource?.ReservedEntry, null, 0, out VersionedSaveWriteStatus status);
+                slot.Handle.SetLastWrite(status);
+                return result;
+            }
+            finally
+            {
+                if (trackedCapture) lock (sync) slot.ActiveCriticalSourceCaptures--;
+            }
+        }
+
+        // One encoder/callback path serves ordinary saves and explicit preparation.
+        // Status is returned to the caller: preparing frozen bytes cannot mark Written.
+        private byte[] CaptureRecord(Slot slot, VersionedSaveContext context,
+            List<KeyValuePair<string, byte[]>> unknown, string reservedEntry, byte[] reservedMarker,
+            int cutoverMinimumReader, out VersionedSaveWriteStatus status)
+        {
+            status = VersionedSaveWriteStatus.CaptureFailed;
             var writer = new VersionedSaveWriter(slot.Known, context.IsSaveFile, context.IsMapEditorSave, context.FilePath,
-                slot.Current, slot.MinimumReader);
+                slot.Current, slot.MinimumReader, reservedEntry);
             bool write;
-            try { write = slot.Capture(writer); }
+            try { using (new PreparedDispatchScope(null)) write = slot.Capture(writer); }
             catch (Exception ex)
             {
                 Fail("Versioned save data capture failed for " + slot.Identifier + ": " + ex);
-                slot.Handle.SetLastWrite(VersionedSaveWriteStatus.CaptureFailed);
+                status = VersionedSaveWriteStatus.CaptureFailed;
                 return null;
             }
             finally { writer.Close(); }
             if (!write)
             {
-                slot.Handle.SetLastWrite(VersionedSaveWriteStatus.NotWritten);
+                status = VersionedSaveWriteStatus.NotWritten;
                 return null;
             }
             if (writer.RecordVersion < slot.Current)
@@ -442,22 +492,29 @@ namespace APIShared.Savegames
                 if (hasUnknown)
                 {
                     Fail("Versioned save data capture cannot select an older schema while retaining unknown entries for " + slot.Identifier + ".");
-                    slot.Handle.SetLastWrite(VersionedSaveWriteStatus.CaptureFailed);
+                    status = VersionedSaveWriteStatus.CaptureFailed;
                     return null;
                 }
             }
+            if (cutoverMinimumReader > writer.RecordVersion)
+            {
+                Fail("An enrolled consumer selected a record version below its cutover reader for " + slot.Identifier + ".");
+                status = VersionedSaveWriteStatus.CaptureFailed;
+                return null;
+            }
             SortedDictionary<string, byte[]> record = writer.Written;
+            if (reservedMarker != null) record.Add(reservedEntry, (byte[])reservedMarker.Clone());
             if (unknown != null)
                 foreach (KeyValuePair<string, byte[]> entry in unknown) record[entry.Key] = entry.Value; // Never a known name.
-            byte[] bytes = VersionedSaveRecordCodec.Encode(writer.RecordVersion, writer.MinimumReaderVersion, record);
+            byte[] bytes = VersionedSaveRecordCodec.Encode(writer.RecordVersion, Math.Max(writer.MinimumReaderVersion, cutoverMinimumReader), record);
             if (bytes == null)
             {
                 Error("Versioned save data " + slot.Identifier + " exceeds " + VersionedSaveRecordCodec.MaximumEntries +
                     " entries or " + VersionedSaveRecordCodec.MaximumRecordBytes + " bytes with " + record.Count + " entries; not written.");
-                slot.Handle.SetLastWrite(VersionedSaveWriteStatus.TooLarge);
+                status = VersionedSaveWriteStatus.TooLarge;
                 return null;
             }
-            slot.Handle.SetLastWrite(VersionedSaveWriteStatus.Written);
+            status = VersionedSaveWriteStatus.Written;
             return bytes;
         }
 
@@ -526,12 +583,23 @@ namespace APIShared.Savegames
             internal byte[] Pending;
             internal Outcome PreparedOutcome;
             internal bool PreparedFailed;
+            internal VersionedSavePreparedSource PreparedSource;
+            internal VersionedSavePreparedOrigin PreparedOrigin;
+            internal VersionedSaveCriticalSource CriticalSource;
+            internal VersionedSaveCriticalCapture CriticalCapture;
+            internal int ActiveCriticalSourceCaptures;
             internal byte[] LoadedBytes;
             internal bool KeepLoaded;
             internal List<KeyValuePair<string, byte[]>> Unknown;
 
             internal void ResetMission()
             {
+                PreparedOrigin?.Invalidate(); PreparedOrigin = null;
+                if (CriticalCapture != null)
+                {
+                    CriticalCapture.Failed = true;
+                    if (string.IsNullOrEmpty(CriticalCapture.Failure)) CriticalCapture.Failure = "A load or unload invalidated the frozen source generation.";
+                }
                 PreparedOutcome = null;
                 PreparedFailed = false;
                 LoadedBytes = null;
