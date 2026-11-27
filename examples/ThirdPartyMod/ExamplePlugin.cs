@@ -31,6 +31,7 @@ namespace ThirdPartyMod
             BuildingTooltipExample.Register(Log);
             TooltipExample.Register(Guid, context => "Example information", context => null, Log);
             SaveDataExample.Register(Guid, Log);
+            PaintExample.Register(Guid, (int)Enums.GM.GM_BODY_PIKEMAN, Log);
             // Also opts this page into the explicit search catalog and local result navigation.
             APIShared.ModSettings.LobbyModSettingsPresetRegistration.Register(
                 this, log, "APIShared Example", Settings, "ScriptExtenderUI/APISharedExample.xaml");
@@ -54,6 +55,7 @@ namespace ThirdPartyMod
                 {
                     PathfindingReplacementExample.Inspect(Log);
                     NativeSiteExample.Inspect(Log);
+                    UnitIdentityExample.Register(client, Log);
                     if (client.TryGetUnitHudPresentation(out var hud, out var diagnostic))
                         HudExample.Register(hud, Log);
                     else Log(diagnostic.Reason);

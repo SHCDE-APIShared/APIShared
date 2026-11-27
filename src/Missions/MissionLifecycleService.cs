@@ -40,6 +40,7 @@ namespace APIShared
         private readonly ManualLogSource log;
         private readonly int unityThread;
         private readonly MissionLifecycleState state;
+        private readonly MissionExecutionSession executionSession = new MissionExecutionSession();
         private readonly List<Hook> hooks = new List<Hook>();
         private readonly List<IDisposable> subscriptions = new List<IDisposable>();
         private Operation executing;
@@ -54,6 +55,19 @@ namespace APIShared
         // observer sees it regardless of observer order.
         internal static bool HasStartedMission => published?.state.Current != null;
         internal static MissionContext ActiveContext => published?.state.Context;
+        // Capture only while this caller is synchronously executing a tracked mission attempt.
+        // Pending context is installed before replacement End observers run, even before op.Id
+        // receives Begin's return value. A ready/outside context never lends its identity to a load.
+        internal static long ExecutingSessionId
+        {
+            get
+            {
+                var service = published;
+                if (service == null) return 0;
+                var operation = service.executing;
+                return service.executionSession.Read(service.state, operation != null, operation?.Id ?? 0);
+            }
+        }
         internal static MissionLifecycleState.NativeClockState NativeClock => published?.state.NativeClock;
         // Identity of the currently loaded native world; null between invalidation and the next successful load.
         internal static MissionLifecycleState.NativeWorldState NativeWorld => NativeClock?.World;
@@ -255,7 +269,7 @@ namespace APIShared
             multiplayerSave = Hook<MultiplayerSave>(typeof(Platform_Multiplayer), nameof(Platform_Multiplayer.StartSave), (self, setup, map) =>
             {
                 SavegameModSettings.BeginLoad(map?.filePath, true);
-                var operation = new Operation { Kind = MissionStartKind.LoadedSave, Intent = GameModeKind.Unknown, Multiplayer = true };
+                var operation = new Operation { Kind = MissionStartKind.LoadedSave, Intent = GameModeKind.Unknown, Multiplayer = true, File = map?.filePath };
                 Run(operation, () =>
                 {
                     var receipt = ScriptExtenderFixes.LobbyStartPacketRuntime.BeginNativeStart(self, operation.Id);
@@ -434,58 +448,63 @@ namespace APIShared
         private T Run<T>(Operation op, Func<T> original)
         {
             if (executing != null) return original(); // Nested custom-trail -> skirmish belongs to the outer attempt.
-            executing = op;
-            completedMap = null;
-            completedMapSession = 0;
-            if (waiting?.Kind == MissionStartKind.LoadedSave && op.Kind != MissionStartKind.LoadedSave)
-                SavegameModSettings.FinishLoad();
-            waiting = null;
-            bool normal = false;
-            GameModeHelper.BeginModeDecisions();
-            op.SimulationAttempt = Multiplayer.SimulationAgreement.PrepareAttempt(op.RestartedFrom);
-            Safe(() => op.Id = state.Begin(Capture(op)));
+            var previousExecution = executionSession.Enter(state);
             try
             {
-                if (op.Kind == MissionStartKind.LoadedSave) SavegameModSettings.ApplyBeforeLoad(op.Multiplayer);
-                T result = InvokeNativeAdmission(original, out normal);
-                if (!normal) op.NativeFailed = true;
-                return result;
-            }
-            finally
-            {
-                executing = null;
-                if (op.NativeFailed || !normal)
-                    Multiplayer.SimulationAgreement.Retire(op.Id);
-                Safe(CoopAiStartImportService.NotifyAttemptFinished);
-                if (op.Kind == MissionStartKind.LoadedSave && normal && op.NativeSucceeded &&
-                    !op.NativeFailed && op.ManagedSucceeded)
-                {
-                    try { SavegameModSettings.ApplyLoadedSettings(Capture(op)); }
-                    catch (Exception error) { SavegameModSettings.ReportRestoreFailure(error); }
-                }
-                Safe(() =>
-                {
-                    var context = Capture(op);
-                    if (normal && op.NativeSucceeded && !op.NativeFailed && op.ManagedSucceeded)
-                        PublishCompletedMap(op, context);
-                    if (state.Finish(op.Id, context, normal, op.NativeSucceeded && !op.NativeFailed,
-                        op.ManagedSucceeded, op.Multiplayer && context.IsHost == false)) waiting = op;
-                });
-                if (op.Kind == MissionStartKind.LoadedSave && waiting == null)
+                executing = op;
+                completedMap = null;
+                completedMapSession = 0;
+                if (waiting?.Kind == MissionStartKind.LoadedSave && op.Kind != MissionStartKind.LoadedSave)
                     SavegameModSettings.FinishLoad();
-                if (op.Kind == MissionStartKind.NewGame && op.Multiplayer && waiting == null && !op.DirectMultiplayerRestart)
-                    MapRecordLoadCoordinator.FinishLoad();
-                if (op.MapAliasFailure != null && !op.Multiplayer)
+                waiting = null;
+                bool normal = false;
+                GameModeHelper.BeginModeDecisions();
+                op.SimulationAttempt = Multiplayer.SimulationAgreement.PrepareAttempt(op.RestartedFrom);
+                Safe(() => op.Id = state.Begin(Capture(op)));
+                try
                 {
+                    if (op.Kind == MissionStartKind.LoadedSave) SavegameModSettings.ApplyBeforeLoad(op.Multiplayer);
+                    T result = InvokeNativeAdmission(original, out normal);
+                    if (!normal) op.NativeFailed = true;
+                    return result;
+                }
+                finally
+                {
+                    executing = null;
+                    if (op.NativeFailed || !normal)
+                        Multiplayer.SimulationAgreement.Retire(op.Id);
+                    Safe(CoopAiStartImportService.NotifyAttemptFinished);
+                    if (op.Kind == MissionStartKind.LoadedSave && normal && op.NativeSucceeded &&
+                        !op.NativeFailed && op.ManagedSucceeded)
+                    {
+                        try { SavegameModSettings.ApplyLoadedSettings(Capture(op)); }
+                        catch (Exception error) { SavegameModSettings.ReportRestoreFailure(error); }
+                    }
                     Safe(() =>
                     {
-                        if (!MainViewModel.viewModelLoaded) return;
-                        MainViewModel.Instance.Show_BlackOut = false;
-                        MainViewModel.Instance.InitNewScene(Enums.SceneIDS.FrontEnd);
+                        var context = Capture(op);
+                        if (normal && op.NativeSucceeded && !op.NativeFailed && op.ManagedSucceeded)
+                            PublishCompletedMap(op, context);
+                        if (state.Finish(op.Id, context, normal, op.NativeSucceeded && !op.NativeFailed,
+                            op.ManagedSucceeded, op.Multiplayer && context.IsHost == false)) waiting = op;
                     });
-                    ReportLocalMapRejection(log, op.MapAliasFailure);
+                    if (op.Kind == MissionStartKind.LoadedSave && waiting == null)
+                        SavegameModSettings.FinishLoad();
+                    if (op.Kind == MissionStartKind.NewGame && op.Multiplayer && waiting == null && !op.DirectMultiplayerRestart)
+                        MapRecordLoadCoordinator.FinishLoad();
+                    if (op.MapAliasFailure != null && !op.Multiplayer)
+                    {
+                        Safe(() =>
+                        {
+                            if (!MainViewModel.viewModelLoaded) return;
+                            MainViewModel.Instance.Show_BlackOut = false;
+                            MainViewModel.Instance.InitNewScene(Enums.SceneIDS.FrontEnd);
+                        });
+                        ReportLocalMapRejection(log, op.MapAliasFailure);
+                    }
                 }
             }
+            finally { executionSession.Restore(previousExecution); }
         }
 
         private bool ProcessMessage(Platform_Multiplayer self, Platform_Multiplayer.MPData data,
@@ -499,23 +518,28 @@ namespace APIShared
                 MapRecordLoadCoordinator.FinishLoad();
             }
             if (thread || op == null || !state.IsPending(op.Id) || executing != null) return message(self, data, member, thread);
-            executing = op;
-            bool normal = false;
-            try { bool result = message(self, data, member, thread); normal = true; return result; }
-            finally
+            var previousExecution = executionSession.Enter(state);
+            try
             {
-                executing = null;
-                if (!normal)
+                executing = op;
+                bool normal = false;
+                try { bool result = message(self, data, member, thread); normal = true; return result; }
+                finally
                 {
-                    waiting = null;
-                    FailDeferredMessage(op);
-                }
-                else if (op.ManagedSucceeded)
-                {
-                    waiting = null;
-                    CompleteDeferredMessage(op);
+                    executing = null;
+                    if (!normal)
+                    {
+                        waiting = null;
+                        FailDeferredMessage(op);
+                    }
+                    else if (op.ManagedSucceeded)
+                    {
+                        waiting = null;
+                        CompleteDeferredMessage(op);
+                    }
                 }
             }
+            finally { executionSession.Restore(previousExecution); }
         }
 
         // Runs for every multiplayer message: the lambdas capturing op live in these slow-path
@@ -600,6 +624,8 @@ namespace APIShared
                 Report(new InvalidOperationException(simulationRejection));
                 throw new NativeAdmissionAbort(simulationRejection);
             }
+            if (op?.Kind == MissionStartKind.LoadedSave && !op.Multiplayer)
+                Safe(() => Economy.AutoTrade.PrepareLegacy(op.Id, op.File));
             long nativeGeneration = Units.AiMilitary.AiMilitaryService.Instance.Generation;
             EngineInterface.LoadMapReturnData result;
             bool returned = false;
@@ -634,6 +660,8 @@ namespace APIShared
                     }
                     if (result.errorCode == 1)
                         Safe(() => Units.AiMilitary.AiMilitaryService.Instance.CompleteNativeLoad());
+                    if (result.errorCode == 1 && op != null && !op.NativeFailed && state.IsPending(op.Id))
+                        Economy.AutoTrade.CompleteNativeLoad(op.Id, op.Kind, op.File, op.Multiplayer);
                 }
             }
             finally { if (!returned) Safe(() => { if (op != null) state.CompleteNativeLoad(op.Id, false); }); }
@@ -644,7 +672,13 @@ namespace APIShared
                 op.NativeSucceeded = result.errorCode == 1;
                 state.CompleteNativeLoad(op.Id, op.NativeSucceeded && !op.NativeFailed);
                 if (op.NativeSucceeded && !op.NativeFailed)
+                {
+                    // Isolate the call itself: even an optional observer's type initializer must
+                    // not suppress the existing NativeLoaded checkpoint or alter native admission.
+                    try { Economy.WeaponProductionRuntime.BindWorkerObservationWorld(op.Id, state.NativeClock?.World); }
+                    catch (Exception error) { Report(error); }
                     state.Checkpoint(op.Id, Capture(op), MissionInitializationPhase.NativeLoaded);
+                }
             });
             return result;
         }

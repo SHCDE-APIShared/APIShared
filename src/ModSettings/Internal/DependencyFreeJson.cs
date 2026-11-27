@@ -9,7 +9,13 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text;
 
+// Content links this codec but remains a separate assembly. Its internal namespace is
+// distinct so the trusted runtime friend grant cannot make two parser identities ambiguous.
+#if API_SHARED_CONTENT
+namespace APIShared.ContentInternal
+#else
 namespace APIShared.Internal
+#endif
 {
     // Shared JSON codec for Unity runtime projects that cannot safely load serializer assemblies.
     internal static class DependencyFreeJson
@@ -22,6 +28,11 @@ namespace APIShared.Internal
 
         public static object Parse(string json, bool allowTrailingCommas = false) =>
             new Parser(json ?? string.Empty, allowTrailingCommas).Parse();
+
+        // For manifests already accepted by another reader. Unrelated values only need
+        // lexical traversal and may use numbers or duplicate keys outside our DOM contract.
+        internal static bool TryReadTopLevelProperty(string json, string name, out object value) =>
+            new Parser(json, false).TryReadTopLevelProperty(name, out value);
 
         public static string Serialize(object value)
         {
@@ -373,7 +384,33 @@ namespace APIShared.Internal
                 return value;
             }
 
-            private object ParseValue(int depth)
+            internal bool TryReadTopLevelProperty(string name, out object value)
+            {
+                value = null;
+                bool found = false;
+                SkipWhitespace();
+                if (!Consume('{')) Fail("Expected an object");
+                SkipWhitespace();
+                if (!Consume('}'))
+                {
+                    while (true)
+                    {
+                        string key = ParsePropertyName();
+                        bool match = string.Equals(key, name, StringComparison.Ordinal);
+                        if (match && found) Fail("Duplicate object property [" + name + "]");
+                        object next = ParseValue(1, skip: !match);
+                        if (match) { found = true; value = next; }
+                        SkipWhitespace();
+                        if (Consume('}')) break;
+                        if (!Consume(',')) Fail("Expected ',' or '}' in object");
+                    }
+                }
+                SkipWhitespace();
+                if (position != json.Length) Fail("Unexpected trailing content");
+                return found;
+            }
+
+            private object ParseValue(int depth, bool skip = false)
             {
                 if (depth > MaximumDepth)
                     Fail("JSON exceeds the maximum depth of " + MaximumDepth);
@@ -381,31 +418,38 @@ namespace APIShared.Internal
                 if (position >= json.Length) Fail("Unexpected end of JSON");
                 switch (json[position])
                 {
-                    case '{': return ParseDictionary(depth);
-                    case '[': return ParseArray(depth);
+                    case '{': return ParseDictionary(depth, skip);
+                    case '[': return ParseArray(depth, skip);
                     case '"': return ParseString();
                     case 't': ReadLiteral("true"); return true;
                     case 'f': ReadLiteral("false"); return false;
                     case 'n': ReadLiteral("null"); return null;
-                    default: return ParseNumber();
+                    default: return ParseNumber(skip);
                 }
             }
 
-            private Dictionary<string, object> ParseDictionary(int depth)
+            private string ParsePropertyName()
+            {
+                SkipWhitespace();
+                if (position >= json.Length || json[position] != '"') Fail("Expected an object property name");
+                string key = ParseString();
+                SkipWhitespace();
+                if (!Consume(':')) Fail("Expected ':' after an object property name");
+                return key;
+            }
+
+            private Dictionary<string, object> ParseDictionary(int depth, bool skip)
             {
                 position++;
-                var result = new Dictionary<string, object>(StringComparer.Ordinal);
+                var result = skip ? null : new Dictionary<string, object>(StringComparer.Ordinal);
                 SkipWhitespace();
                 if (Consume('}')) return result;
                 while (true)
                 {
-                    SkipWhitespace();
-                    if (position >= json.Length || json[position] != '"') Fail("Expected an object property name");
-                    string key = ParseString();
-                    SkipWhitespace();
-                    if (!Consume(':')) Fail("Expected ':' after an object property name");
-                    if (result.ContainsKey(key)) Fail("Duplicate object property [" + key + "]");
-                    result[key] = ParseValue(depth + 1);
+                    string key = ParsePropertyName();
+                    if (!skip && result.ContainsKey(key)) Fail("Duplicate object property [" + key + "]");
+                    object value = ParseValue(depth + 1, skip);
+                    if (!skip) result[key] = value;
                     SkipWhitespace();
                     if (Consume('}')) return result;
                     if (!Consume(',')) Fail("Expected ',' or '}' in object");
@@ -414,15 +458,16 @@ namespace APIShared.Internal
                 }
             }
 
-            private List<object> ParseArray(int depth)
+            private List<object> ParseArray(int depth, bool skip)
             {
                 position++;
-                var result = new List<object>();
+                var result = skip ? null : new List<object>();
                 SkipWhitespace();
                 if (Consume(']')) return result;
                 while (true)
                 {
-                    result.Add(ParseValue(depth + 1));
+                    object value = ParseValue(depth + 1, skip);
+                    if (!skip) result.Add(value);
                     SkipWhitespace();
                     if (Consume(']')) return result;
                     if (!Consume(',')) Fail("Expected ',' or ']' in array");
@@ -474,7 +519,7 @@ namespace APIShared.Internal
                 return (char)value;
             }
 
-            private object ParseNumber()
+            private object ParseNumber(bool skip)
             {
                 int start = position;
                 if (Consume('-') && position >= json.Length) Fail("Incomplete number");
@@ -502,6 +547,7 @@ namespace APIShared.Internal
                     if (position >= json.Length || !char.IsDigit(json[position])) Fail("Invalid number exponent");
                     while (position < json.Length && char.IsDigit(json[position])) position++;
                 }
+                if (skip) return null;
                 string token = json.Substring(start, position - start);
                 if (fractional)
                 {

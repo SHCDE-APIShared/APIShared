@@ -9,6 +9,9 @@
     <DefineConstants>$(DefineConstants);API_SHARED_PRESET_TESTS</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
+    <!-- Align the test dependency graph with the installed Extender dependencies;
+         MSTest's older transitive Tasks.Extensions cannot satisfy their identity. -->
+    <PackageReference Include="System.Threading.Tasks.Extensions" />
     <Reference Include="ICSharpCode.SharpZipLib"><HintPath>$(ExtenderDir)\ICSharpCode.SharpZipLib.dll</HintPath><Private>true</Private></Reference>
     <Reference Include="Iced"><HintPath>$(ExtenderDir)\Iced.dll</HintPath><Private>true</Private></Reference>
     <Reference Include="BepInEx"><HintPath>$(GameDir)\BepInEx\core\BepInEx.dll</HintPath><Private>true</Private></Reference>
@@ -33,7 +36,7 @@
     <Reference Include="RedBird.Core"><HintPath>$(ExtenderDir)\RedBird.Core.dll</HintPath><Private>true</Private></Reference>
     <Reference Include="RedBird.X64"><HintPath>$(ExtenderDir)\RedBird.X64.dll</HintPath><Private>true</Private></Reference>
     <ProjectReference Include="..\..\APIShared.csproj" />
-    <Reference Include="APIShared.Content"><HintPath>..\..\Content\bin\$(Configuration)\netstandard2.0\APIShared.Content.dll</HintPath><Private>true</Private></Reference>
+    <Reference Include="APIShared.Content"><HintPath Condition="'$(APISharedArtifactsRoot)' == ''">..\..\Content\bin\$(Configuration)\netstandard2.0\APIShared.Content.dll</HintPath><HintPath Condition="'$(APISharedArtifactsRoot)' != ''">$(_APISharedArtifactsRoot)bin\APIShared.Content\$(Configuration)\netstandard2.0\APIShared.Content.dll</HintPath><Private>true</Private></Reference>
     <Compile Include="..\ApiBaseline\ApiSignatures.cs" Link="ApiBaseline\ApiSignatures.cs" />
   </ItemGroup>
 </Project>

@@ -2,6 +2,10 @@
 
 **Contents**
 
+- [Native goods wallet](#native-goods-wallet)
+- [Vanilla AutoTrade option](#vanilla-autotrade-option)
+- [Native pooled storage](#native-pooled-storage)
+- [Stored workshop delivery](#stored-workshop-delivery)
 - [Shared health initialization](#shared-health-initialization)
 - [Authenticated Chore context and submission](#authenticated-chore-context-and-submission)
 - [Spectator input control boundaries](#spectator-input-control-boundaries)
@@ -27,6 +31,276 @@
 - [Hunter native sites](#hunter-native-sites)
 - [Hunter owner gates](#hunter-owner-gates)
 - [Line of sight](#line-of-sight)
+
+## Vanilla AutoTrade option
+
+`Economy.AutoTrade` validates the supported CrusaderDE image and the original
+22-byte native predicate at `0xD03BD` in both the startup image and live code.
+The operand at `0xD03BD` reads the mode from `0x8574B90`. The one at `0xD03C6`
+reads the option from `0x87ECAC0`. It applies in setup modes 1 and 99.
+
+After a successful native save load, the mission loader still holds the engine
+monitor. APIShared verifies the predicate again and restores only the confirmed
+option DWORD at that boundary. The native load finalizer calls the update loop
+with its pause DWORD at `0x366A0F8` set to -1, so it cannot dispatch the periodic
+AutoTrade phases before this correction. Revalidate the finalizer, both native
+save wrappers, and the archive field on future images. The native gate, the
+Chore and all manual trade paths retain their original code.
+
+## Native goods wallet
+
+Owner: `Economy.GoodsWalletNative`; public behavior and lifetime are in the
+[wallet guide](docs/GOODS_WALLET.md). Supported native SHA-256:
+`FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`.
+This adapter installs no native hook. It reads the Script Extender-resolved player
+manager and checks each one-based player's resource address against
+`manager + 0x1343FC + (player - 1) * 0x583C` before returning a gold cell.
+The packed `GamePlayerResources` stride is 22,588 bytes (`0x583C`); gold is a signed
+Int32 at `+0x50C`. Layout and pointer identity must be requalified after an update.
+Zero and negative values are valid reads, not pointer-failure sentinels.
+
+The supported SE `SetPlayerGold` helper performs a direct field store and adds no
+engine locking, multiplayer authority, accounting or statistics. Its
+`AddPlayerGold` helper uses unchecked addition and zero clamping, so it is not an
+atomic checked-payment primitive. The adapter instead revalidates the cell and
+world under the real engine monitor before its direct checked store and prebuilt
+Content publication. Recheck the engine-monitor ownership and native-world/Chore
+boundaries as well as these numeric offsets when updating either dependency.
+
+## Native pooled storage
+
+This document records the native instruction and layout contract used by
+[NativeStorageNativeDefinition](src/Economy/Storage/NativeStorageNativeDefinition.cs).
+It does not establish installed hook coexistence, producer delivery, save lifecycle
+or game acceptance. Native bytes were read and disassembled passively; no game or
+native function was executed for this audit.
+
+### Supported image and layout
+
+The sole audited `CrusaderDE.dll` SHA-256 is
+`FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`.
+Unknown images must not acquire these bindings. A matching disk image is not proof
+that a live entry or inline span remains available.
+
+The official [SE v2.14.3 building declarations](https://gitlab.com/rawra-stronghold-crusader/shcde-script-extender/-/blob/v2.14.3/src/SHCDESE.BepInEx/Interop/GameBuilding.cs)
+describe a `0x32C`-byte building record. `GameBuildingManager.BuildingsArray` begins
+at manager `+0x5C`, with reserved slot zero. For a native slot `s`, the record is
+`manager + 0x5C + s*0x32C`. This is consistent with the native allocation memset
+and every audited field access; `+0x7C` is not the array base.
+
+| Meaning | GameBuilding offset | Manager-relative, before slot stride |
+| --- | --- | --- |
+| Alive state / building type | `0xD0` / `0xD2` | `0x12C` / `0x12E` |
+| Owner / global identity | `0xD6` / `0xD8` | `0x132` / `0x134` |
+| 25 native good counters | `0x120` through `0x180`, UInt32 | `0x17C` through `0x1DC` |
+| Primary aggregate stack | `0x184`, UInt32 | `0x1E0` |
+
+Armory type is `0xB`, Granary type `0x13`, and the accepted alive state is `2`.
+Valid public building IDs are 1 through 3999. A slot alone is not identity: check
+the current global ID, owner, alive state and supported type before using a claim.
+
+### Native roles
+
+All signatures below use the Windows x64 integer calling convention. Full
+function bytes or SHA-256 pins and exact displaced spans are in the definition.
+
+| Role | RVA / full length | Signature and result |
+| --- | --- | --- |
+| Armory candidate admission | `C6EA0`, 287 bytes | `int(manager,slot,unusedGood,owner,amount)`; returns the input slot or zero |
+| Armory free count | `C6FC0`, 239 bytes | `int(manager,slot)`; free pooled slots |
+| Granary free count | `BD470`, 32 bytes | `int(manager,slot,unusedGood,capacity)`; signed free count |
+| Native destination finder | `BF9F0`, 348 bytes | Its Granary branch recomputes native aggregate, checks space and reachability, then tries the next candidate |
+| Native aggregate recomputation | `C05B0`, 127 bytes | `int(manager,slot)`; writes derived native fields and returns the total in EAX |
+
+`C6EA0` validates Armory type, alive state and owner. It starts at 50 and subtracts
+all 25 native good counters, not just the requested good. Its fifth argument is at
+entry `RSP+0x28`. The goods argument is unused. A custom-occupancy refusal must
+return zero, allowing the original outer finder to continue without a replacement
+managed scan. `C6FC0` computes the same pooled free count and clamps it to zero;
+it validates type and alive state but has no owner parameter.
+
+`BD470` computes `max(0,capacity-currentStack)` with signed comparisons. It does
+not validate type, alive state, owner or identity. Native Granary callers normally
+pass 250. `C05B0` recomputes the aggregate from native goods 1 through 24. Thus the
+Granary's 250 slots are pooled across food types, rather than 250 of each type.
+The primary maximum-stack field is not a substitute for this capacity argument.
+
+### Granary finder aperture
+
+Granary worker selection in `BF9F0` does not call `BD470`. Adjusting only that free
+query can leave workers repeatedly choosing a store which is full due to custom
+occupancy. The audited Granary branch checks native type/alive/owner, then uses:
+
+| RVA | Complete instruction / role |
+| --- | --- |
+| `BFB05` | `MOV EDX,EBX`: candidate slot |
+| `BFB07` | `MOV RCX,RSI`: building manager |
+| `BFB0A` | `CALL C05B0`: native recomputation and its original writes |
+| `BFB0F` | `CMP EAX,250`: native capacity threshold |
+| `BFB14` | `JGE BFB27`: retain the original next-candidate branch |
+
+The inline aperture is `[BFB05,BFB14)`, exactly 15 bytes and four whole
+instructions. Its original bytes are `8BD3488BCEE8A10A00003DFA000000`. A relocated
+call must return into the emitted stub, not into overwritten `BFB0F`. Execute the
+native recomputation once, add custom occupancy to its returned EAX using safe
+saturation, replay the compare, and continue at `BFB14`. Preserve caller-live
+registers and native state. The reachability call at `BFB1E` and retry at `BFB27`
+remain unchanged. A global replacement of `C05B0` would affect unrelated callers
+and is outside this binding.
+
+The complete pinned finder was decoded. Its direct branches do not enter the
+aperture interior. The captured static cross-reference index contained 236,382
+entries and no incoming target in `(BFB05,BFB14)`; that index's SHA-256 was
+`1F642B432B26D255323D40C8E8CAC1706774727E639468D0847DE9D8E1D9D72D`.
+These are static audit results, not a claim about arbitrary foreign patches or
+dynamic hook coexistence. Validate the full finder fingerprint, aperture,
+continuation and current ownership before publication.
+
+The definition retains complete-instruction audit windows of 23, 19 and 17 bytes
+for the three entries. Production uses NativeX64 Indirect detours with shorter
+displaced spans: `C6EA0+6 -> C6EA6`, `C6FC0+10 -> C6FCA`, and
+`BD470+10 -> BD47A`. Validate the actual backend scheme, trampoline and untouched
+continuation against these production spans, not the longer audit windows.
+
+### Shared AddGood invocation
+
+The Script Extender already owns native `B6100`. Its
+[v2.14.3 managed wrapper](https://gitlab.com/rawra-stronghold-crusader/shcde-script-extender/-/blob/v2.14.3/src/SHCDESE.BepInEx/Detours/BulkBuildingDetours.cs)
+has the exact managed signature:
+
+```text
+Int64(NativePointer<GameBuildingManager>, Int32 slot, Int32 globalId,
+      eGoods good, Int32 amount, Int32 capacity, Int32 bAdd)
+```
+
+The first managed argument is a struct, not an interchangeable `IntPtr` in IL.
+The wrapper raises SE Pre, calls its single Original with final Pre values,
+raises Post with original entry inputs, and returns the opaque Int64 result.
+It consumes no Skip flag; its event's ReturnValue remains zero. Replace only the
+managed Original invocation after validating the loaded IL and existing native
+owner. Preserve the manager, all six final arguments, Pre/Post behavior,
+exception propagation and opaque return when forwarding. Intentional refusal
+returns `0L`. Do not install another native `B6100` entry detour.
+
+The `[B6100,B6219)` body is 281 bytes, SHA-256
+`AA634FA3A59866B105E7C577FEAB60B7662516592C757332F007299D6488A2D1`.
+It bounds only the selected good's new count by the supplied capacity. It does
+not enforce pooled Armory or Granary occupancy. A direct call can bypass the
+outer capacity finder, so reducing 50 by custom occupancy alone is insufficient
+when other native good types occupy slots. Admission must account for the other
+native goods and the selected counter without silently reducing the requested
+amount. Preserve legitimate draining/removal behavior for overfull stores.
+
+Capacity zero clears the selected native counter and returns failure before the
+native bAdd test. Refusing an addition must not call that destructive branch.
+With positive capacity, bAdd zero checks without stock writes; zero amount with
+bAdd one can still run native updates. Forward the exact original behavior when
+there is no relevant custom claim.
+
+### Scope and qualification
+
+This binding coordinates pooled space and native admission only. It creates no
+native goods IDs and supplies no stockpile policy, producer animation, cargo
+conversion, output score, achievement or production-success transaction. Native
+callers can ignore AddGood failure and execute their success bookkeeping anyway;
+admission does not establish lossless retry. Future producer work must coordinate
+the existing WeaponProduction-owned delivery sites independently.
+
+See [ally transfer native behavior](docs/ALLY_TRANSFERS.md#native-update-evidence-and-limitations) for
+the existing native capacity/allocator relationships and partial-effect contract.
+The static audit does not replace emitter, native branch, coexistence, lifecycle,
+launch or game acceptance checks.
+
+## Stored workshop delivery
+
+Owner: `WeaponProductionNativeRuntime.StoredDeliveryAdapter`, an optional cohort
+inside the existing shared workshop owner. Reference native SHA-256 remains
+`FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`.
+Public registration, accounting and persistence are in the
+[workshop guide](docs/WEAPON_PRODUCTION.md#produce-a-registered-custom-good).
+Failure of this optional cohort does not remove existing native recipe support.
+No second worker-entry or B6100 detour is installed.
+
+The native workers ignore AddGood's return and can execute success bookkeeping
+after refusal. Their original failed-capacity/replacement branches can discard
+carried stock. A late product-ID filter is therefore insufficient for custom
+acceptance or retry. The optional gate runs before the original arrival checks:
+
+| Workshop | Complete-instruction gate | Native continuation | Accepted cargo footer | Refused epilogue |
+| --- | --- | --- | --- | --- |
+| Fletcher | `12DC6D+15` | `12DC7C` | `12DEB6` | `12E3DB` |
+| Poleturner | `13B654+14` | `13B662` | `13B894` | `13BDAA` |
+| Blacksmith | `13C7DC+14` | `13C7EA` | `13CA2E` | `13CF02` |
+| Armourer | `13D97E+16` | `13D98E` | `13DB8C` | `13E085` |
+| Tanner | `13EEAF+16` | `13EEBF` | `13F0BC` | `13E6C2` |
+
+All five pinned worker bodies and the full captured static cross-reference index
+were checked; no direct incoming edge targets an aperture interior. This static
+result does not qualify arbitrary foreign patches. Validate live gate/continuation
+and epilogue bytes, generated relocation, ownership and the existing Complete
+cohort before publication. Armourer/Tanner prefixes include RIP-relative manager
+addresses. Preserve the captured physical worker ID through the managed callback;
+do not reconstruct a footer from a later mutable CurrentUnit global.
+
+The three outcomes are Native, Accepted and Refused. Native restores the exact
+original prefix/path, including native AddGood and accounting. Accepted atomically
+publishes physical stock +1 and signed cargo -1, then skips native AddGood,
+weapons-produced, weapon achievements, stock cue and SE dropoff observers. Footer
+register repairs retain each role's ID/offset/managers and zero/one/three constants;
+Tanner's EBP=3 and preserved R15 are significant. Positive cargo keeps its batch;
+zero cargo reaches the existing Complete owner. Preserve GPRs, XMM0â€“5, flags,
+Windows x64 home space and exact stack balance around the callback.
+
+A native attempt transfers one item, not the complete carried count. Search asks
+for enough Armory capacity for remaining cargo. A refused custom attempt cannot
+fall into Vanilla's destructive delivery-replacement path. A protected retarget
+attempt can instead select the original search state (Fletcher 6, others 7), reset
+the timer and return normally. Search validates the candidate and movement before
+publishing its new destination; native hazard/death diversions remain native.
+This supplies no eventual-delivery guarantee and refunds no manufactured input.
+
+Native manager-relative worker base is `image+67E8400+slot*490`; the SDK record
+adds a `65C` bias. Required packed `GameUnit` fields are cargo at `384` (signed
+low Int16 only; preserve adjacent word `386`), destination slot `332` (UInt16),
+destination global identity `9C` (UInt32, exposed as split words by the current
+SDK), AI state `2BC` and timer `2C4` (Int16). Requalify primitive storage locations
+and meanings rather than relying on renamed placeholder SDK fields.
+
+All five native finders select Armories. A Granary-bound custom workshop output
+must be rejected until destination selection has a separately qualified owner.
+The new custom Tanner capability requires the original yield call at `13EBF7`
+and a qualified storage route at `13EF38/16`. The load snapshot must retain both
+original blocks. Live code may retain the original storage block or the exact
+published built-in production-receipt owner at that block. Its preparation and
+publication keep the full generator/backend checks; frequent route checks compare
+the same module, published handle/stub, jump and NOPs, frozen continuation and
+published relay bytes without allocation or code installation. Receipt demand zero
+remains a valid original-forwarding route; receipt availability is not used here
+because weapon readiness depends on this same Tanner owner. Unpublished, partial,
+changed or foreign routes refuse. A continuation with a non-inline indirect target
+has no composition attestation; the receipt owner's existing boundary support is
+unchanged. Changed ImprovedHunters yield/routing still
+disables only this optional stored-output capability, preserving legacy/native
+Tanner compatibility rather than guessing the carried product.
+
+The built-in Tanner source is decided at the first pre-native mission
+initialization, after all plugins have loaded. Its separate retained owner shares
+the startup receipt relay; only a completed owned publication grants this route
+attestation. Pending or external receipt availability does not certify a modified
+stored-output route.
+
+The existing critical production save owner freezes the workshop and pooled
+storage pair before native serialization, rejects reentrant mutations, verifies
+actual archive bytes/write status and commits only a complete temporary file.
+Native-only digest/wire/payload/envelope encodings stay unchanged. Custom workshop
+records require reader 2; the shared internal capture writer selects only a schema
+within its registration's supported range and refuses relabeling migrated unknown
+entries as an older schema. Real multiplayer custom output remains unavailable
+until private storage and native carrier repair are jointly qualified.
+
+Synthetic fixture/installed-reference checks qualify bounded managed publication,
+original bytes and emitted ABI paths. Live hook coexistence, Mono transitions,
+actual producer movement, native save/load and gameplay acceptance remain distinct.
 
 ## Shared health initialization
 
@@ -696,6 +970,34 @@ then game acceptance for new clip audibility, inferred actions and map transitio
 Errors deactivate the affected optional context or map-clip capability while
 Vanilla, generic sound events and independent API services remain available.
 
+## Paint sites
+
+The [paint broker](docs/PAINT.md) hooks managed Assembly-CSharp methods only; no native
+address or hash is involved, and an unchanged signature keeps it installable on a new game
+build. At installation it checks each method's declaring type, name, static or instance form,
+return type and parameter types (`PaintCalls` signatures in
+[PaintSites.cs](src/Presentation/Paint/PaintSites.cs)):
+
+| Site | Method | Parameters after the receiver |
+|---|---|---|
+| BodySprite | static `SpriteMapping.SetBodySprite` | SpriteRenderer, int file, int image, int colour, bool altFrame, int chopFeet, int transparency |
+| TileGraphic | static `SpriteMapping.setGenericBuildingTileGraphic` | GameMapTile, int file, int image, int light |
+| Chevron | static `SpriteMapping.getChevronImage` returning Sprite | GameMapTile, int file, int image |
+| TileColour | private instance `gameTile.setTileColour` | GameMapTile, Vector3Int location, int light |
+| PixieLayer | instance `GameMap.addUpdatePixie` | 12 parameters: id, x, y, tile x, tile y, float height, file, image, bool hiMode, transparency, delay, colour |
+| FlyLayer | instance `GameMap.addUpdateFly` | 14 parameters: id, x, y, tile x, tile y, float height, file, image, colour, transparency, delay, object type, info type, info data |
+| OrgLayer | instance `GameMap.addUpdateOrg` | 8 parameters: id, x, y, float height, file, image, colour, transparency |
+| BuildingAnimLayer | instance `GameMap.addUpdateBuildingAnim` | 14 parameters: id, x, y, tile x, tile y, anim layer, file, image, colour, transparency, delay, bool hasSubSpecial, half-pixel x, half-pixel y |
+
+A changed signature refuses that site only (`PAINT_SITE_REFUSED`) and consumers keep their
+own hooks. After a game update also re-check the documented effects consumers rely on: that
+`SetBodySprite` still sets the renderer's sprite, shared material and colour, that
+`setGenericBuildingTileGraphic` sets `tileImage`, that `setTileColour` writes the cell colour
+to `tilemapRef`, and that body paints still happen inside the `addUpdate*` calls. Re-check the
+Script Extender hooks beneath the broker on `SetBodySprite` and `setTileColour` after an
+Extender update. A BepInEx update that changes MonoMod.RuntimeDetour's private `Detour._DetourMap`
+makes the detour count unknown: on Mono every site whose entry is already hooked (`SetBodySprite`
+and `setTileColour` under Script Extender) is then refused until the guard is updated.
 ## Explicit gate-routing backend
 
 Native SHA-256: FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2.
@@ -1578,7 +1880,7 @@ first huntable-prey registration with own-player prey (only before the first mis
 per-type table (set at mission activation, cleared at its end). Any other hash, snapshot or live byte
 difference (for example an older ImprovedHunters that patched the same spans), a changed continuation,
 a backend span other than 14 bytes, a stub that differs from the expected bytes, or an arrow gate block
-whose SHA-256 differs from `C3BCA2C9Ã¢â‚¬Â¦AE225F` refuses the install; the registration is then Unsupported.
+whose SHA-256 differs from `C3BCA2C9ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦AE225F` refuses the install; the registration is then Unsupported.
 
 - Query `0x18AFD8` `66 83 BB F6 FD FF FF 00 0F 85 F7 00 00 00` (`cmp word[rbx-0x20A],0; jne 0x18B0DD`),
   continuation `0F B7 83 EE FD FF FF` (the Script Extender's type hook starts there). RBX = candidate
@@ -2024,12 +2326,12 @@ user's language-folder inventory:
 | Ordinary counters | `0x2AD370` | Per-bank counters inside each row |
 | Arabic engineer ordinary bank | `0x2B0EB0` | 42 pointers |
 | Engineer special actions | `0x2B09B0` | 40 rows, stride32; count, European/Arabic pointers, counter |
-| General table unit subset | `0x2B1000` | Only indices65Ã¢â‚¬â€œ76, strings at stride1000 |
+| General table unit subset | `0x2B1000` | Only indices65ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“76, strings at stride1000 |
 | Male civilian comments | `0x2D7E50` | 126 slots at stride32, including intentional Null slots |
 | Female civilian comments | `0x2D8E50` | Same layout |
 
-The general-table unit subset is `Healer_Heal1Ã¢â‚¬â€œ4`, `Sapper_Sap1Ã¢â‚¬â€œ4`, and
-`Demolisher_Sap1Ã¢â‚¬â€œ4`. The remaining general table and arbitrary calls to generic
+The general-table unit subset is `Healer_Heal1ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“4`, `Sapper_Sap1ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“4`, and
+`Demolisher_Sap1ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“4`. The remaining general table and arbitrary calls to generic
 speech helpers are adviser/dialogue paths outside this API.
 
 The observation contains 919 distinct non-Null native asset names. That count is
@@ -2162,7 +2464,7 @@ and installed enum meanings, then rerun alias and sentinel-buffer tests before r
 Reference native SHA-256
 `FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`.
 Initial quarry placement calls `0xBD7A0` from `0x76780` with an expanding perimeter
-and a 2Ã—2 pile. `0xBD7A0` calls `0xC0270` for candidate offsets and `0x77E60`
+and a 2Ãƒâ€”2 pile. `0xBD7A0` calls `0xC0270` for candidate offsets and `0x77E60`
 for validation, then checks the candidate's path component against that of the main
 quarry. The relocation query calls `0xC0270` with its separately indexed perimeter.
 Preserve and restore manager offsets `+0x31B7D0/+0x31B7D4` and placement scratch around
@@ -2520,3 +2822,71 @@ unknown shapes fail closed. Never remove or restore a published SE patch.
 Re-run real-wrapper `UnitMoveEventsTests`, `AiMilitaryBrokerTests` and the unchanged
 `AiRecruitOrders.Tests` native-result/admission contracts; verify dormant allocation
 cost separately from the extender's own event-argument allocations.
+
+## Notification presentation identity
+
+Reference native SHA-256
+`FBCB93195FC7EFCA9BDAC5204852EFDD76F9818F59A6711750D77C9CEF2831E2`.
+This service is hash-bound. Its observers are read-only and call the
+original game functions once. The original queue owns every entry and
+continues normal promotion, media control and completion.
+
+| RVA | Indirect span and continuation | ABI and observed transition |
+|---|---|---|
+| `0xFEE50` | 6 bytes (5 + 1), then `0xFEE56` | Win64 void (manager, video path, audio path). Selectors are at manager +4 and +8. Queue promotion passes the exact slot-zero video/audio addresses. |
+| `0x102C30` | 6 bytes (2 + 4), then `0x102C36` | Win64 void (manager). A reset can call the finalizer and temporarily promote a pending entry before clearing the remaining count. |
+| `0x24220` | 10 bytes (5 + 5), then `0x2422A` | Win64 void (state pointer). Multiplayer PreInit clears the notification count directly. |
+| `0x87D10` | 6 bytes (5 + 1), then `0x87D16` | Win64 void (). World initialization clears the notification count before the nested queue reset. |
+| `0x104240` | 7 bytes (4 + 3), then `0x104247` | Win64 void (int action). Only action 2 clears the notification count. |
+
+All these spans start at function entries. The existing Extender detour at
+`0x103290` and its interior speech path relocation at `0xFEF21` are outside the
+owned spans. Validate Indirect patch form, displaced lengths and trampoline
+continuations with the installed backend. At publication compare with the
+unmodified module snapshot, and verify the published patches at mission start.
+
+The shared `NativeIndirectEntry` verifier deterministically re-encodes the
+complete audited displaced instructions and continuation jump with the installed
+Iced `BlockEncoder`, matching RedBird's `TrampolineBuilder`; it compares the full
+live encoded size and bytes. At `0x102C30`, `40 53 48 83 EC 20` occupies six
+original bytes but re-encodes to five payload bytes (`53 48 83 EC 20`), followed
+by a jump to the unchanged original continuation `0x102C36`. Do not infer the
+relocated jump offset from the original displacement length. Original-span,
+owner, Indirect slot, published entry/padding and unchanged continuation guards
+remain mandatory. Tests use the installed backend for all five prologues and
+reject mutated payload, resume, size, original bytes, slot and padding. This is
+an internal false-rejection correction without a public signature change.
+Encoding occurs at publication/integrity boundaries, not in ordinary per-unit
+or production-tick callbacks; explicit integrity queries still perform a fresh
+live verification.
+
+
+The global notification manager is at `0x1B62EE0`. The busy flag is +0, the
+accepted pending count is +0x94C (capacity ten), and queued selectors/indices
+are contiguous dwords at +0xDC/+0x104. Slot-zero video/audio paths start at
++0x154/+0x53C. Their pointer equality proves promotion in the audited call
+protocol. Managed enqueue capture reserves the count's old slot only after
+the original increments the count, and treats a full queue as rejection.
+Vanilla's other enqueue (`0x1031B0`) writes a zero speaker and a non-Lord
+selector. Positive non-skirmish headers with speaker zero are generic.
+A reset, an uncoordinated producer or a failed observation retires the
+managed generation so a reused slot cannot inherit an older subtitle.
+
+The render manager is at `0xA98820`, with destination at +0 and the 42-byte
+record cursor at +8. `0x1A45D0` sets the live buffer. `0x1A3EE0` copies staged
+records at +0x10C9E8C into its prefix without reordering. `0x19CE70` restores
+that staging destination and resets the cursor. The guarded managed edit
+brackets exactly the native call inside EngineInterface.run. It seals the
+rendered batch before any readback or work-pump callback can stage the next
+batch. At the existing publication boundary, the exact MemBuffer's
+PlayState, word-array reference, count and record indices identify each
+presentation. Audio and video ownership require the last applicable dispatch
+because PlayState carries one path for each media kind. Only a verified batch
+with observed media searches from its end to the relevant media record.
+
+Update checks include a fresh full writer audit for the queue count, caller
+and instruction contracts for the observer spans, version-independent
+validation of the loaded Extender and managed run methods, and a deliberate
+staging/live/staging split with repeated selectors. Verify identical
+selectors through tutorial reset, full queue rejection, native presentation
+without a custom subtitle, and original pass-through when a hook is invalid.

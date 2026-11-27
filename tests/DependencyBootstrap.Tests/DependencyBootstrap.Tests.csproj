@@ -4,7 +4,7 @@
     <OutputType>Exe</OutputType><TargetFrameworkVersion>v4.8.1</TargetFrameworkVersion>
     <AssemblyName>APIShared.DependencyBootstrap.Tests</AssemblyName><LangVersion>latest</LangVersion>
     <OutputPath>bin\</OutputPath><IntermediateOutputPath>obj\</IntermediateOutputPath>
-    <DefineConstants>API_SHARED_INTERNAL_JSON</DefineConstants><WarningLevel>4</WarningLevel><TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <DefineConstants>API_SHARED_INTERNAL_JSON;API_SHARED_BOOTSTRAP</DefineConstants><WarningLevel>4</WarningLevel><TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="System" /><Reference Include="System.Core" />
@@ -14,6 +14,8 @@
     <Reference Include="Mono.Cecil"><HintPath>$(GameDir)\BepInEx\core\Mono.Cecil.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="MonoMod.RuntimeDetour"><HintPath>$(GameDir)\BepInEx\core\MonoMod.RuntimeDetour.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="MonoMod.Utils"><HintPath>$(GameDir)\BepInEx\core\MonoMod.Utils.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="com.rlabrecque.steamworks.net"><HintPath>$(GameDir)\Stronghold Crusader Definitive Edition_Data\Managed\com.rlabrecque.steamworks.net.dll</HintPath><Private>false</Private></Reference>
+<Reference Include="System.IO.Compression" /><Reference Include="System.IO.Compression.FileSystem" />
     
     <Compile Include="..\..\bootstrap\src\Package\PairActivation.cs" />
     <Compile Include="..\..\bootstrap\src\DependencyCorrection\ShadowInventory.cs" />
@@ -35,6 +37,13 @@
     <Compile Include="ContractTests.cs" /><Compile Include="PairTests.cs" /><Compile Include="..\..\bootstrap\src\Package\PairContract.cs" />
     <Compile Include="ShadowTests.cs" />
     <None Include="App.config" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\..\bootstrap\src\SteamDependencies\*.cs" />
+    <Compile Include="..\..\src\Core\Patching\SafeIlHook.cs" />
+    <Compile Include="..\..\src\Steam\SteamAppAccess.cs" />
+    <Compile Include="..\..\src\Steam\SteamAppAccessQuery.cs" />
+    <Compile Include="SteamDependencyTests.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

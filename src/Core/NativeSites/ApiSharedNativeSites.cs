@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using APIShared.Audio;
 using APIShared.Economy;
 using APIShared.GateRouting.Native;
@@ -237,6 +238,7 @@ namespace APIShared
             Group(Multiplayer.MultiplayerResyncNativeRuntime.SiteName, Multiplayer.MultiplayerResyncNativeRuntime.Spans()),
             Group(Multiplayer.MultiplayerResyncDataNativeRuntime.SiteName, Multiplayer.MultiplayerResyncDataNativeRuntime.Spans()),
             Group(AllyTransfersNative.SiteName, AllyTransfersNative.Spans()),
+            Group(NativeStorageNativeRuntime.SiteName, NativeStorageNativeRuntime.Spans()),
             Group(AssassinPath, AssassinPathSpans()),
             Group(AssassinAttack, AssassinAttackSpans()),
             Group(AssassinRetarget, AssassinRetargetSpans()),
@@ -269,7 +271,7 @@ namespace APIShared
             Group(Units.AiMilitary.Native.AiMilitaryNativeObservers.SiteName, Units.AiMilitary.Native.AiMilitaryNativeObservers.Spans()),
             Group(Units.AiMilitary.Quota.AiMilitaryQuotaRuntime.SiteName, Units.AiMilitary.Quota.AiMilitaryQuotaRuntime.Spans()),
             Group(Units.AiMilitary.Engineering.AiMilitaryEngineeringRuntime.SiteName, Units.AiMilitary.Engineering.AiMilitaryEngineeringRuntime.Spans())
-        };
+        }.Concat(WeaponProductionNativeRuntime.StoredDeliveryGroups()).ToArray();
 
         // Claims a group for APIShared before installation. Throws the service's own failure type
         // with the refusal text, so each service keeps its existing fail-closed path and diagnostics.

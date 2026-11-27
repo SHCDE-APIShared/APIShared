@@ -52,6 +52,8 @@ namespace APIShared.ScriptExtenderFixes
                         "Original Script Extender behavior remains active, including possible misleading Lord lookup errors; packaged Lord media stays available. " +
                         $"extender={typeof(GameAIManagerAPI).Assembly.FullName}, errorType={error.GetType().FullName}; {error.Message}");
                 }
+                try { Presentation.NotificationEnqueueCapture.Install(target, logger); }
+                catch (Exception error) { Write(true, "Notification subtitle capture is unavailable: " + error.Message); }
                 stage = "create-hook-and-trampoline";
                 candidate = new Hook(target, (Resolver)OnResolve,
                     new HookConfig { ManualApply = true, ID = "APIShared.ScriptExtenderFixes.LordMedia" });
@@ -59,6 +61,7 @@ namespace APIShared.ScriptExtenderFixes
                 stage = "publish-hook";
                 candidate.Apply();
                 hook = candidate; // Process lifetime; logical mission end never removes this hook.
+                Presentation.NotificationEnqueueCapture.ResolverPublished();
                 if (correctionActive)
                     Write(false, "installed; Lords without registered Script Extender metadata quietly retain original game media paths.");
             }
@@ -159,6 +162,22 @@ namespace APIShared.ScriptExtenderFixes
 
         private static bool OnResolve(GameAIManagerAPI self, string name, AILordMessageType type, out string video, out string audio)
         {
+            if (!Presentation.NotificationEnqueueCapture.IsResolverScopeActive)
+                return ResolveMedia(self, name, type, out video, out audio);
+
+            var previous = Presentation.NotificationEnqueueCapture.EnterResolver();
+            bool completed = false;
+            try
+            {
+                bool result = ResolveMedia(self, name, type, out video, out audio);
+                completed = true;
+                return result;
+            }
+            finally { Presentation.NotificationEnqueueCapture.LeaveResolver(previous, completed); }
+        }
+
+        private static bool ResolveMedia(GameAIManagerAPI self, string name, AILordMessageType type, out string video, out string audio)
+        {
             if (Presentation.PackagedLordPresentation.TryResolveMedia(name, type, out bool claimed, out video, out audio)) return claimed;
             return correctionActive ? Resolve(original, self, name, type, out video, out audio) : original(self, name, type, out video, out audio);
         }
@@ -171,6 +190,7 @@ namespace APIShared.ScriptExtenderFixes
             // extended Vanilla AICs and Vanilla-style custom packages without lordmeta.json.
             if (!string.IsNullOrEmpty(name) && self.LordDataDict.ContainsKey(name.ToLower()))
                 return next(self, name, type, out video, out audio);
+            Presentation.NotificationEnqueueCapture.RecordSelection(null);
             video = string.Empty;
             audio = string.Empty;
             return false;

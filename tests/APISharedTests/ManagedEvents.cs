@@ -170,6 +170,67 @@ namespace APISharedTests
         }
 
         [TestMethod]
+        public void PresentationGuardChecksOriginalAndFinalInputBeforeAnyReplacement()
+        {
+            const PresentationOperation operation = PresentationOperation.MarketBuySell;
+            var events = new InterceptionEvent<PresentationPreEventArgs, PresentationPostEventArgs>();
+            var guards = new PresentationEvents.ViewInputGuards();
+            int preCalls = 0, originals = 0, replacements = 0;
+            PresentationPostEventArgs completion = null;
+            TestAssert.IsTrue(guards.TryRegister("policy", "trade", (_, value) => (int)value != 100, out _));
+            TestAssert.IsTrue(events.TryRegister("mod", "rewrite", args =>
+            {
+                preCalls++;
+                if ((int)args.Parameter == 2)
+                {
+                    args.Parameter = 100;
+                    args.Replacement = _ => replacements++;
+                }
+            }, args => completion = args, out _));
+
+            PresentationEvents.ExecuteView(events, guards, operation, null, 100, (_, value) => originals++);
+            TestAssert.AreEqual(0, preCalls);
+            TestAssert.IsNull(completion);
+            PresentationEvents.ExecuteView(events, guards, operation, null, 2, (_, value) => originals++);
+            TestAssert.AreEqual(1, preCalls);
+            TestAssert.AreEqual(100, completion.Parameter);
+            TestAssert.IsTrue(completion.WasSkipped);
+            TestAssert.IsFalse(completion.WasReplaced);
+            TestAssert.AreEqual(0, originals);
+            TestAssert.AreEqual(0, replacements);
+            PresentationEvents.ExecuteView(events, guards, operation, null, 1, (_, value) => originals++);
+            TestAssert.AreEqual(1, originals);
+            TestAssert.IsTrue(completion.OriginalCompleted);
+        }
+
+        [TestMethod]
+        public void PresentationGuardChecksNestedCallsAcrossSitesAndIsolatesErrors()
+        {
+            const PresentationOperation operation = PresentationOperation.MarketBuySell;
+            var events = new InterceptionEvent<PresentationPreEventArgs, PresentationPostEventArgs>();
+            var outer = new InterceptionEvent<PresentationPreEventArgs, PresentationPostEventArgs>();
+            var guards = new PresentationEvents.ViewInputGuards();
+            int originals = 0, nestedPreCalls = 0;
+            TestAssert.IsTrue(guards.TryRegister("policy", "trade", (_, value) =>
+            {
+                if ((int)value == 101) throw new InvalidOperationException("Test guard failure");
+                return (int)value != 100;
+            }, out _));
+            TestAssert.IsTrue(events.TryRegister("mod", "observe", _ => nestedPreCalls++, null, out _));
+            TestAssert.IsTrue(outer.TryRegister("mod", "nested", _ =>
+            {
+                foreach (int input in new[] { 100, 101, 1 })
+                    PresentationEvents.ExecuteView(events, guards, operation, null, input, (_, value) => originals++);
+            }, null, out _));
+
+            PresentationEvents.Execute(outer,
+                new PresentationPreEventArgs(PresentationOperation.MarketSelectGoods, null, null), _ => { });
+            TestAssert.AreEqual(1, originals);
+            TestAssert.AreEqual(0, nestedPreCalls);
+            TestAssert.AreEqual(1L, guards.Failures);
+        }
+
+        [TestMethod]
         public void PresentationPreservesFinalParameterAndReportsOriginalErrorsForCleanup()
         {
             var events = new InterceptionEvent<PresentationPreEventArgs, PresentationPostEventArgs>();
@@ -187,7 +248,13 @@ namespace APISharedTests
         }
 
         [TestMethod]
-        public void ReplacementRunsAfterAllPreWithFinalParameterAndLaterVetoSuppressesEveryEffect()
+        [DataRow(PresentationOperation.RechargeSiegeAmmo)]
+        [DataRow(PresentationOperation.MarketSelectGoods)]
+        [DataRow(PresentationOperation.MarketCycleGoods)]
+        [DataRow(PresentationOperation.MarketBuySell)]
+        [DataRow(PresentationOperation.MarketChangeTradeType)]
+        [DataRow(PresentationOperation.ExtendedFeaturesAction)]
+        public void ReplacementRunsAfterAllPreWithFinalParameterAndLaterVetoSuppressesEveryEffect(PresentationOperation operation)
         {
             foreach (bool veto in new[] { false, true })
             {
@@ -199,7 +266,8 @@ namespace APISharedTests
                 }, a => completed = a, out _);
                 events.TryRegister("b", "broken", a => { a.Replacement = p => throw new Exception(); throw new Exception(); }, null, out _);
                 events.TryRegister("c", "last", a => { a.Parameter = "final"; a.SkipOriginalFunction = veto; }, null, out _);
-                PresentationEvents.Execute(events, new PresentationPreEventArgs(PresentationOperation.RechargeSiegeAmmo, null, "initial"), p => originals++);
+                events.TryRegister("d", "cannot-clear-veto", a => a.SkipOriginalFunction = false, null, out _);
+                PresentationEvents.Execute(events, new PresentationPreEventArgs(operation, null, "initial"), p => originals++);
                 Microsoft.VisualStudio.TestTools.UnitTesting.Assert.AreEqual(veto ? 0 : 1, replacements);
                 Microsoft.VisualStudio.TestTools.UnitTesting.Assert.AreEqual(0, originals);
                 Microsoft.VisualStudio.TestTools.UnitTesting.Assert.AreEqual(veto, completed.WasSkipped);
@@ -209,7 +277,13 @@ namespace APISharedTests
         }
 
         [TestMethod]
-        public void ReplacementFailureStillCleansUpPostAndCannotRetryVanilla()
+        [DataRow(PresentationOperation.RechargeSiegeAmmo)]
+        [DataRow(PresentationOperation.MarketSelectGoods)]
+        [DataRow(PresentationOperation.MarketCycleGoods)]
+        [DataRow(PresentationOperation.MarketBuySell)]
+        [DataRow(PresentationOperation.MarketChangeTradeType)]
+        [DataRow(PresentationOperation.ExtendedFeaturesAction)]
+        public void ReplacementFailureStillCleansUpPostAndCannotRetryVanilla(PresentationOperation operation)
         {
             int originals = 0;
             var error = new InvalidOperationException("replacement");
@@ -217,19 +291,71 @@ namespace APISharedTests
             var events = new InterceptionEvent<PresentationPreEventArgs, PresentationPostEventArgs>();
             events.TryRegister("a", "replacement", a => a.Replacement = p => throw error, a => completed = a, out _);
             Microsoft.VisualStudio.TestTools.UnitTesting.Assert.ThrowsExactly<InvalidOperationException>(() => PresentationEvents.Execute(events,
-                new PresentationPreEventArgs(PresentationOperation.RechargeSiegeAmmo, null, null), p => originals++));
+                new PresentationPreEventArgs(operation, null, null), p => originals++));
             Microsoft.VisualStudio.TestTools.UnitTesting.Assert.AreEqual(0, originals);
             Microsoft.VisualStudio.TestTools.UnitTesting.Assert.AreSame(error, completed.CompletionException);
             Microsoft.VisualStudio.TestTools.UnitTesting.Assert.IsNull(completed.OriginalException);
             Microsoft.VisualStudio.TestTools.UnitTesting.Assert.IsTrue(completed.WasReplaced);
         }
 
-        [TestMethod]        public void InstalledManagedTargetsAndFullRecruitmentMaterialIlContractAreValid()
+        [TestMethod]
+        [DataRow(PresentationOperation.MarketSelectGoods)]
+        [DataRow(PresentationOperation.MarketCycleGoods)]
+        [DataRow(PresentationOperation.MarketBuySell)]
+        [DataRow(PresentationOperation.MarketChangeTradeType)]
+        [DataRow(PresentationOperation.ExtendedFeaturesAction)]
+        public void MarketPresentationPreservesReceiverFinalParameterAndOwnerPrivateState(PresentationOperation operation)
+        {
+            // No game constructors or global hooks: execute the same shared dispatch with an inert receiver.
+            var receiver = (CrusaderDE.MainViewModel)System.Runtime.Serialization.FormatterServices
+                .GetUninitializedObject(typeof(CrusaderDE.MainViewModel));
+            var initial = new object();
+            var final = new object();
+            var firstState = new object();
+            var secondState = new object();
+            object stateSeenBySecondPre = firstState;
+            CrusaderDE.MainViewModel originalReceiver = null;
+            object originalParameter = null;
+            PresentationPostEventArgs firstPost = null, secondPost = null;
+            var events = new InterceptionEvent<PresentationPreEventArgs, PresentationPostEventArgs>();
+            TestAssert.IsTrue(events.TryRegister("a", "owned-state", a => {
+                a.Parameter = final; a.State = firstState;
+            }, a => firstPost = a, out _));
+            TestAssert.IsTrue(events.TryRegister("b", "owned-state", a => {
+                stateSeenBySecondPre = a.State; a.State = secondState;
+            }, a => secondPost = a, out _));
+            var pre = new PresentationPreEventArgs(operation, receiver, initial);
+            PresentationEvents.Execute(events, pre, receiver, (self, parameter) => {
+                originalReceiver = self; originalParameter = parameter;
+            });
+
+            TestAssert.AreSame(initial, pre.OriginalParameter);
+            TestAssert.AreSame(receiver, pre.Instance);
+            TestAssert.AreSame(receiver, pre.ViewModel);
+            TestAssert.AreSame(receiver, originalReceiver);
+            TestAssert.AreSame(final, originalParameter);
+            TestAssert.IsNull(stateSeenBySecondPre);
+            TestAssert.AreSame(firstState, firstPost.State);
+            TestAssert.AreSame(secondState, secondPost.State);
+            TestAssert.AreEqual(operation, firstPost.Operation);
+            TestAssert.AreSame(receiver, firstPost.Instance);
+            TestAssert.AreSame(receiver, firstPost.ViewModel);
+            TestAssert.AreSame(final, firstPost.Parameter);
+            TestAssert.IsTrue(firstPost.OriginalCompleted);
+            TestAssert.IsFalse(firstPost.WasSkipped);
+            TestAssert.IsFalse(firstPost.WasReplaced);
+            TestAssert.IsNull(firstPost.CompletionException);
+            TestAssert.AreEqual(0L, events.CallbackFailures);
+        }
+
+        [TestMethod]
+        public void InstalledManagedTargetsAndFullRecruitmentMaterialIlContractAreValid()
         {
             MethodInfo gui = typeof(FatControler).GetMethod("NoesisGUIUpdateChecksInGame", BindingFlags.Public | BindingFlags.Instance, null, Type.EmptyTypes, null);
             Microsoft.VisualStudio.TestTools.UnitTesting.Assert.IsNotNull(gui);
             RecruitmentMaterialUiIlContract.Validate(gui);
-            foreach (string name in new[] { "ButtonEnterCreateTroop", "ButtonLeaveCreateTroop", "ButtonTroopPanelMouseEnter", "ButtonTroopPanelMouseLeave", "ButtonUnitRechargeRock" })
+            foreach (string name in new[] { "ButtonEnterCreateTroop", "ButtonLeaveCreateTroop", "ButtonTroopPanelMouseEnter", "ButtonTroopPanelMouseLeave", "ButtonUnitRechargeRock",
+                "ButtonNewTradeGoodsType", "ButtonCycleTradeGoodsType", "ButtonBuySell", "ButtonNewTradeType", "ButtonExtendedFeaturesFunction" })
             {
                 var method = typeof(CrusaderDE.MainViewModel).GetMethod(name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance, null, new[] { typeof(object) }, null);
                 Microsoft.VisualStudio.TestTools.UnitTesting.Assert.IsNotNull(method, name); Microsoft.VisualStudio.TestTools.UnitTesting.Assert.AreEqual(typeof(void), method.ReturnType);

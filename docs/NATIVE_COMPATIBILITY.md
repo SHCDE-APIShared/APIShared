@@ -13,6 +13,7 @@ the runtime catalogs. This document explains their purpose; it does not override
 | Gatehouse distance/timing/automation | APIShared owns the coordinated intervals in the shared gatehouse functions |
 | AIV build-step observation | APIShared owns the detour at reference RVA `0x51790` |
 | HUD and recruitment | Shared managed/native presentation hooks and registration brokers |
+| Paint sites (managed draw methods) | One APIShared MonoMod hook per method from the first registration; composes with MonoMod and HarmonyX hooks, refuses an entry redirected outside MonoMod ([Shared paint sites](PAINT.md#installation-guard)) |
 | Market buy/sell queries | APIShared owns reference RVAs `0xCEB10` and `0xCEB90`; fixed-image validation and NativeX64 Indirect detours |
 | Additional route preferences | Managed Pre/Post registration; native command hooks belong to the participating publisher |
 | Assassin selection | Script Extender owns its function detour; APIShared uses its audited integration points |
@@ -121,6 +122,17 @@ images or occupied entries fail closed. The helpers serve AI affordability, trad
 execution and ally valuations; replacements must preserve consistent policy across
 those callers. See [market query semantics](API_CATALOG.md#native-market-price-queries).
 
+## Inspecting managed dependencies
+
+The [bounded assembly metadata tool](../tools/AssemblyMetadata/README.md) reads
+hash-pinned managed PE bytes with exact type/method selection and complete IL,
+locals, field signatures, metadata tokens and exception regions. It requires no
+game installation, loads or executes no target assembly, refuses dependency
+resolution and fails rather than truncating reports that exceed its limits.
+Use the actual input SHA-256 and fresh JSON output as audit evidence. It is a
+new developer tool, with no runtime-plugin API or behavior changes; metadata
+inspection does not establish hook safety, native compatibility or gameplay
+acceptance. The tool guide owns its CLI, schema, resource bounds and tests.
 ## Updating support
 
 1. Identify the actual installed native image and Extender/backend versions.

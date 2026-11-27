@@ -29,6 +29,8 @@ namespace APIShared.Presentation
         private static ManualLogSource log;
         [ThreadStatic] private static LordMessageFrame frame;
         [ThreadStatic] private static int renderDepth;
+        [ThreadStatic] private static EngineInterface.PlayState notificationState;
+        [ThreadStatic] private static long notificationEpoch;
         internal static readonly LordMessageTextBindings TextBindings = new LordMessageTextBindings();
         // Read per rendered buffer; flags only, so the check allocates nothing.
         internal static bool IsReady => Volatile.Read(ref managedReady) != 0 && Volatile.Read(ref ilApplied) != 0 && Volatile.Read(ref protocolReady) != 0;
@@ -77,6 +79,7 @@ namespace APIShared.Presentation
                 if (!ApiShared.Current.TryGetMissionLifecycle(APISharedPlugin.PluginGuid, out var lifecycle, out var diagnostic) ||
                     !lifecycle.TryRegisterObserver("Presentation.LordMessages", Reset, Reset, Reset, out diagnostic))
                     throw new InvalidOperationException(diagnostic?.Reason ?? "Mission lifetime unavailable.");
+                NotificationSubtitleHud.Install(logger);
                 Volatile.Write(ref status, "Ready");
                 Volatile.Write(ref managedReady, 1);
                 Info("LORD_MESSAGES_MANAGED_READY: permanent Unity hooks; awaiting independent native protocol validation.");
@@ -96,25 +99,44 @@ namespace APIShared.Presentation
             var property = typeof(MainViewModel).GetProperty("OST_Message_Bar_Text", BindingFlags.Public | BindingFlags.Instance);
             if (property == null || property.PropertyType != typeof(string) || property.GetSetMethod() == null) throw new MissingMemberException("Public message text setter changed.");
         }
-        private static void Reset(MissionLifecycleNotification notification) => TextBindings.Reset(notification.Context.SessionId);
-        private static void Init(OnScreenText self) { TextBindings.Clear(); initHook.Original(self); }
+        private static void Reset(MissionLifecycleNotification notification)
+        {
+            if (notification.Context.SessionId < TextBindings.Session) return;
+            TextBindings.Reset(notification.Context.SessionId);
+            NotificationSubtitleHud.Clear();
+            NotificationPresentations.Reset();
+        }
+        private static void Init(OnScreenText self)
+        {
+            TextBindings.Clear();
+            NotificationSubtitleHud.Clear();
+            NotificationPresentations.Reset();
+            initHook.Original(self);
+        }
         private static void AddText(OnScreenText self, global::Enums.eOnScreenText id, int a, int b, int c, int d, int e)
         {
             bool retiringText = id == global::Enums.eOnScreenText.OST_MESSAGE_BAR && TextBindings.HasBinding;
-            if (id == global::Enums.eOnScreenText.OST_MESSAGE_BAR) TextBindings.Clear();
+            if (id == global::Enums.eOnScreenText.OST_MESSAGE_BAR)
+            {
+                TextBindings.Clear();
+                NotificationPresentations.RetireText();
+                NotificationSubtitleHud.Clear();
+            }
             addHook.Original(self, id, a, b, c, d, e);
             if (!retiringText) return;
             try {
-                var array = (OnScreenText.OST[])slots.GetValue(self);
-                int index = (int)global::Enums.eOnScreenText.OST_MESSAGE_BAR;
                 // Vanilla does not flag MESSAGE_BAR selector changes while its reused slot stays active.
                 // Retiring our own visible text must therefore request one normal refresh, even for Keep.
-                if (index >= 0 && index < array.Length && array[index] != null) array[index].wasTurnedOnOrChanged = true;
+                var slot = GetMessageSlot(self);
+                if (slot != null) slot.wasTurnedOnOrChanged = true;
             } catch (Exception error) { Error("Lord message original text refresh failed: " + error); }
         }
         private static void Update(OnScreenText self, EngineInterface.PlayState state, bool allowExpire)
         {
-            updateHook.Original(self, state, allowExpire);
+            bool nested = NotificationSubtitleHud.IsUpdating;
+            var previous = NotificationSubtitleHud.Enter(self);
+            try { updateHook.Original(self, state, allowExpire); }
+            finally { NotificationSubtitleHud.Exit(previous, nested); }
             if (!TextBindings.HasBinding) return;
             try {
                 bool off = false, changed = false;
@@ -126,10 +148,22 @@ namespace APIShared.Presentation
                 if (MainViewModel.Instance.OST_Message_Bar_Text != value) MainViewModel.Instance.OST_Message_Bar_Text = value;
             } catch (Exception error) { TextBindings.Clear(); Error("Lord message text replacement failed: " + error); }
         }
+        private static OnScreenText.OST GetMessageSlot(OnScreenText self)
+        {
+            var array = (OnScreenText.OST[])slots.GetValue(self);
+            int slot = (int)global::Enums.eOnScreenText.OST_MESSAGE_BAR;
+            return array != null && slot >= 0 && slot < array.Length ? array[slot] : null;
+        }
         private static void RenderMessages(GameMap self, short[] records, int count, EngineInterface.PlayState state, byte[] radar)
         {
             bool nested = renderDepth++ != 0 || frame != null;
             var outer = frame;
+            var previousState = notificationState;
+            long previousEpoch = notificationEpoch;
+            var dispatch = NotificationPresentations.SuspendDispatch();
+            notificationState = !nested && NotificationPresentations.IsAvailable && UnityMainThreadDispatch.IsMainThread &&
+                NotificationTransport.MatchesBuffer(state, records, count) ? state : null;
+            notificationEpoch = NotificationPresentations.Epoch;
             // A recursive original and any further recursion must not consume the outer IL-site context.
             if (nested) frame = null;
             try {
@@ -138,7 +172,14 @@ namespace APIShared.Presentation
                     Begin(records, count, state, LordMessageEvents.Registry);
                 renderHook.Original(self, records, count, state, radar);
             }
-            finally { frame = outer; renderDepth--; }
+            finally
+            {
+                notificationState = previousState;
+                notificationEpoch = previousEpoch;
+                NotificationPresentations.ExitDispatch(dispatch);
+                frame = outer;
+                renderDepth--;
+            }
         }
         internal static LordMessageFrame Begin(short[] records, int count, EngineInterface.PlayState state,
             InterceptionEvent<LordMessageMutation, LordMessagePostEventArgs> registry)
@@ -163,31 +204,83 @@ namespace APIShared.Presentation
                 catch (Exception error) { current.Abandon(); Error("Lord message selection failed; original retained: " + error); }
             }
             self.addOSTEntry(id, a, b, c, d, e); // Original call remains outside selection error handling.
-            if (replacement == null || replacement.Text.Kind == LordMessageSourceKind.Original) return;
+            bool replace = replacement != null && replacement.Text.Kind != LordMessageSourceKind.Original;
+            NotificationPresentationRecord record = default;
+            bool tracked = id == global::Enums.eOnScreenText.OST_MESSAGE_BAR && TryGetNotification(index, out record) &&
+                record.HeaderIndex == index && record.Section == a && record.TextIndex == b;
+            if (!tracked && id == global::Enums.eOnScreenText.OST_MESSAGE_BAR) NotificationPresentations.ForgetRendered();
+            if (!tracked && !replace) return;
             try {
-                var array = (OnScreenText.OST[])slots.GetValue(self);
-                int slot = (int)global::Enums.eOnScreenText.OST_MESSAGE_BAR;
-                if (slot >= 0 && slot < array.Length) TextBindings.Bind(array[slot], replacement.Text, session);
+                var slot = GetMessageSlot(self);
+                if (replace) TextBindings.Bind(slot, replacement.Text, session);
+                if (tracked && notificationEpoch == NotificationPresentations.Epoch)
+                {
+                    if (slot != null)
+                    {
+                        slot.wasTurnedOnOrChanged = true;
+                        NotificationSubtitleHud.Bind(self, slot, record);
+                    }
+                    NotificationPresentations.Observe(record, notificationEpoch, text: slot != null);
+                }
             } catch (Exception error) { Error("Lord message text binding failed: " + error); }
+        }
+        private static bool TryGetNotification(int index, out NotificationPresentationRecord record)
+        {
+            record = default;
+            return notificationState != null && notificationEpoch == NotificationPresentations.Epoch &&
+                NotificationTransport.TryGet(notificationState, index, out record);
         }
         internal static void Speech(SFXManager self, int channel, string path, float volume, bool ignoreMuting, bool ignorePause, int index)
         {
             var current = frame;
             var selected = current?.AtAudio(index);
-            self.playSpeech(channel, selected == null || selected.Audio.Kind == LordMessageSourceKind.Original ? path : selected.Audio.Path,
-                volume, ignoreMuting, ignorePause);
+            bool tracked = TryGetNotification(index, out var record) && record.AudioIndex == index;
+            var previous = tracked ? NotificationPresentations.EnterDispatch(record, speech: true) : NotificationPresentations.SuspendDispatch();
+            try
+            {
+                self.playSpeech(channel, selected == null || selected.Audio.Kind == LordMessageSourceKind.Original ? path : selected.Audio.Path,
+                    volume, ignoreMuting, ignorePause);
+                if (tracked) NotificationPresentations.Observe(record, notificationEpoch);
+            }
+            finally { NotificationPresentations.ExitDispatch(previous); }
         }
-        internal static bool TryForwardSpeech(SFXManager self, int channel, string path, float volume, bool ignoreMuting, bool ignorePause, int index)
+        internal static bool TryForwardSpeech(SFXManager self, int channel, string path, float volume, bool ignoreMuting, bool ignorePause,
+            int index, EngineInterface.PlayState state)
         {
-            if (frame?.AtAudio(index) == null) return false;
-            Speech(self, channel, path, volume, ignoreMuting, ignorePause, index);
-            return true;
+            if (frame?.AtAudio(index) != null)
+            {
+                Speech(self, channel, path, volume, ignoreMuting, ignorePause, index);
+                return true;
+            }
+            if (!TryGetNotification(index, out var record) || record.AudioIndex != index) return false;
+
+            var previous = NotificationPresentations.EnterDispatch(record, speech: true);
+            try
+            {
+                Audio.UnitVoiceRuntime.Play(self, channel, path, volume, ignoreMuting, ignorePause, state);
+                NotificationPresentations.Observe(record, notificationEpoch);
+                return true;
+            }
+            finally { NotificationPresentations.ExitDispatch(previous); }
         }
         internal static void Video(SFXManager self, string path, bool loop, bool waitForSpeech, int index)
         {
             var current = frame;
             var selected = current?.AtVideo(index);
-            self.playBink(selected == null || selected.Video.Kind == LordMessageSourceKind.Original ? path : selected.Video.Path, loop, waitForSpeech);
+            bool tracked = TryGetNotification(index, out var record) && record.VideoIndex == index;
+            var previous = tracked ? NotificationPresentations.EnterDispatch(record) : NotificationPresentations.SuspendDispatch();
+            var before = tracked ? self.requestBinkPlaybackURI : null;
+            try
+            {
+                self.playBink(selected == null || selected.Video.Kind == LordMessageSourceKind.Original ? path : selected.Video.Path, loop, waitForSpeech);
+                if (tracked)
+                {
+                    var after = self.requestBinkPlaybackURI;
+                    NotificationPresentations.Observe(record, notificationEpoch, request: ReferenceEquals(before, after) ? null : after);
+                }
+                else NotificationPresentations.ForgetRendered();
+            }
+            finally { NotificationPresentations.ExitDispatch(previous); }
             if (selected == null) return;
             current.Complete();
             if (Volatile.Read(ref confirmed) == 0 && Interlocked.Exchange(ref confirmed, 1) == 0)

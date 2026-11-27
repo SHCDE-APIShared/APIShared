@@ -79,6 +79,91 @@ namespace APISharedTests
                 }
             }
         }
+        [TestMethod]
+        public void NotificationProloguesAcceptActualRedBirdEncodingAndRejectForeignChanges()
+        {
+            byte[][] entries = {
+                new byte[] { 0x48,0x89,0x5C,0x24,0x18,0x55 },
+                new byte[] { 0x40,0x53,0x48,0x83,0xEC,0x20 },
+                new byte[] { 0x48,0x89,0x5C,0x24,0x08,0x48,0x89,0x6C,0x24,0x10 },
+                new byte[] { 0x48,0x89,0x5C,0x24,0x08,0x57 },
+                new byte[] { 0x48,0x83,0xEC,0x28,0x83,0xF9,0x02 }
+            };
+            byte[] image = File.ReadAllBytes(Path.Combine(InstalledTestEnvironment.GameDirectory(),
+                "Stronghold Crusader Definitive Edition_Data", "Plugins", "x86_64", "CrusaderDE.dll"));
+            using (var hash = SHA256.Create()) Assert.AreEqual(ApiSharedRuntime.SupportedHash, Hex(hash.ComputeHash(image)));
+            int[] rvas = { 0xFEE50, 0x102C30, 0x24220, 0x87D10, 0x104240 };
+            for (int index = 0; index < entries.Length; index++)
+            {
+                byte[] entry = entries[index];
+                CollectionAssert.AreEqual(entry, AtRva(image, rvas[index], entry.Length));
+                // A private two-page fixture: the decoder has its full 256-byte scan
+                // plus lookahead in the first page; the following page is inaccessible.
+                IntPtr page = VirtualAlloc(IntPtr.Zero, new UIntPtr(8192), 0x3000, 0x40);
+                Assert.AreNotEqual(IntPtr.Zero, page);
+                Assert.IsTrue(VirtualProtect(page + 4096, new UIntPtr(4096), 1, out uint unused));
+                IntPtr target = page + 4096 - (256 + 16);
+                NativeDetour<Work> hook = null;
+                Work callback = (manager, slot) => 0; // Never called: these are real prologues, not executable function bodies.
+                try
+                {
+                    byte[] source = Enumerable.Repeat((byte)0x90, 256 + 16).ToArray();
+                    Array.Copy(entry, source, entry.Length); source[entry.Length + 32] = 0xC3;
+                    Marshal.Copy(source, 0, target, source.Length);
+                    byte[] expected = source.Take(entry.Length + 8).ToArray();
+                    var options = WorldMutationRuntime.MoatOptions(256) with { SuspendThreadsDuringPatch = false };
+                    var request = new DetourRequest<Work> { Name = "Private notification " + index,
+                        Callback = callback, TargetAddress = unchecked((ulong)target.ToInt64()) };
+                    hook = (NativeDetour<Work>)new NativeDetourBackend(options).CreateDetour(in request);
+                    Action prepared = () => NativeIndirectEntry.Validate(hook, target, expected, entry.Length, false);
+                    prepared();
+                    RejectChangedByte(target, 0, prepared);
+                    RejectChangedByte(hook.TrampolineAddress, 0, prepared);
+                    RejectChangedByte(hook.TrampolineAddress, hook.TrampolineSize - 1, prepared);
+                    // Validate the actual continuation, independent of byte-identical source length.
+                    var decoder = Decoder.Create(64, new ByteArrayCodeReader(ReadBytes(hook.TrampolineAddress, hook.TrampolineSize)));
+                    decoder.IP = unchecked((ulong)hook.TrampolineAddress.ToInt64());
+                    Instruction last = default;
+                    while (decoder.IP < unchecked((ulong)hook.TrampolineAddress.ToInt64()) + (uint)hook.TrampolineSize) { decoder.Decode(out last); Assert.IsFalse(last.IsInvalid); }
+                    Assert.AreEqual(Mnemonic.Jmp, last.Mnemonic);
+                    Assert.AreEqual(unchecked((ulong)target.ToInt64()) + (uint)entry.Length, last.NearBranchTarget);
+                    if (index == 1) Assert.AreEqual(10, hook.TrampolineSize, "REX40 PUSH becomes one byte; original resume remains +6.");
+                    var sizeField = hook.GetType().GetField("<TrampolineSize>k__BackingField", BindingFlags.NonPublic | BindingFlags.Instance);
+                    Assert.IsNotNull(sizeField);
+                    int size = hook.TrampolineSize;
+                    try { sizeField.SetValue(hook, size + 1); Assert.ThrowsExactly<InvalidOperationException>(prepared); }
+                    finally { sizeField.SetValue(hook, size); }
+                    hook.Enable();
+                    Action published = () => NativeIndirectEntry.Validate(hook, target, expected, entry.Length, true);
+                    published();
+                    RejectChangedByte(target, 0, published);
+                    RejectChangedByte(target, entry.Length, published);
+                    RejectChangedByte(hook.PointerSlot, 0, published);
+                    RejectChangedByte(hook.TrampolineAddress, 0, published);
+                    RejectChangedByte(hook.TrampolineAddress, hook.TrampolineSize - 1, published);
+                    if (entry.Length > 6) RejectChangedByte(target, 6, published);
+                    published();
+                    GC.KeepAlive(callback);
+                }
+                finally { hook?.Dispose(); Assert.IsTrue(VirtualFree(page, UIntPtr.Zero, 0x8000)); }
+            }
+        }
+        private static byte[] ReadBytes(IntPtr address, int count)
+        { var result = new byte[count]; Marshal.Copy(address, result, 0, count); return result; }
+        private static void RejectChangedByte(IntPtr address, int offset, Action validate)
+        {
+            IntPtr at = address + offset; byte original = Marshal.ReadByte(at);
+            Assert.IsTrue(VirtualProtect(at, new UIntPtr(1), 0x40, out uint protect));
+            try { Marshal.WriteByte(at, (byte)(original ^ 1)); Assert.ThrowsExactly<InvalidOperationException>(validate); }
+            finally { Marshal.WriteByte(at, original); Assert.IsTrue(VirtualProtect(at, new UIntPtr(1), protect, out uint ignored)); }
+            validate();
+        }
+        [DllImport("kernel32", SetLastError = true)]
+        private static extern IntPtr VirtualAlloc(IntPtr address, UIntPtr size, uint allocation, uint protection);
+        [DllImport("kernel32", SetLastError = true)]
+        private static extern bool VirtualProtect(IntPtr address, UIntPtr size, uint protection, out uint oldProtection);
+        [DllImport("kernel32", SetLastError = true)]
+        private static extern bool VirtualFree(IntPtr address, UIntPtr size, uint freeType);
         private static object Contract(string name) => typeof(WorldMutationRuntime).GetField(name, BindingFlags.Static | BindingFlags.NonPublic).GetValue(null);
         private static T Field<T>(object value, string name) => (T)value.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public).GetValue(value);
         private static string Hex(byte[] hash) => BitConverter.ToString(hash).Replace("-", "");

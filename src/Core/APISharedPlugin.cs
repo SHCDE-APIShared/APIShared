@@ -19,7 +19,7 @@ namespace APIShared
         /// <summary>Display name of the API plugin.</summary>
         public const string PluginName = "APIShared";
         /// <summary>Current API plugin version.</summary>
-        public const string PluginVersion = "0.74.0";
+        public const string PluginVersion = "0.78.0";
 
         // Services retain this forwarding logger after startup cleanup (failures via RuntimeHealth; Debug only with diagnostics).
         private BepInEx.Logging.ManualLogSource RuntimeLogger => Internal.DebugLogHelper.ForExternalCode(Logger);
@@ -46,6 +46,8 @@ namespace APIShared
             Presentation.BuildingTooltipPresentation.Initialize(RuntimeLogger);
             // Logging only: unit-settled SE subscriptions start with the first consumer registration.
             Units.UnitSettledEvents.Initialize(RuntimeLogger);
+            // Logging only: each paint site hooks at its first consumer registration.
+            Presentation.PaintEvents.Initialize(RuntimeLogger);
             Workshop.WorkshopRuntime.Initialize(this, RuntimeLogger);
             ApiSharedRuntime.ProcessInstance.InitializeManaged(RuntimeLogger);
             Audio.UnitVoiceRuntime.InitializeManaged(RuntimeLogger);
@@ -96,6 +98,7 @@ namespace APIShared
                 new NativeInitializationStep("lobby launch status", () => Lobby.LobbyLaunchStatus.Initialize(RuntimeLogger)),
                 // An unreadable CrusaderDE.dll leaves the hash empty, so hash-bound services report it unsupported.
                 new NativeInitializationStep("CrusaderDE.dll hash", () => hash = ComputeInstalledHash()),
+                new NativeInitializationStep("Vanilla AutoTrade option", () => Economy.AutoTrade.Initialize(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("map filename policy", () => Maps.MapLoadPolicy.Initialize(hash, RuntimeLogger)),
                 new NativeInitializationStep("typed construction costs", () => Buildings.ConstructionCosts.Initialize(context.ModuleHandle, context.Memory, hash, RuntimeLogger)),
                 new NativeInitializationStep("quarry pile placement", () => Buildings.QuarryPilePlacement.Initialize(context, hash, RuntimeLogger)),
@@ -162,7 +165,10 @@ namespace APIShared
                     installAivBuildStep: true)),
                 // Needs the mission lifecycle published above; later APIShared spans are watched as they publish.
                 new NativeInitializationStep("native foreign-patch recheck", () => NativeForeignPatchGuard.SubscribeRecheck(RuntimeLogger)),
+                new NativeInitializationStep("native notification identity", () => Presentation.NotificationNativeRuntime.Initialize(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("native simulation ticks", () => Simulation.SimulationTickEvents.Initialize(context, RuntimeLogger)),
+                new NativeInitializationStep("native storage context", () => Economy.NativeStorageNativeRuntime.Initialize(context, hash, RuntimeLogger)),
+                new NativeInitializationStep("native custom-goods wallet", () => Economy.GoodsWalletNative.Initialize(hash, RuntimeLogger)),
                 new NativeInitializationStep("shared health initialization", () => Health.HealthRuntime.Initialize(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("production goods receipts", () => Economy.ProductionGoodsReceived.Initialize(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("weapon workshops", () => Economy.WeaponProductionRuntime.Initialize(context, hash, RuntimeLogger)),

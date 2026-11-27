@@ -106,7 +106,9 @@ namespace APISharedTests
             var entries = type.GetField("entries", flags);
             var rng = typeof(DeterministicRandom).GetField("_rng", flags);
             var spoken = (Dictionary<string, string>)type.GetField("spoken", flags).GetValue(null);
+            var selection = typeof(NotificationEnqueueCapture).GetField("capture", flags);
             var previousEntries = entries.GetValue(null); var previousRng = rng.GetValue(null);
+            object previousSelection = selection.GetValue(null);
             var previousSpeech = new Dictionary<string, string>(spoken);
             try
             {
@@ -116,12 +118,17 @@ namespace APISharedTests
                 {
                     entries.SetValue(null, new[] { new PackagedLordPresentationEntry(3, "Lord", "Authored", json, provider) });
                     var random = new Random(123); rng.SetValue(null, random);
+                    selection.SetValue(null, new NotificationEnqueueCapture.CaptureFrame
+                        { Active = true, Phase = NotificationEnqueueCapture.CapturePhase.Resolving });
                     object[] call = { "Lord", AILordMessageType.Taunt1, null, null, null };
                     Assert.IsTrue((bool)type.GetMethod("TryResolveMedia", flags).Invoke(null, call), "A claimed Lord is answered by the packaged presentation.");
                     bool available = (bool)call[2];
                     Assert.AreEqual(provider != null, available);
                     object[] subtitle = { null, "Lord", null };
                     Assert.IsTrue((bool)type.GetMethod("Speech", flags).Invoke(null, subtitle));
+                    var captured = (NotificationEnqueueCapture.CaptureFrame)selection.GetValue(null);
+                    Assert.IsTrue(captured.Known);
+                    Assert.AreEqual(subtitle[2], captured.Subtitle, "Capture the exact clip text even when standard media are used.");
                     if (selectedText == null) selectedText = (string)subtitle[2]; else Assert.AreEqual(selectedText, subtitle[2]);
                     var reference = new Random(123); reference.Next(0, 2);
                     Assert.AreEqual(reference.Next(), random.Next(), "Local file availability changed synchronized RNG consumption.");
@@ -131,10 +138,15 @@ namespace APISharedTests
                 {
                     entries.SetValue(null, new[] { new PackagedLordPresentationEntry(3, "Lord", "Authored", null, provider) });
                     var random = new Random(123); rng.SetValue(null, random);
+                    selection.SetValue(null, new NotificationEnqueueCapture.CaptureFrame
+                        { Active = true, Phase = NotificationEnqueueCapture.CapturePhase.Resolving });
                     object[] call = { "Lord", AILordMessageType.Taunt1, null, null, null };
                     Assert.IsTrue((bool)type.GetMethod("TryResolveMedia", flags).Invoke(null, call));
                     Assert.IsFalse((bool)call[2], "An identity-only claim must not select optional peer-local SE clips.");
                     Assert.AreEqual("", call[3]); Assert.AreEqual("", call[4]);
+                    var captured = (NotificationEnqueueCapture.CaptureFrame)selection.GetValue(null);
+                    Assert.IsTrue(captured.Known, "A claim with no clip still has a proven standard text fallback.");
+                    Assert.IsNull(captured.Subtitle, "A missing clip may not pick up a previous queued subtitle.");
                     Assert.AreEqual(new Random(123).Next(), random.Next(), "A metadata-free claim consumed synchronized RNG.");
                 }
                 foreach (int secondSlot in new[] { 3, 4 }) foreach (bool reverse in new[] { false, true })
@@ -153,6 +165,7 @@ namespace APISharedTests
             }
             finally
             {
+                selection.SetValue(null, previousSelection);
                 entries.SetValue(null, previousEntries); rng.SetValue(null, previousRng); spoken.Clear();
                 foreach (var pair in previousSpeech) spoken.Add(pair.Key, pair.Value);
             }

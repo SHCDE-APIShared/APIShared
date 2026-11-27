@@ -35,7 +35,7 @@ namespace APIShared.DependencyBootstrap
         private static void Run(string[] args)
         {
             if (args.Length == 3 && args[1] == "pair") { PairContract.Read(args[2]); Console.WriteLine("PASS: built pair validated by runtime contract"); return; }
-            PairTests.Run(game); ShadowTests.Run(); ContractTests.Run(game);
+            PairTests.Run(game); ShadowTests.Run(); ContractTests.Run(game); SteamDependencyTests.Run(game);
         }
     }
 

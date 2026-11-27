@@ -3,7 +3,7 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.74.0",
+  "Version": "0.78.0",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
@@ -11,10 +11,46 @@
   "NetworkMode": 1,
   "SerpChangelog": [
     {
-      "Version": "0.74.0",
+      "Version": "0.78.0",
       "Changes": [
         "Share effective construction, editor terrain, moat-work and demolition observations with private invocation receipts, complete outer batches and native-world identities.",
-        "Expose final effective unit-move arguments and native results, with guarded single-wrapper calls that preserve independent nested orders and ignore mutable Post return replacements."
+        "Expose final effective unit-move arguments and native results, with guarded single-wrapper calls that preserve independent nested orders and ignore mutable Post return replacements.",
+        "Observe selected plugins before activation through guarded bootstrap observers and deferred assembly declarations, with explicit identity and failure contracts.",
+        "Allow automation callers to prepare the actual owned Skirmish lobby before launch."
+      ]
+    },
+    {
+      "Version": "0.77.0",
+      "Changes": [
+        "Keep queued custom-lord subtitles with the matching message, including lords loaded from packaged metadata. Generic game notifications use their own text.",
+        "Refresh the text bar when a new notification replaces one that is still visible.",
+        "Let mods identify individual rendered notifications so they can act on the correct text, video and speech."
+      ]
+    },
+    {
+      "Version": "0.76.0",
+      "Changes": [
+        "Preserve the confirmed Vanilla AutoTrade option in local and multiplayer saves and expose it to mods as a shared read-only permission.",
+        "Let mods guard shared view commands before observers can change the input, before the original or a replacement runs, and during nested calls.",
+        "Restore the complete previous paint result and claim when a rendering callback throws.",
+        "Keep required mod save data attached when the game uses mixed Windows path separators or writes a Trail mission to a different file.",
+        "Keep an exact retry of a custom-goods storage exchange from evicting its own receipt during cleanup, so the exchange is recognized without charging or moving goods again."
+      ]
+    },
+    {
+      "Version": "0.75.0",
+      "Changes": [
+        "Let mods explain how a market price was composed and compare it with the value currently in the game.",
+        "Give mods shared inventories and transactions for custom goods, with support for native storage and workshop production.",
+        "Add protected mod save participation, atomic imports of older storage data, and safer association of save and load callbacks with the active mission.",
+        "Add shared rendering and market UI hooks, troop variant identity, and read-only observations of native worlds and workshop batches."
+      ]
+    },
+    {
+      "Version": "0.74.0",
+      "Changes": [
+        "Let client-side asset mods declare Steam game dependencies in info.json. When the matching APIShared preloader is active, the Script Extender loads the mod's graphics and other assets only if Steam reports access to every required game.",
+        "Give C# mods a Steam access query so they can enable individual local features for players with access to a related game."
       ]
     },
     {

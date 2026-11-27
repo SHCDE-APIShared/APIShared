@@ -1,5 +1,7 @@
 # API catalog
 
+`UnitMoveEvents`, `WorldMutationEvents` and the bootstrap early-plugin activation contracts below require APIShared **0.78.0** or newer. Earlier private observer builds are not the public0.77 API.
+
 `APIShared.DependencyBootstrap.EarlyPluginActivation` (bootstrap companion assembly) observes the actual selected plugin immediately before construction/Awake. Preloader registration or deferred assembly declarations, identity, deadline and failure contracts: [early activation](DEPENDENCY_BOOTSTRAP.md#early-plugin-activation-observers).
 
 ## Effective native unit moves
@@ -14,6 +16,55 @@ nested orders. See [unit-move ownership, origin, lifetime and result contracts](
 editor terrain, moat work and demolition observations, consumer-private invocation
 receipts, outer batches and world generations. See [source, thread, lifetime and
 caller-boundary contracts](WORLD_MUTATIONS.md).
+
+## Native pooled storage
+
+`ModApiClient.NativeStorage` registers owner-qualified virtual goods in native
+Armory/Granary pools, with exact building identity, coordinated capacity, atomic
+gold/stock exchanges and joint ledger/allocation persistence. No native goods ID,
+recipe, art or hauling policy is invented. See [contracts and limits](NATIVE_STORAGE.md)
+and the [compiled example](../examples/ThirdPartyMod/NativeStorageExample.cs).
+
+Ordinary NativeStorage retains its physical-stock/save behavior, including real
+multiplayer. Explicit `client.CriticalSaves` enrollment can request the shared
+SP/editor-only protected writer and container version 3/minimum reader 3.
+Consumer migration remains separate. See
+[save-policy compatibility](NATIVE_STORAGE.md#material-save-policy-compatibility-change).
+
+`NativeStoredGood.TryGetQuantity` reads one registered good in an exact observed
+store under the existing [protected read contract](NATIVE_STORAGE.md#read-one-good-in-one-store).
+
+`NativeStorageClient.TryPrepareImport` and `TryCommitImport` support bounded typed
+cold migration of an enrolled owner's physical allocations and final cargo. A
+successful prepared plan keeps shared publication passive until every matching
+owner commits. See [legacy-ledger import](NATIVE_STORAGE.md#importing-an-existing-owner-ledger)
+for exact provenance, generation, capacity, retry and consumer-cutover requirements.
+
+`NativeStorageClient.TryExchangeBatch` atomically exchanges up to 64 physical
+rows and one player's gold, with bounded replay and joint pooled-capacity checks.
+See [atomic multi-store exchanges](NATIVE_STORAGE.md#atomic-multi-store-exchanges).
+
+## External production cargo
+
+`NativeStorageClient.TryCreateCargo`, `TryGetCargo`, `TryDepositCargo` and
+`TryDiscardCargo` keep framework-owned undelivered lots beside the existing
+physical storage state. Creation keys have a separate bounded replay stream;
+delivery atomically decreases a cargo checkpoint and adds physical stock.
+SP/editor only, caller-held engine monitor, verified external production/custody/
+arrival and a qualified critical save owner are required. See
+[contracts, retries and save compatibility](NATIVE_STORAGE.md#external-production-cargo), including the
+material passive-record save-policy change, and the
+[compiled example](../examples/ThirdPartyMod/ExternalCargoExample.cs).
+
+## Custom goods inventory
+
+`APIShared.Goods.CustomGoodsInventory` in the game-independent Content assembly
+provides owner-qualified virtual goods, bounded player stock/capacities, atomic
+multi-good changes, sequenced retry protection and one-shot reservations.
+Caller-owned mission state has canonical snapshots for existing versioned saves.
+Native goods slots, wallets, physical storage and multiplayer transport require
+separate adapters. See [usage, persistence and limits](CUSTOM_GOODS.md) and the
+[compiled example](../examples/ThirdPartyMod/CustomGoodsExample.cs).
 
 ## AI military admission
 
@@ -39,7 +90,10 @@ HP, process-rooted policy handles, saved original bases and linked siege towers.
 From 0.69.0, `TryEnableMultiplayerResync` opts the shared HP ledger into repair.
 See [health lifetime, migration and safety](HEALTH.md).
 `APIShared.Economy.MarketPriceModifiers` composes native per-lot base prices,
-including Human/AI contextual policies. See [market composition](MARKET_PRICE_MODIFIERS.md).
+including Human/AI contextual policies. Use its typed query factory with
+`APIShared.Modifiers.ValueModifiers.TryGetStatus` to read immutable contribution
+provenance, the resolved value, applied bounds and a separate observation.
+See [market composition and read-only status](MARKET_PRICE_MODIFIERS.md#read-only-composition-status).
 
 Local mapper-selection camera policies are available through
 `APIShared.Presentation.MapperSelectionCameraEvents`: ordered owner-bound Pre/Post
@@ -85,6 +139,14 @@ own existing local setting. See [mod keybind integration](THIRD_PARTY_GUIDE.md#l
 the final map tile and the ordered unit IDs under the cursor.
 See [troop-command observation](THIRD_PARTY_GUIDE.md#troop-command-observation).
 
+## Critical save participants
+
+`ModApiClient.CriticalSaves` enrolls an owner-matching versioned record in the shared
+SP/editor protected writer, with private prepare/release state and original-record
+protection observations. Acquisition is dormant; enrollment is explicit and
+process-lived. See [startup, prerequisites and limits](SAVE_DATA.md#opt-in-protected-save-participants)
+and the [compiled example](../examples/ThirdPartyMod/SaveDataExample.cs).
+
 ## Managed save calls
 
 `APIShared.Savegames.ManagedSaveEvents` pairs passive begin and completion
@@ -97,6 +159,10 @@ result, a veto or an exception. See the [save observer contract](THIRD_PARTY_GUI
 an admitted managed engine call with one ordered callback snapshot. The pair
 also surrounds calls that return zero or throw. For time-based rules use the
 native tick API above. See the [engine-run contract](THIRD_PARTY_GUIDE.md#managed-engine-run-boundaries).
+
+The existing owner also contains an internal, explicitly bound NativeRun
+exclusion foundation. It supplies no public suspension client and does not change
+the observer API. See its [scope and lifetime](WORKER_PRODUCTION_BONUS.md#internal-nativerun-exclusion).
 
 ## Managed IL patches that cannot break other patches
 
@@ -262,6 +328,7 @@ Rounded fear coefficients and fixed contributions per signed level use [`Economy
 | Area / entry | Purpose and availability | Thread, ownership and lifetime |
 |---|---|---|
 | `TryGetMissionLifecycle` | Managed initialization checkpoints, completed mission start/end and current context; startup member check | Register on Unity thread; publisher-thread notifications; no guaranteed observer sort; late start replay only; process lifetime |
+| `ModApiClient.TryGetNativeWorldReads` | Coherent managed-ready metadata for the current native world; [read workflow and limits](MISSION_LIFECYCLE.md#acquire-protected-native-world-reads) | Caller holds the validated actual engine monitor; known-mode immutable value; retained world reads return fresh metadata; point-in-time observation grants no mutation or pointer lifetime authority |
 | `ModApiClient.TryGetMissionPlayStateReadiness` | First fresh PlayState after managed mission Start, without a loading/pause timeout; see [guide](THIRD_PARTY_GUIDE.md#current-mission-playstate-readiness) | Unity callbacks and ready replay; immutable session receipt; end/replacement invalidates Current; no HUD/identity/authority guarantee |
 | `ModApiClient.TryGetCoopAiStartImport` | Single owner of Vanilla's Coop Trail default-castle upload: imports provider plans (standard/community/historical castles or explicit candidates, optional custom AIC) per AI slot; startup member check ([guide](THIRD_PARTY_GUIDE.md#coop-trail-ai-start-import)) | Register on Unity thread; providers run once per Coop start attempt inside the native multiplayer initialization; contradicting plans abort the attempt; Vanilla unchanged without plans; process lifetime. The same object implements `ICoopAiStartPreviewCapability` for start-button checks; plans may confirm fewer candidates than they list (`ConfirmedCandidateCount`) |
 | `MissionRestart.Run(ownerGuid, action)` | Explicit same-mission restart encompassing preparation and loading; links replacement sessions for settings ownership | Unity thread, ready non-editor source; nested calls share one attempt; no persistence or settings transport |
@@ -286,11 +353,13 @@ Rounded fear coefficients and fixed contributions per signed level use [`Economy
 | `APIShared.Presentation.VisibleMapRenderEvents` | Ordered native render preparation and reverse cleanup, original exactly once, native dormant guard | Register after native library initialization; caller thread; [contract](THIRD_PARTY_GUIDE.md#shared-render-and-pause-menu-presentation) |
 | `APIShared.Presentation.IngameMenuActions` | Named two-slot ESC rows, inline custom controls (`TryRegisterContent`), explicit takeovers, original-button overrides (`TryOverrideVanillaAction`) and conditional hiding on both pages (`TryRegisterVanillaSuppression`), cached occupancy, optional tooltips and a scrollable additional-actions page | Unity-thread registration/query/providers/commands; event-driven invalidation, permanent registrations; [contract](THIRD_PARTY_GUIDE.md#esc-menu-rows-and-additional-actions) |
 | `APIShared.Presentation.MissionOverEvents` | End-screen buttons, managed end state and game-over OST; ordered Pre/Accepted/Post with guarded at-most-once deferral | Caller thread; permanent hooks installed on demand; [contract](THIRD_PARTY_GUIDE.md#end-screen-presentation) |
+| `APIShared.Presentation.PaintEvents` | After-paint callbacks for body sprites, tile images, chevrons, tile colours and map draw-list layers; ordered claims to replace a result | Startup registration; painting thread (Unity); order/owner/ID; optional sprite-file filter; first registration hooks that site; no replay; process lifetime |
 | `APIShared.Recruitment.RecruitmentRequestPolicy` | Pure recruitment ceilings and pending-reservation arithmetic | No hook or native affordability guarantee; consumers own reconciliation |
 | `APIShared.Recruitment.RecruitmentMaterialUi` | Shared European weapon-stock HUD bypass predicates | Validated 26-site IL contract; OR combination; process lifetime |
 | `APIShared.Recruitment.RecruitmentAvailability` | One shared pass that disables Vanilla recruit buttons by side-effect-free predicates, with one context per GUI check | Startup-thread registration; GUI-check Post on its Unity caller thread, only in Vanilla recruitment panel modes; already disabled buttons stay untouched; OR combination; process lifetime |
 | `APIShared.Presentation.TroopActionHud` | Shared Vanilla troop-action slots and automatic HUD pages; legacy host visibility/layout coordination | Unity thread; owner-local button IDs; logical activation; independent command/factory failures; process lifetime |
 | `APIShared.Economy.MarketPriceEvents` | Native buy/sell query Pre/Post and replacement totals | Register after LibraryLoaded initialization; audited image only; actual native caller thread; process lifetime |
+| `APIShared.Economy.AutoTrade` | Confirmed Vanilla AutoTrade permission for the current mission | [Consumer contract](THIRD_PARTY_GUIDE.md#respecting-the-vanilla-autotrade-option); read-only, audited image only |
 | `APIShared.Economy.AiMarketSellPolicies` | Final AI reserve and pre-booking quantity policies, OR-combined native safety | [Contract and example](AI_MARKET_SELL.md); initially disabled; native caller thread; process lifetime |
 | `APIShared.Economy.AiMarketEvents` | Paired native AI purchase-decision, recruitment, buy and sell observations (0.62.0) | Initially disabled registrations; nested caller-private numeric tokens; original exactly once; [guide](THIRD_PARTY_GUIDE.md#observing-ai-trade-and-recruitment) |
 | `APIShared.Multiplayer.MultiplayerResyncEvents` | Critical callbacks at the common executed Vanilla repair boundaries (0.62.0) | Engine-serialized native caller; process lifetime; participant failure is terminal; [guide](THIRD_PARTY_GUIDE.md#multiplayer-repair-boundaries) |
@@ -298,6 +367,7 @@ Rounded fear coefficients and fixed contributions per signed level use [`Economy
 | `APIShared.Units.UnitSettledEvents` | Created, recruited, assigned and disbanded units once their native creation or type change has finished; value notifications | Startup registration; SE simulation-tick thread; trigger order, then order/owner/ID; first registration subscribes to SE; no replay; process lifetime |
 | `APIShared.NativeSites.NativeSiteRegistry` | Prefer a shared APIShared service; use the registry for hooks APIShared doesn't cover yet. Cooperative registry of CrusaderDE.dll native sites: register a span before hooking it (Exclusive, ChainableEntry, CallOnly, Observe), get an acceptance or a refusal naming the owner, query owner and mode by RVA or span. A refusal identifies a conflict without resolving it; an accepted overlap only means no byte overlap, not compatibility | Any thread; register at startup or install time; atomic groups; allocation-free snapshot queries; process lifetime, unregister only to roll back; sees only registered sites ([guide](NATIVE_SITES.md)) |
 | `APIShared.Savegames.VersionedSaveData` | Versioned per-mod save records over Script Extender `ModSaveDataAPI`: migration steps, unknown entries kept, documented load results | Register during startup; capture on the Extender's save thread; one load result per archive load in owner/identifier order; process lifetime |
+| `ModApiClient.CriticalSaves` | Explicit protected-writer enrollment for an owner-matching versioned record; prepare/release checkpoints and original-marker observations | Initialized Unity startup before world/load; SP/editor only; exact Prepared delivery for marker reads; process lifetime; [contract](SAVE_DATA.md#opt-in-protected-save-participants) |
 | `APIShared.Audio.SoundSourceEvents` | Native-stage Pre for attributed soldier and melee-kill sound calls: acting unit ID, GlobalId and type, the killed victim, and sound ID replacement before the native record exists | Any-thread registration; native game-tick thread inside the wrapper; order/owner/ID; no replay; allocation-free struct args; process lifetime |
 | `APIShared.Audio.SoundSourceSelection` | Optional set of catalog sources (by key or situation) for `SoundEvents`/`SoundSourceEvents` registrations; unselected sources stay native | Immutable; any thread; fixed per registration; existing overloads equal `All` ([guide](AUDIO.md#source-selections)) |
 
@@ -368,12 +438,15 @@ Member-level documentation is also shipped as `APIShared.xml` beside the DLL.
 | Feature | Public contracts / entry | Behavior / hook owner | Example |
 |---|---|---|---|
 | Client and readiness | [ModApiClient](../src/Core/ModApiClient.cs), [core contracts](../src/Core/Contracts.cs) | [ApiSharedRuntime](../src/Core/ApiSharedRuntime.cs) | [Plugin](../examples/ThirdPartyMod/ExamplePlugin.cs) |
+| External production cargo | [Cargo snapshots and methods](../src/Economy/Storage/NativeStorageCargo.Contracts.cs) | [Closed cargo engine](../src/Economy/Storage/NativeStorageCargoEngine.cs), [world state](../src/Economy/Storage/NativeStorageState.Cargo.cs), [prepared load](../src/Economy/Storage/NativeStoragePreparedLoad.cs) | [Cargo and custody](../examples/ThirdPartyMod/ExternalCargoExample.cs) |
 | Mission notifications | [Mission contracts](../src/Missions/MissionLifecycleContracts.cs) | [Capability](../src/Missions/MissionLifecycleService.cs), [relay](../src/Missions/Internal/MissionEventRelay.cs) | [Mission observer](../examples/ThirdPartyMod/MissionExample.cs) |
+| Protected native-world observations | [Read contracts](../src/Missions/NativeWorldReadContracts.cs), [guide](MISSION_LIFECYCLE.md) | [Reader](../src/Missions/NativeWorldReadReader.cs), existing mission owner | [Mission observer](../examples/ThirdPartyMod/MissionExample.cs) |
 | Lobby observations | [Lobby contracts](../src/Lobby/LobbyStateContracts.cs) | [Capability](../src/Lobby/LobbyStateService.cs) | â€” |
 | Multiplayer packets | [Packet contracts](../src/Networking/NetworkPacketContracts.cs), [owner registration](../src/Networking/ModNetworkClient.cs), [existing Chore sender](../src/Networking/ChoreTransport.cs) | [Chore channel](../src/Networking/ChoreChannel.cs), [message channel](../src/Networking/MessageChannel.cs) | [Networking](../examples/ThirdPartyMod/NetworkingExample.cs) |
 | Defeat transitions and current state | [Player contracts](../src/Players/PlayerDefeatContracts.cs) | [Capability](../src/Players/PlayerDefeatService.cs) | [Using snapshots](THIRD_PARTY_GUIDE.md#player-defeat-state) |
 | Player views and control | [Perspective](../src/Players/PlayerPerspectiveAPI.cs), [observer exceptions](../src/Players/ObserverCommandExceptions.cs) | [View identity](../src/Players/ViewIdentity/PlayerViewIdentityRuntime.cs), [input boundaries](../src/Players/Control/ControlInputNative.cs) | â€” |
 | Simulation ticks and Peace Time | [Ticks](../src/Simulation/SimulationTickEvents.cs), [clock](../src/Simulation/SimulationClock.cs), [Peace Time](../src/Simulation/PeaceTimeState.cs) | [Tick source](../src/Simulation/SimulationTickSource.cs) | â€” |
+| Managed engine-run boundary | [Observer](../src/Simulation/EngineRunEvents.cs) | [Existing hook](../src/Units/Selection/MarkedUnitSelectionAPI.cs), [internal gate](../src/Economy/WorkerProductionRunGate.cs), [publication](../src/Economy/WorkerProductionRunPublication.cs) | [Scope and lifetime](WORKER_PRODUCTION_BONUS.md#internal-nativerun-exclusion) |
 | Enemy-unit proximity | [Contracts](../src/Buildings/EnemyProximity/EnemyProximityContracts.cs), [registration](../src/Buildings/EnemyProximity/EnemyProximityPolicies.cs) | [Runtime](../src/Buildings/EnemyProximity/EnemyProximityRuntime.cs) | â€” |
 | Troop HUD | [HUD contracts](../src/Presentation/UnitHud/UnitHudContracts.cs), [action buttons](../src/Presentation/UnitHud/UnitHudActionButtonContracts.cs), [sprite colours](../src/Presentation/UnitHud/UnitHudSpriteColours.cs), [player colours](../src/Players/PlayerColours.cs) | [Service and state](../src/Presentation/UnitHud/UnitHudPresentationService.cs), [hooks](../src/Presentation/UnitHud/UnitHudPresentationService.Hooks.cs), named feature parts beside them | [HUD](../examples/ThirdPartyMod/HudExample.cs) |
 | Side HUD | [Button contracts](../src/Presentation/HudExtras/HudExtrasButtonContracts.cs) | [Service](../src/Presentation/HudExtras/HudExtrasButtonsService.cs), [layout](../src/Presentation/HudExtras/HudExtrasButtonLayout.cs) | [HUD](../examples/ThirdPartyMod/HudExample.cs) |
@@ -392,6 +465,7 @@ Member-level documentation is also shipped as `APIShared.xml` beside the DLL.
 | Mission-start settings log | Automatic for published APIShared preset endpoints; no consumer registration required | Info-level compact JSON, once per successful session; applied host values and this client's player/local values | [Log format](MOD_SETTINGS.md#mission-start-settings-log) |
 | Savegame participation | [Contracts](../src/Savegames/SavegameModSettingsContracts.cs), [exclusion attribute](../src/ModSettings/ExcludeFromSavegameModSettingsAttribute.cs) | [SavegameModSettings](../src/Savegames/SavegameModSettings.cs) | â€” |
 | Versioned save data | [Contracts](../src/Savegames/VersionedSaveDataContracts.cs), [registration](../src/Savegames/VersionedSaveDataRuntime.cs) | [Registry and load window](../src/Savegames/VersionedSaveDataRegistry.cs), [record codec](../src/Savegames/VersionedSaveRecordCodec.cs), [guide](SAVE_DATA.md) | [Save data](../examples/ThirdPartyMod/SaveDataExample.cs) |
+| Critical save participants | [Contracts](../src/Savegames/CriticalSaveContracts.cs), [client](../src/Savegames/CriticalSaveClient.cs) | [Enrollment, 8/16 MiB aggregate consent and limits](SAVE_DATA.md#opt-in-protected-save-participants), [capture protocol](../src/Savegames/VersionedSaveCriticalCapture.cs) | [Save data](../examples/ThirdPartyMod/SaveDataExample.cs) |
 | Additional route search | [Pre/Post contracts](../src/Pathfinding/Routes/RouteSearchContracts.cs) | [Registry and publication](../src/Pathfinding/Routes/RouteSearchEvents.cs) | [Route observer](../examples/ThirdPartyMod/RouteSearchExample.cs) |
 | Route engine status | [RouteEngineInfo](../src/Pathfinding/Routes/RouteEngineInfo.cs) | Passive report; one engine at a time; diagnostics and option texts only. |
 | Route tile rules | [Rules and rule sets](../src/Pathfinding/Routes/RouteTileRules.cs) | Passive registry; route engines read effects and the change journal ([section](#route-tile-rules)) | [Hazard tiles](../examples/ThirdPartyMod/RouteTileRulesExample.cs) |
@@ -411,6 +485,7 @@ Member-level documentation is also shipped as `APIShared.xml` beside the DLL.
 | Recruitment policies | [Request arithmetic](../src/Units/Recruitment/RecruitmentRequestPolicy.cs), [material UI](../src/Units/Recruitment/RecruitmentMaterialUi.cs), [button availability](../src/Units/Recruitment/RecruitmentAvailability.cs) | [Material IL contract](../src/Units/Recruitment/RecruitmentMaterialUiIlContract.cs) | [Interception](../examples/ThirdPartyMod/InterceptionExample.cs) |
 | Troop action buttons | [TroopActionHud](../src/Presentation/TroopActions/TroopActionHud.cs), [button contracts](../src/Presentation/TroopActions/TroopActionButtonContracts.cs) | [Legacy layout](../src/Presentation/TroopActions/TroopActionHudLayout.cs), [paging policy](../src/Presentation/TroopActions/TroopActionPagingPolicy.cs) | [HUD](../examples/ThirdPartyMod/HudExample.cs) |
 | In-game tooltip extensions | [Public service](../src/Presentation/Tooltips/TooltipPresentation.cs), [content and positions](../src/Presentation/Tooltips/TooltipContracts.cs) | Shared renderer for buildings, recruitment, siege construction and repair | [Guide](TOOLTIPS.md), [standalone example](../examples/ThirdPartyMod/TooltipExample.cs) |
+| Shared paint sites | [PaintEvents](../src/Presentation/Paint/PaintEvents.cs), [paint values](../src/Presentation/Paint/PaintContracts.cs) | [Sites](../src/Presentation/Paint/PaintSites.cs), [registry](../src/Presentation/Paint/PaintRegistry.cs), [installation guard](../src/Presentation/Paint/PaintSiteGuard.cs), [guide](PAINT.md) | [Paint](../examples/ThirdPartyMod/PaintExample.cs) |
 | Building tooltip text | [Public broker](../src/Presentation/BuildingTooltip/BuildingTooltipPresentation.cs) | Shared presentation in that file | [Tooltip](../examples/ThirdPartyMod/BuildingTooltipExample.cs) |
 | Situational audio | [Sound contracts](../src/Audio/SoundContracts.cs), [event broker](../src/Audio/SoundEvents.cs), [source contracts](../src/Audio/SoundSourceContracts.cs), [source events](../src/Audio/SoundSourceEvents.cs) | [Audio contracts and implementation](AUDIO.md) | [Sound](../examples/ThirdPartyMod/SoundExample.cs) |
 | Workshop packages | [Owner-bound client](../src/Workshop/WorkshopClient.cs) | [Publishing and deployment](WORKSHOP.md), [installation core](../src/Workshop/Install/WorkshopSafeInstall.cs), [external mod managers](WORKSHOP.md#external-mod-managers-apisharedmodmanagerjson) | [Workshop](../examples/ThirdPartyMod/WorkshopExample.cs) |
@@ -794,10 +869,15 @@ concrete, including assigning 1000 itself. Reservations must use final Post valu
 and retain the consumer's observed-unit reconciliation.
 
 [PresentationEvents](../src/Presentation/Events/PresentationEvents.cs) owns named
-GUI-check, building-rollover, recruitment/troop-panel hover and siege-ammo button
-sites: `GuiChecks`, `BuildingRollover`, `RecruitmentEnter`, `RecruitmentLeave`,
-`TroopPanelEnter`, `TroopPanelLeave` and `RechargeSiegeAmmo`. GUI checks also run
-while paused. Pre can replace a button parameter or veto
+GUI-check, building-rollover, recruitment/troop-panel hover, siege-ammo, market
+button and shared extended-features sites. The original operations are `GuiChecks`, `BuildingRollover`,
+`RecruitmentEnter`, `RecruitmentLeave`, `TroopPanelEnter`, `TroopPanelLeave` and
+`RechargeSiegeAmmo`. Appended operations are `MarketSelectGoods`,
+`MarketCycleGoods`, `MarketBuySell`, `MarketChangeTradeType` and
+`ExtendedFeaturesAction`; see the [method and parameter contracts](THIRD_PARTY_GUIDE.md#market-ui-actions).
+`TryRegisterViewInputGuard` applies a policy before both Pre and the final managed
+call or replacement. A nested view call still checks its input before dispatch.
+GUI checks also run while paused. Pre can replace a button parameter or veto
 the complete managed call. Post reports normal completion, veto or original
 exception; the original exception is rethrown after callbacks. Use
 `OriginalCompleted` before augmenting Vanilla writes and State for cleanup even when
@@ -847,6 +927,22 @@ host convention.
 The additive typed registration and its paging behavior are described under
 [Vanilla troop-action slots and pages](#vanilla-troop-action-slots-and-pages).
 
+## Shared paint sites
+
+Not in packages up to 0.9.1; check the package you require. [PaintEvents](../src/Presentation/Paint/PaintEvents.cs)
+owns one hook per managed draw method: `SpriteMapping.SetBodySprite`,
+`setGenericBuildingTileGraphic` and `getChevronImage`, `gameTile.setTileColour` and the
+`GameMap.addUpdatePixie`/`Fly`/`Org`/`BuildingAnim` draw-list updates. A site is hooked
+at its first successful registration. Callbacks run after the game's method and the hooks
+installed beneath the broker, by ascending order, ordinal owner GUID and ID, and receive a
+paint value by reference. A registration that replaces the drawn result claims it first;
+the first claim wins and `ClaimOver` layers over a named owner. Sprite-file filters keep
+unrelated paints at one table lookup. Nested body paints report the enclosing tracked layer
+update. Installation refuses a changed signature or an entry redirected outside MonoMod; the
+registration then returns false and consumers keep their own hook. Painting is local
+presentation. See [Shared paint sites](PAINT.md) for per-site composition, limitations and
+measurements, and the [example](../examples/ThirdPartyMod/PaintExample.cs).
+
 ## Native market price queries
 
 For final reserves and transaction quantities use
@@ -869,6 +965,21 @@ fails closed on unknown native images or already occupied entries. Both permanen
 hooks use only the installed NativeX64 Indirect backend, with ten displaced bytes,
 validated pointer slots, entry points and trampoline continuation. Foreign consumers
 should subscribe here rather than detour CEB10/CEB90 independently.
+
+## Exact troop identities
+
+`ModApiClient.UnitIdentities` registers owner-local variants on existing native
+carriers and marks exact slot/UInt32 GlobalId instances, including native-confirmed
+pending peasants. Live simulation reads, immutable presentation/member snapshots,
+world retirement and one versioned simulation save record are shared. See
+[identity ownership, authority and persistence](UNIT_IDENTITIES.md).
+
+## Native gold and virtual goods
+
+`ModApiClient.GoodsWallet` exchanges a validated native-gold balance and prepared
+owner-bound virtual stock under the engine/inventory monitors. Exact replay intent,
+world generations and schema-1/schema-2 compatibility are documented in the
+[wallet guide](GOODS_WALLET.md).
 
 ## Unit settlement events
 
@@ -899,6 +1010,22 @@ callback runs once per archive load with a documented status, including `NoRecor
 declared `SimulationRelevant` are compared across players before a multiplayer save loads.
 Usage, the record-version migration policy, the comparison boundary, limits and
 implementation are in [Save data](SAVE_DATA.md).
+The readonly `VersionedSaveLoad.MissionSessionId` associates synchronous archive
+callbacks with queued lifecycle notifications; see the [association contract](SAVE_DATA.md#associating-archive-callbacks-with-a-mission-attempt).
+The registry's internal [tracked-origin and enrolled-capture protocol](SAVE_DATA.md#tracked-origins-and-enrolled-captures)
+binds existing records to frozen bytes and original markers without adding a
+public enrollment or legacy-storage migration API. The existing protected writer
+retains [explicit cleanup/commit outcomes](SAVE_DATA.md#critical-save-cleanup-outcomes).
+The [internal managed Trail metadata](SAVE_DATA.md#internal-managed-trail-producer-metadata)
+has a separate binding and supplies no public pre-capture or enrollment API.
+
+## Steam app access
+
+`ApiShared.ForMod(guid).Steam.GetAppAccess(appId)` reads the current local
+Steam user's access to a related app on the Unity main thread. It distinguishes
+available access, no access and an unavailable Steam session. See
+[Steam game dependencies](THIRD_PARTY_GUIDE.md#steam-game-dependencies) for the
+C# and asset-manifest examples.
 
 ## Workshop inventory
 
@@ -1063,6 +1190,12 @@ resolves original message references without enqueueing a message or using gamep
 See the [contract and coverage](LORD_MESSAGES.md) and
 [consumer example](../examples/ThirdPartyMod/LordMessageExample.cs).
 
+`APIShared.Presentation.NotificationPresentations` requires APIShared 0.77.0
+or later. It identifies one native
+notification across Unity playback and the serialized simulation. It lets code
+that acts on the HUD verify that it still owns the same notification. See
+[notification identity](LORD_MESSAGES.md#notification-identity).
+
 ## Packaged Lord presentation
 
 Requires APIShared 0.20.0 or later. `APIShared.Presentation.PackagedLordPresentation.TryRegister`
@@ -1099,7 +1232,9 @@ taken from an AI group. Opt-in, simulation state, hash-bound. See the
 APIShared corrects selected Script Extender defects without consumer registration, for example
 save-only record persistence in synchronized saves and the classification of multiplayer
 save/editor loads, and early Vanilla handshake preservation during prepared lobby
-starts. See [Script Extender fixes](SCRIPT_EXTENDER_FIXES.md).
+starts. Its internal managed producer can pin a queried normal/editor save's first
+archive context; it exposes no public capture or native-write authority. See
+[Script Extender fixes](SCRIPT_EXTENDER_FIXES.md#internal-early-save-context).
 
 ## Ally gifts and the goods dialog
 
@@ -1121,7 +1256,16 @@ template with an existing weapon or armour good and can set an output base
 amount, manufacturing duration and quantity of the workshop's native ingredient.
 APIShared reserves the original recipes within the four choices per workshop type.
 It supplies the building HUD, Shift selection, synchronized execution and saved
-production state. See [the recipe contract and example](WEAPON_PRODUCTION.md).
+production state. `WithStoredOutput` binds an owner-matching registered Armory good
+for offline/editor production, with atomic native cargo/custom-stock delivery and
+verified joint save capture. `TryPrepareManufacturingAdoption` can attach exact-origin,
+already-paid native-timed Armourer work to a legacy storage import; Ready and Carrying
+need separate qualified adoption. See [the recipe contract and example](WEAPON_PRODUCTION.md)
+and [paid manufacturing adoption](WEAPON_PRODUCTION.md#adopt-an-already-paid-legacy-manufacturing-charge).
+
+`TryGetWorkerBatch` provides an immutable protected observation of an existing
+additional-recipe worker's latched option, phase and exact worker/home identities;
+see [workflow and lifetime limits](WEAPON_PRODUCTION.md#observe-a-workers-latched-batch).
 
 ## Huntable prey
 
@@ -1211,3 +1355,12 @@ row for simulation checks independent of the local HUD. [Integration guide](THIR
 `APIShared.Buildings.QuarryPilePlacement` (0.61.0) exposes the native candidate query for
 a new quarry, the indexed coordinates used by pile relocation, and a scoped filter for
 one synchronous quarry build. [Integration guide](THIRD_PARTY_GUIDE.md#construction-material-stock-and-quarry-piles)
+
+## Managed assembly audit tool
+
+[AssemblyMetadata](../tools/AssemblyMetadata/README.md) is a game-independent
+.NET 10 developer CLI for hash-bound, bounded metadata and complete selected IL
+reports. Exact type/method filters do not expand to unrelated types or dependency
+assemblies. See its guide for fresh-output, no-resolution and resource contracts;
+[metadata evidence limits](NATIVE_COMPATIBILITY.md#inspecting-managed-dependencies)
+remain separate from runtime/backend qualification.
