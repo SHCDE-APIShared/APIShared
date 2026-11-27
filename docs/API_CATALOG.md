@@ -454,7 +454,7 @@ Member-level documentation is also shipped as `APIShared.xml` beside the DLL.
 | Coarse reachability | [PathReachability](../src/Pathfinding/Reachability/PathReachability.cs) | Query through Script Extender path components, no hook ([section](#reachability-and-line-of-sight)) | [Guide](PATHFINDING_RULES.md#asking-whether-a-place-is-reachable) |
 | Path-component refresh | [PathComponentRefresh](../src/Pathfinding/Reachability/PathComponentRefresh.cs) | Synchronous native refresh in an active world under the engine monitor (0.61.0) | [Guide](THIRD_PARTY_GUIDE.md#refreshing-path-components) |
 | Line of sight | [Contracts](../src/Sight/LineOfSightContracts.cs), [LineOfSight](../src/Sight/LineOfSight.cs), [sight-blocking buildings](../src/Sight/SightBlockingBuildings.cs) | [Native calls](../src/Sight/LineOfSightNative.cs), [height dispatch owner](../src/Sight/SightBlockingBuildingsNative.cs) | [Guide](LINE_OF_SIGHT.md) |
-| Building panel sections | [Contracts](../src/Presentation/BuildingPanel/BuildingPanelContracts.cs), [registration](../src/Presentation/BuildingPanel/BuildingPanelSections.cs) | [Registry and detection](../src/Presentation/BuildingPanel/BuildingPanelSectionRegistry.cs) | [Guide](BUILDING_PANELS.md) |
+| Building panel sections | [Contracts](../src/Presentation/BuildingPanel/BuildingPanelContracts.cs), [registration](../src/Presentation/BuildingPanel/BuildingPanelSections.cs), [recruitment areas](../src/Presentation/BuildingPanel/BuildingPanelRecruitmentAreaContracts.cs) | [Registry and detection](../src/Presentation/BuildingPanel/BuildingPanelSectionRegistry.cs), [replacement rules](../src/Presentation/BuildingPanel/BuildingPanelRecruitmentAreas.cs) | [Guide](BUILDING_PANELS.md) |
 | Building actions and panel presenters | [Contracts](../src/Buildings/Actions/BuildingActionContracts.cs), [BuildingActions](../src/Buildings/Actions/BuildingActions.cs), [presenters](../src/Presentation/BuildingPanel/BuildingPanelSections.cs) | [Action registry](../src/Buildings/Actions/BuildingActionRegistry.cs) | [Guide](BUILDING_PANELS.md#presenters-and-building-actions), since 0.73.0 |
 | Per-building state | [Contracts](../src/Buildings/State/BuildingStateContracts.cs), [registration](../src/Buildings/State/BuildingStates.cs) | [Native table](../src/Buildings/State/BuildingStateMemory.cs), [request Chore](../src/Buildings/State/BuildingStatePacket.cs) | [Guide](BUILDING_STATE.md) |
 | Host repair of private gameplay state | [Per-building state](BUILDING_STATE.md#usage), [butchered Hunter prey](HUNTING.md#missions-and-multiplayer) | [Resync contract](THIRD_PARTY_GUIDE.md#host-authoritative-mod-data-during-repair) | Optional, since 0.69.0 |
@@ -1298,6 +1298,10 @@ Since 0.73.0 a mod that shows another player's building panel registers a presen
 section works there too, and `APIShared.Buildings.BuildingActions` names a section's owner commands
 so that presenters and other mods can run them for the owner (see
 [presenters and building actions](BUILDING_PANELS.md#presenters-and-building-actions)).
+`TryRegisterRecruitmentArea` replaces Vanilla's recruitment area for one building variant on a native
+type, coexisting with other owners' variants by a fixed precedence; `TryGetRecruitmentAreaStatus`
+explains the effective owner for settings presentation (see
+[recruitment-area replacements](BUILDING_PANELS.md#recruitment-area-replacements)).
 
 `APIShared.Buildings.BuildingStates` stores 1 to 12 small values per building identity (ID and
 GlobalId). Owners change values through one tick-synchronous authenticated Chore validated on every
