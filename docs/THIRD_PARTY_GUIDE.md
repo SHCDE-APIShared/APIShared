@@ -456,6 +456,13 @@ avoid touching Unity/Noesis, blocking, or initiating another engine run. The
 pair identifies a managed engine call. Use native ticks to observe advancement
 and a feature-specific readback to establish gameplay effects.
 
+The shared owner has an [internal NativeRun exclusion foundation](WORKER_PRODUCTION_BONUS.md#internal-nativerun-exclusion)
+for independently qualified APIShared integrations. It is not a public suspension
+or veto service. A rejected or stale queued call emits no pair and has no replay,
+including a queued call crossing a suspension epoch after its final hold releases.
+The mechanism excludes only the covered managed run/preDLL chain; Director counters,
+Timer/multiplayer processing, load/reset paths and foreign native calls are not paused.
+
 ## Demand-driven engine readback
 
 After APIShared native initialization, call
@@ -1488,6 +1495,20 @@ Use `CheckIntegrity()` at admission to detect overwritten shared entries, and
 `SimulationAgreement` for any gameplay-changing interpretation. Registrations are
 process-rooted; disabling does not remove executable hooks. Public declarations
 document exact ordering and failure semantics.
+
+## Sharing draw hooks
+
+When your mod changes how units, animals, tiles, chevrons, tile colours or map draw-list
+entries look, register with `APIShared.Presentation.PaintEvents` instead of hooking
+`SpriteMapping.SetBodySprite` or the other draw methods yourself. Several mods then share
+one hook per method, run in a declared order and resolve competing replacements through
+claims instead of load order. Register once at startup; pass a sprite-file filter when you
+only care about some files, and `null` when you must see every paint of the renderers you
+track. Claim before replacing a result and give exact-identity art a lower order than theme
+art. Keep your own hook only as the fallback when registration returns false (an older
+APIShared, or a refused installation). Use `CallOriginalBodySprite` to restore a pooled
+renderer's native frame. The broker is presentation only and does not resolve unit identity.
+See [Shared paint sites](PAINT.md) and the [example](../examples/ThirdPartyMod/PaintExample.cs).
 
 ## Sharing native market price queries
 
