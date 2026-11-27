@@ -178,6 +178,7 @@ src/
     HudExtras/                  independent side-HUD buttons, layout and rendering
     BriefingGold/               briefing gold contracts and service
     Lords/                      packaged Lord presentation and Coop restart names
+    Paint/                      shared managed draw sites: body sprites, tiles, chevrons, tile colour, map layers
   ModSettings/
     Presets/                    contracts, host adapter, controller, catalog and storage
     Lobby/                      per-player synchronization and convergence
@@ -312,6 +313,23 @@ The compatible opt-in scroll diagnostic performs no formatting while disabled.
 Readiness, validation and isolated callback error reporting remain service duties.
 
 ## Publication
+
+### Managed native-run exclusion
+
+The existing managed run hook in `MarkedUnitSelectionAPI` remains the sole owner.
+`Economy/WorkerProductionRunGate` admits the complete cached Original before
+Vanilla can borrow a buffer. Its internal `WorkerProductionRunPublication` helper
+accounts only for earlier null-boundary fallbacks, then closes and drains that gap
+when a trusted shared owner explicitly binds NativeRun suspension. Normal nonnull
+calls continue directly through the published gate; there is no second hook or
+all-run tracking service.
+
+Binding is opt-in and process-lived. Independent holds change their own epoch and
+count without restoring production generation, admission or faults. Initialization
+retains a bound publication and rejects a changed engine monitor. With no binding,
+the previous replacement and forwarding policy remains. The implementation is an
+internal foundation; no public client or production suspension caller is attached.
+See the [scope and lifetime contract](docs/WORKER_PRODUCTION_BONUS.md#internal-nativerun-exclusion).
 
 Before managed publication, Awake attempts the optional
 [Fixes wheat-sale correction](docs/FIXES_COMPATIBILITY.md) synchronously. This
@@ -487,6 +505,10 @@ retains the compatible building-text adapter and selection contract. APIShared o
 shared presentation and registration; consumers own localized text, symbols,
 activation and gameplay decisions. See the [tooltip guide](docs/TOOLTIPS.md). See the [catalog](docs/API_CATALOG.md#building-tooltip-contributions)
 for the public entry point and integration documentation.
+
+Shared paint sites belong to Presentation. APIShared owns one MonoMod hook per managed draw
+method, installed at the first registration, the dispatch order and the claim protocol; consumers
+own their art, renderer bindings and unit identity. See [Shared paint sites](docs/PAINT.md).
 
 Buildings/EnemyProximity owns the shared category-query implementation and the
 single subscription to the existing Script Extender event, not another live hook.
