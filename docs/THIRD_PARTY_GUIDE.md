@@ -1,5 +1,14 @@
 # Third-party integration guide
 
+## Native storage for virtual goods
+
+Use [`ModApiClient.NativeStorage`](NATIVE_STORAGE.md) when custom goods must occupy
+native Armory or Granary capacity and trade against real gold. Register before the
+first world; issue exchanges only in an authorized engine-protected boundary.
+The service owns physical rows, its private ledger and matching save entries.
+Recipes, hauling, art, player authorization and command transport remain consumer
+responsibilities. Existing overlapping private capacity detours must be migrated.
+
 ## Virtual custom goods
 
 For goods outside the native `eGoods` table, use the caller-owned Content

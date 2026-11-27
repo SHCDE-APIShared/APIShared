@@ -237,6 +237,7 @@ namespace APIShared
             Group(Multiplayer.MultiplayerResyncNativeRuntime.SiteName, Multiplayer.MultiplayerResyncNativeRuntime.Spans()),
             Group(Multiplayer.MultiplayerResyncDataNativeRuntime.SiteName, Multiplayer.MultiplayerResyncDataNativeRuntime.Spans()),
             Group(AllyTransfersNative.SiteName, AllyTransfersNative.Spans()),
+            Group(NativeStorageNativeRuntime.SiteName, NativeStorageNativeRuntime.Spans()),
             Group(AssassinPath, AssassinPathSpans()),
             Group(AssassinAttack, AssassinAttackSpans()),
             Group(AssassinRetarget, AssassinRetargetSpans()),

@@ -4,6 +4,11 @@
     <Compile Include="../../src/Units/Identity/UnitIdentitySnapshot.cs" Link="Production/UnitIdentitySnapshot.cs" />
     <Compile Include="../../src/Units/Identity/UnitIdentityRegistry.cs" Link="Production/UnitIdentityRegistry.cs" />
     <Compile Include="../../src/Units/Identity/UnitIdentityLifetime.cs" Link="Production/UnitIdentityLifetime.cs" />
+    <ProjectReference Include="../../Content/APIShared.Content.csproj" />
+    <Compile Include="../../src/Economy/Storage/NativeStorageState.cs" Link="Production/NativeStorageState.cs" />
+    <Compile Include="../../src/Economy/Storage/NativeStorageState.Snapshot.cs" Link="Production/NativeStorageState.Snapshot.cs" />
+  </ItemGroup>
+  <ItemGroup>
     <Compile Include="../../src/Modifiers/*.cs" Link="Production/Modifiers/%(Filename)%(Extension)" />
     <Compile Include="../../src/Multiplayer/SimulationAgreementPolicy.cs" Link="Production/SimulationAgreementPolicy.cs" />
     <Compile Include="../../src/Workshop/Proton/WinePathInterop.cs" Link="Production/Proton/WinePathInterop.cs" />
