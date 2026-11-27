@@ -3,11 +3,22 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Threading;
 using APIShared.Internal;
+using APIShared.Savegames;
 using BepInEx.Logging;
 using CrusaderDE;
 
 namespace APIShared.Economy
 {
+    // Immutable, preallocated metadata for the opted-in protected native epoch. This
+    // grants no public authority and invokes no registry callback or native code.
+    internal sealed class WorkerProductionAdoptionStamp
+    {
+        internal readonly VersionedSaveDataRegistry Registry;
+        internal readonly long ArchiveGeneration, NativeEpoch;
+        internal WorkerProductionAdoptionStamp(VersionedSaveDataRegistry registry, long archiveGeneration, long nativeEpoch)
+        { Registry = registry; ArchiveGeneration = archiveGeneration; NativeEpoch = nativeEpoch; }
+    }
+
     // Process-owned terminal-world latch. Native producers only write fixed data;
     // Pure status notification is synchronous; only Unity termination leaves the engine thread.
     internal static unsafe class WorkerProductionWorldSafety
@@ -17,20 +28,60 @@ namespace APIShared.Economy
         private static readonly IntPtr native = Allocate();
         private static ManualLogSource log;
         private static object engineGate;
-        private static WorkerProductionRunGate runBoundary;
+        private static readonly WorkerProductionRunPublication runPublication =
+            new WorkerProductionRunPublication(CreateRunBoundary, MarkedUnitSelectionAPI.ProductionRunOriginal);
         private static long session;
         private static string reason;
         private static int notificationQueued;
         private static bool faultReported;
+        private static WorkerProductionAdoptionStamp adoptionAdmission;
         internal static event Action<string> Faulted;
         internal static IntPtr NativeFaultAddress => native;
         internal static object EngineGate => Volatile.Read(ref engineGate);
-        internal static WorkerProductionRunGate RunBoundary => Volatile.Read(ref runBoundary);
+        internal static WorkerProductionRunGate RunBoundary => runPublication.Current;
         internal static long Generation => Volatile.Read(ref *(long*)((byte*)native + GenerationOffset));
-        internal static bool Enabled => Volatile.Read(ref *(int*)((byte*)native + GuardEnabledOffset)) != 0;
+        internal static bool Enabled => Volatile.Read(ref *(int*)((byte*)native + GuardEnabledOffset)) != 0 ||
+            Volatile.Read(ref adoptionAdmission) != null;
         internal static bool IsFaulted => Volatile.Read(ref *(int*)native) != 0;
-        internal static bool IsAdmitted => Volatile.Read(ref *(int*)((byte*)native + AdmittedOffset)) != 0;
+        internal static bool IsAdmitted
+        {
+            get
+            {
+                if (Volatile.Read(ref *(int*)((byte*)native + AdmittedOffset)) == 0) return false;
+                var stamp = Volatile.Read(ref adoptionAdmission);
+                return stamp == null || stamp.NativeEpoch == Generation && stamp.Registry.CurrentGeneration == stamp.ArchiveGeneration;
+            }
+        }
         internal static bool IsAvailable => EngineGate != null;
+
+        // Called only during owned preallocation with the real engine monitor held.
+        // A revoked stamp cannot be replaced by another metadata import in the same
+        // native epoch; only actual Admit/Retire clears that protected-world contract.
+        internal static bool TryPrepareAdoptionAdmission(VersionedSaveDataRegistry registry, long archiveGeneration,
+            out WorkerProductionAdoptionStamp stamp)
+        {
+            stamp = null;
+            if (registry == null || archiveGeneration < 0 || registry.CurrentGeneration != archiveGeneration) return false;
+            var current = Volatile.Read(ref adoptionAdmission);
+            long epoch = Generation;
+            if (current != null)
+            {
+                if (!ReferenceEquals(current.Registry, registry) || current.ArchiveGeneration != archiveGeneration || current.NativeEpoch != epoch) return false;
+                stamp = current; return true;
+            }
+            stamp = new WorkerProductionAdoptionStamp(registry, archiveGeneration, epoch); return true;
+        }
+        internal static bool CanPublishAdoptionAdmission(WorkerProductionAdoptionStamp stamp)
+        {
+            if (stamp == null || stamp.NativeEpoch != Generation || stamp.Registry.CurrentGeneration != stamp.ArchiveGeneration) return false;
+            var current = Volatile.Read(ref adoptionAdmission);
+            return current == null || ReferenceEquals(current, stamp) ||
+                ReferenceEquals(current.Registry, stamp.Registry) && current.ArchiveGeneration == stamp.ArchiveGeneration && current.NativeEpoch == stamp.NativeEpoch;
+        }
+        // Prevalidated immutable reference assignment only, inside the original import
+        // lease. No registry lock/callback, allocation or native memory store occurs.
+        internal static void PublishAdoptionAdmission(WorkerProductionAdoptionStamp stamp) =>
+            Volatile.Write(ref adoptionAdmission, stamp);
 
         private static IntPtr Allocate()
         {
@@ -55,11 +106,42 @@ namespace APIShared.Economy
             object gate = EngineMonitor.Current;
             if (gate == null || !MarkedUnitSelectionAPI.HasRunBoundary)
                 throw new InvalidOperationException("Production safety needs the validated shared engine run boundary.");
-            var boundary = new WorkerProductionRunGate(gate, () => Generation, () => Enabled,
-                () => IsFaulted, () => IsAdmitted, MarkedUnitSelectionAPI.ProductionRunOriginal, ObserveNativeFault);
-            log = logger;
-            Volatile.Write(ref runBoundary, boundary);
+            // Factory succeeds before logger publication; the existing pointer/engine
+            // publication order and independent production flags remain unchanged.
+            runPublication.Initialize(gate, () => log = logger);
             Volatile.Write(ref engineGate, gate);
+        }
+
+        private static WorkerProductionRunGate CreateRunBoundary(object gate) =>
+            new WorkerProductionRunGate(gate, () => Generation, () => Enabled,
+                () => IsFaulted, () => IsAdmitted, MarkedUnitSelectionAPI.ProductionRunOriginal,
+                ObserveNativeFault, ReadCurrentEngineMonitor, ReadPublishedRunBoundary);
+
+        private static object ReadCurrentEngineMonitor() => EngineMonitor.Current;
+        private static WorkerProductionRunGate ReadPublishedRunBoundary() => RunBoundary;
+
+        // Called only by the existing Marked OnRun's null branch. The publication
+        // owner counts the COMPLETE cached original chain through finally, with
+        // no callbacks under its cold publication lock and no per-run allocation.
+        internal static int RunWithoutBoundary(bool mpFrameSkip) => runPublication.RunFallback(mpFrameSkip);
+
+        // Trusted lifecycle integration only. Explicit binding closes/drains old
+        // null fallbacks; acquisition never silently binds. This is NativeRun/preDLL
+        // exclusion, not a world/native-memory/MP permission or simulation pause.
+        internal static bool TryBindNativeRunSuspension(int millisecondsTimeout, out string reason)
+        {
+            if (!MarkedUnitSelectionAPI.HasRunBoundary)
+            { reason = "The shared managed run hook is unavailable."; return false; }
+            return runPublication.TryBind(millisecondsTimeout, EngineMonitor.Current, out reason);
+        }
+
+        internal static bool TryAcquireNativeRunSuspension(int millisecondsTimeout,
+            out WorkerProductionRunGate.NativeRunSuspension suspension, out string reason)
+        {
+            suspension = null;
+            if (!MarkedUnitSelectionAPI.HasRunBoundary)
+            { reason = "The shared managed run hook is unavailable."; return false; }
+            return runPublication.TryAcquire(millisecondsTimeout, EngineMonitor.Current, out suspension, out reason);
         }
 
         internal static void Admit(long sessionId, bool enableGuard)
@@ -68,6 +150,7 @@ namespace APIShared.Economy
             lock (gate)
             {
                 Interlocked.Increment(ref *(long*)((byte*)native + GenerationOffset));
+                Volatile.Write(ref adoptionAdmission, null);
                 session = sessionId;
                 reason = null;
                 notificationQueued = 0;
@@ -117,6 +200,7 @@ namespace APIShared.Economy
             lock(gate)
             {
                 Interlocked.Increment(ref *(long*)((byte*)native+GenerationOffset));
+                Volatile.Write(ref adoptionAdmission, null);
                 Volatile.Write(ref *(int*)((byte*)native+AdmittedOffset),0);
                 Volatile.Write(ref *(int*)((byte*)native+GuardEnabledOffset),1);
             }

@@ -6,6 +6,27 @@ GUID without installing hooks or reserving a capability.
 
 ## Responsibilities
 
+`Economy/Storage` owns registered virtual stock in exact native Armory/Granary
+pools: its private Content ledger, physical allocations, shared capacity cohort
+and matching archive pair share one lifetime. Bounded external cargo extends that
+same world-owned state and checkpoint, with its own creation replay stream;
+consumers retain production evidence, custody, hauling, visuals and authorization.
+See [native storage and external cargo](docs/NATIVE_STORAGE.md).
+
+`Economy/WeaponProduction` retains native recipe/batch/transport ownership and can
+bind a registered custom Armory output. Its optional early delivery cohorts use a
+trusted cargo/storage commit; the existing critical save writer freezes and verifies
+that related state together. Consumer recipes and presentation stay outside these
+mechanisms. Opted-in legacy storage imports can jointly publish already-paid native-timed
+Armourer manufacturing into this same owner without a second ledger or actor write;
+see [workshop output contracts](docs/WEAPON_PRODUCTION.md).
+
+The Content assembly also owns the caller-instantiated virtual-goods ledger in
+`APIShared.Goods`: bounded balances, atomic changes, replay receipts, reservations
+and canonical snapshots. Consumers share one instance per authoritative mission
+and retain native transactions, lifecycle, save registration and network policy.
+It adds no runtime hook or global catalog; see [custom goods](docs/CUSTOM_GOODS.md).
+
 `Content/APIShared.Content.csproj` targets .NET Standard 2.0 and has no game,
 Extender, Unity or BepInEx dependencies. It owns the GUID-separated JSON namespace
 reader in `APIShared.ModData` and schema-3 mission-settings documents/codecs in
@@ -129,6 +150,7 @@ src/
   Automation/                   opt-in in-process test automation
   Audio/                        shared playback events, context capture and binary contracts
   Economy/                      market, ally-transfer, popularity and worker-production native owners
+    GoodsWallet/                direct native gold and callback-free prepared virtual-stock publication
     WeaponProduction/           weapon workshop recipes, selection, batches and HUD
   Wildlife/                     herd runtime and huntable-prey registrations
   Sight/                        Vanilla line-of-sight queries and sight-blocking building rules
@@ -160,12 +182,14 @@ src/
     HudExtras/                  independent side-HUD buttons, layout and rendering
     BriefingGold/               briefing gold contracts and service
     Lords/                      packaged Lord presentation and Coop restart names
+    Paint/                      shared managed draw sites: body sprites, tiles, chevrons, tile colour, map layers
   ModSettings/
     Presets/                    contracts, host adapter, controller, catalog and storage
     Lobby/                      per-player synchronization and convergence
     UI/                         search and tooltip presentation
     Internal/                   JSON parser and atomic file replacement
   Units/
+    Identity/                   exact owner-local troop variants, immutable views and versioned identity persistence
     Selection/                  unit access, local and marked unit selection
     AiMilitary/                 AI military placement, orders, quota and engineering provenance
     Commands/                   managed GameAction Pre/Accepted/Post contracts
@@ -293,6 +317,23 @@ The compatible opt-in scroll diagnostic performs no formatting while disabled.
 Readiness, validation and isolated callback error reporting remain service duties.
 
 ## Publication
+
+### Managed native-run exclusion
+
+The existing managed run hook in `MarkedUnitSelectionAPI` remains the sole owner.
+`Economy/WorkerProductionRunGate` admits the complete cached Original before
+Vanilla can borrow a buffer. Its internal `WorkerProductionRunPublication` helper
+accounts only for earlier null-boundary fallbacks, then closes and drains that gap
+when a trusted shared owner explicitly binds NativeRun suspension. Normal nonnull
+calls continue directly through the published gate; there is no second hook or
+all-run tracking service.
+
+Binding is opt-in and process-lived. Independent holds change their own epoch and
+count without restoring production generation, admission or faults. Initialization
+retains a bound publication and rejects a changed engine monitor. With no binding,
+the previous replacement and forwarding policy remains. The implementation is an
+internal foundation; no public client or production suspension caller is attached.
+See the [scope and lifetime contract](docs/WORKER_PRODUCTION_BONUS.md#internal-nativerun-exclusion).
 
 Before managed publication, Awake attempts the optional
 [Fixes wheat-sale correction](docs/FIXES_COMPATIBILITY.md) synchronously. This
@@ -454,6 +495,13 @@ dialog registry and retains ownership of its map/trail data.
 Versioned save data belongs to Savegames. APIShared owns the record format, the migration
 order and the load window over Script Extender `ModSaveDataAPI`; consumers own their entries,
 migration steps and when they apply loaded state. See [Save data](docs/SAVE_DATA.md).
+The registry also owns internal Prepared-origin lifetimes, original-marker reads
+and once-only enrolled capture bundles; callbacks remain outside its locks. These
+are metadata/transport prerequisites, not native-world authority or an activated
+consumer migration. The existing `PlayerViewSaveScope` writer remains the single
+native critical-save entry. Its economy save owner independently restores and
+releases selected checkpoints and distinguishes committed files from later
+protection-cleanup faults. See the [save implementation contract](docs/SAVE_DATA.md#tracked-origins-and-enrolled-captures).
 
 Native-site registration belongs to Core. Shared services remain the way to avoid
 hook conflicts; the registry supplements them as a safeguard and diagnostic for hooks
@@ -468,6 +516,10 @@ retains the compatible building-text adapter and selection contract. APIShared o
 shared presentation and registration; consumers own localized text, symbols,
 activation and gameplay decisions. See the [tooltip guide](docs/TOOLTIPS.md). See the [catalog](docs/API_CATALOG.md#building-tooltip-contributions)
 for the public entry point and integration documentation.
+
+Shared paint sites belong to Presentation. APIShared owns one MonoMod hook per managed draw
+method, installed at the first registration, the dispatch order and the claim protocol; consumers
+own their art, renderer bindings and unit identity. See [Shared paint sites](docs/PAINT.md).
 
 Buildings/EnemyProximity owns the shared category-query implementation and the
 single subscription to the existing Script Extender event, not another live hook.

@@ -20,7 +20,17 @@ namespace APIShared.Presentation
         /// <summary>MainViewModel.ButtonTroopPanelMouseLeave.</summary>
         TroopPanelLeave,
         /// <summary>MainViewModel.ButtonUnitRechargeRock; Pre can replace this UI action.</summary>
-        RechargeSiegeAmmo
+        RechargeSiegeAmmo,
+        /// <summary>MainViewModel.ButtonNewTradeGoodsType(object); selects a good in the market UI.</summary>
+        MarketSelectGoods = 7,
+        /// <summary>MainViewModel.ButtonCycleTradeGoodsType(object); cycles the market UI's selected good.</summary>
+        MarketCycleGoods = 8,
+        /// <summary>MainViewModel.ButtonBuySell(object); submits the selected market UI action.</summary>
+        MarketBuySell = 9,
+        /// <summary>MainViewModel.ButtonNewTradeType(object); changes the market UI's trade view.</summary>
+        MarketChangeTradeType = 10,
+        /// <summary>MainViewModel.ButtonExtendedFeaturesFunction(object); shared extended-features button, not limited to the market.</summary>
+        ExtendedFeaturesAction = 11
     }
     /// <summary>Immediate HUD inputs. The original object parameter is preserved. Never retain UI objects across panel/map replacement.</summary>
     public sealed class PresentationPreEventArgs : InterceptionPreEventArgs
@@ -33,7 +43,7 @@ namespace APIShared.Presentation
         public PresentationOperation Operation { get; }
         /// <summary>The exact managed receiver; MainViewModel, HUD_Main or FatControler according to Operation.</summary>
         public object Instance { get; }
-        /// <summary>UI receiver for recruitment, troop-panel hover and recharge actions; otherwise null.</summary>
+        /// <summary>UI receiver for recruitment, troop-panel hover, recharge and market actions; otherwise null.</summary>
         public MainViewModel ViewModel => Instance as MainViewModel;
         /// <summary>Building rollover receiver; otherwise null.</summary>
         public HUD_Main BuildingHud => Instance as HUD_Main;
@@ -68,13 +78,13 @@ namespace APIShared.Presentation
         public PresentationOperation Operation { get; }
         /// <summary>Exact receiver. Use only synchronously; panel lifetime is not extended by this contract.</summary>
         public object Instance { get; }
-        /// <summary>UI receiver for hover and recharge actions; otherwise null.</summary>
+        /// <summary>UI receiver for recruitment, troop-panel hover, recharge and market actions; otherwise null.</summary>
         public MainViewModel ViewModel => Instance as MainViewModel;
         /// <summary>Building rollover receiver; otherwise null.</summary>
         public HUD_Main BuildingHud => Instance as HUD_Main;
         /// <summary>GUI-check receiver; otherwise null.</summary>
         public FatControler Controller => Instance as FatControler;
-        /// <summary>Final UI parameter passed to the original.</summary>
+        /// <summary>Final UI parameter passed to the original or selected replacement.</summary>
         public object Parameter { get; }
         /// <summary>True when an observer vetoed the complete managed operation. Its Vanilla UI writes did not run.</summary>
         public bool WasSkipped { get; }
@@ -125,7 +135,12 @@ namespace APIShared.Presentation
             new Site(PresentationOperation.RecruitmentLeave, typeof(MainViewModel), "ButtonLeaveCreateTroop"),
             new Site(PresentationOperation.TroopPanelEnter, typeof(MainViewModel), "ButtonTroopPanelMouseEnter"),
             new Site(PresentationOperation.TroopPanelLeave, typeof(MainViewModel), "ButtonTroopPanelMouseLeave"),
-            new Site(PresentationOperation.RechargeSiegeAmmo, typeof(MainViewModel), "ButtonUnitRechargeRock")
+            new Site(PresentationOperation.RechargeSiegeAmmo, typeof(MainViewModel), "ButtonUnitRechargeRock"),
+            new Site(PresentationOperation.MarketSelectGoods, typeof(MainViewModel), "ButtonNewTradeGoodsType"),
+            new Site(PresentationOperation.MarketCycleGoods, typeof(MainViewModel), "ButtonCycleTradeGoodsType"),
+            new Site(PresentationOperation.MarketBuySell, typeof(MainViewModel), "ButtonBuySell"),
+            new Site(PresentationOperation.MarketChangeTradeType, typeof(MainViewModel), "ButtonNewTradeType"),
+            new Site(PresentationOperation.ExtendedFeaturesAction, typeof(MainViewModel), "ButtonExtendedFeaturesFunction")
         };
         // Contract-test entry; production sites use the receiver overload below.
         internal static void Execute(InterceptionEvent<PresentationPreEventArgs, PresentationPostEventArgs> events,

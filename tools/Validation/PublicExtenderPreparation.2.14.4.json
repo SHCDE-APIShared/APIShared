@@ -1,0 +1,39 @@
+{
+  "schema": "public-extender-metadata-fixture/1",
+  "release": "2.14.4",
+  "archive": {
+    "url": "https://gitlab.com/api/v4/projects/74440776/packages/generic/shcdese/2.14.4/SHCDESE.zip",
+    "bytes": 60330646,
+    "sha256": "c993c40ea3a74c6fc03d120d0161e8c654cb11ed72509dda2c0e3ca0fc4b80e9"
+  },
+  "assemblies": [
+    {
+      "name": "RedBird.X64.dll",
+      "entry": "BepInEx/plugins/000shcdese/RedBird.X64.dll",
+      "bytes": 173568,
+      "sha256": "e085b83b2b87b5d2142c980090d8d9ec616a90a443bd125c17b41e0bb47a44eb"
+    }
+  ],
+  "probes": [
+    {
+      "id": "descriptor-preparation",
+      "assembly": "RedBird.X64.dll",
+      "type": "RedBird.X64.Hooks.Transaction.Descriptors.InlineDescriptor;RedBird.X64.Hooks.Transaction.Descriptors.ContextHookDescriptor;RedBird.X64.Hooks.Transaction.Descriptors.HookDescriptor;RedBird.X64.Hooks.Transaction.Descriptors.HookBuildContext;RedBird.X64.Hooks.Transaction.HookCommitPipeline;RedBird.X64.Hooks.Transaction.HookTransaction;RedBird.X64.Hooks.Transaction.HookTransactionOptions",
+      "includeNested": true,
+      "maxOutputBytes": 2097152
+    },
+    {
+      "id": "inline-hook-lifetime",
+      "assembly": "RedBird.X64.dll",
+      "type": "RedBird.X64.Hooks.X64InlineHook",
+      "includeNested": true,
+      "methods": [
+        "Generate",
+        "Enable",
+        "Disable",
+        "Dispose"
+      ],
+      "maxOutputBytes": 524288
+    }
+  ]
+}

@@ -317,12 +317,20 @@ namespace APISharedTests
             string destination = path + ".destination";
             var old = new byte[] { 4, 7, 9 };
             File.WriteAllBytes(destination, old);
-            var required = new VersionedSaveDataRegistry.AtomicSnapshot();
-            byte[] record = VersionedSaveRecordCodec.Encode(1, 1,
-                new[] { new KeyValuePair<string, byte[]>("ledger", new byte[] { 4, 1, 2 }) });
-            required.Records.Add("Test_Required", record);
+            Func<VersionedSaveContext, byte[]> transport = null;
+            var registry = new VersionedSaveDataRegistry((id, save, load) => { transport = save; return true; }, _ => { }, _ => { });
+            var registration = new VersionedSaveDataRegistration("test.owner", "Test_Required", 1, 1, new[] { "ledger" },
+                writer => { writer.Write("ledger", new byte[] { 4, 1, 2 }); return true; }, _ => { }) { RequireAtomicWrite = true };
+            Assert.IsTrue(registry.TryRegister(registration, out _, out string reason), reason);
+            var context = new VersionedSaveContext(true, false, destination);
+            var required = registry.BeginAtomicSave(context);
             try
             {
+                // Exercise the actual fresh-record/transport proof. Manually filling an
+                // ownerless snapshot cannot authorize the composed native writer.
+                byte[] record = transport(context);
+                Assert.IsNotNull(record);
+                VersionedSaveDataRegistry.RequireAtomicDelivered(required);
                 foreach (int mode in new[] { 0, 1, 2 })
                 {
                     using (var file = File.Create(path))
@@ -352,7 +360,12 @@ namespace APISharedTests
                     }
                 }
             }
-            finally { if (File.Exists(path)) File.Delete(path); if (File.Exists(destination)) File.Delete(destination); }
+            finally
+            {
+                registry.EndAtomicSave(required);
+                if (File.Exists(path)) File.Delete(path);
+                if (File.Exists(destination)) File.Delete(destination);
+            }
         }
 
         private static void WriteArchive(string path, byte[] payload)

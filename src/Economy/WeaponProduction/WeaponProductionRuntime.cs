@@ -28,8 +28,8 @@ namespace APIShared.Economy
         private static WeaponProductionCatalog prepared = WeaponProductionCatalog.Empty;
         private static WeaponProductionCatalog frozen = WeaponProductionCatalog.Empty;
         private static WeaponProductionCatalog active = WeaponProductionCatalog.Empty;
-        private static readonly Dictionary<int, BuildingState> buildings = new Dictionary<int, BuildingState>();
-        private static readonly Dictionary<int, Batch> workers = new Dictionary<int, Batch>();
+        private static Dictionary<int, BuildingState> buildings = new Dictionary<int, BuildingState>();
+        private static Dictionary<int, Batch> workers = new Dictionary<int, Batch>();
         private static readonly List<int> retiredWorkerIds = new List<int>();
         private static readonly List<int> retiredBuildingIds = new List<int>();
         private static AuthenticatedChoreChannel<WeaponProductionPacket> channel;

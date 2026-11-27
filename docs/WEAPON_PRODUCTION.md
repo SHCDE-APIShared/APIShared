@@ -76,6 +76,155 @@ applies to armoury deliveries. Meat deliveries continue to use ImprovedHunters'
 yield and storage rules. A duration override applies to the shared hide-working
 phase before either route is selected.
 
+## Produce a registered custom good
+
+Register an Armory good through `ModApiClient.NativeStorage` before the first
+mission, then bind that same owner's registered handle with `WithStoredOutput`:
+
+```csharp
+if (!api.NativeStorage.TryRegisterGood("alternate-armour", NativeStoragePool.Armory,
+        out var armour, out string reason)) { Log(reason); return; }
+var definition = new WeaponProductionOptionDefinition(
+    eStructs.STRUCT_ARMOURERS_WORKSHOP, eGoods.STORED_METAL_ARMOUR,
+    eGoods.STORED_METAL_ARMOUR, localizedName, baseAmount: 2, workTicks: 60)
+    .WithIngredientAmount(1)
+    .WithStoredOutput(armour);
+if (!WeaponProduction.TryRegister(pluginGuid, "alternate-armour", definition,
+        out var registration, out reason)) Log(reason);
+```
+
+See the [compiled custom-output example](../examples/ThirdPartyMod/CustomWorkshopExample.cs).
+The stored-good owner must
+match the recipe owner, the handle must be the exact registered instance, and its
+pool must be Armory. Native workshop destination search does not select Granaries.
+`WithIngredientAmount` and `WithStoredOutput` return immutable copies and preserve
+each other's settings. Passing null to `WithStoredOutput` throws.
+
+The template retains its native ingredients, manufacturing and transport. The
+native `OutputGood` remains the recipe's native icon/carrier descriptor; a custom
+delivery creates only the separate `StoredOutput` stock. Map restrictions follow
+the work template for these recipes. Existing native-only recipes keep their
+output-based restriction rule. The latched option follows the finished local
+product and its carrier, so selecting another recipe does not reinterpret goods
+already manufactured. Existing output modifiers still determine issued cargo.
+
+Each qualified arrival attempts one item. Acceptance atomically publishes one
+physical custom item and subtracts one signed native cargo unit. Refusal publishes
+neither and retains the carried goods; a protected retry transition can re-enter
+the original native Armory search. Native search still requests enough space for
+the remaining cargo and retains its normal pathfinding/hazard behavior. It does
+not guarantee eventual delivery. No ingredients are refunded after manufacture.
+
+At an owned arrival gate, a retained stored-output carrier is checked independently
+of its former workshop's demand bit. Classification uses the exact worker slot and
+global identity before validating its mutable native home. A missing/reassigned
+home or other failed actor authorization refuses custom delivery and retains cargo;
+saved home metadata never authorizes a storage mutation. This forwarding guard does
+not establish that native AI reaches an arrival after workshop loss, or that such
+a carrier can complete delivery without a live authorized workshop.
+
+Custom acceptance bypasses native template stock, weapons-produced counters,
+weapon achievements, the native stock cue and the template AddGood event chain.
+Those would describe an item which was not delivered. Native recipes retain their
+complete original delivery and accounting behavior. A custom Tanner requires the
+original yield and either its original storage route or the exact published
+APIShared production-receipt relay. This internal composition observes deliveries
+without adding another hook; disabled receipt demand keeps the original path.
+Changed or foreign relay bytes refuse the capability. If ImprovedHunters changes
+the yield or route, only the new stored-output Tanner capability is unavailable.
+Legacy Tanner recipes remain
+available under their existing compatibility rules.
+
+Stored-output workshops currently support confirmed offline and editor worlds.
+Real multiplayer is rejected before launch/activation because native worker repair
+and private storage repair have not been qualified as one state transfer. Matching
+catalogue hashes alone do not establish that guarantee.
+
+### Stored-output persistence
+
+The existing building/worker wire rows retain their layout and catalogue option
+indices. Native-only catalogues retain their exact established digest formats;
+custom-output catalogues include the stable good owner, local ID and pool.
+
+A stored-output save uses workshop reader requirement 2. Older framework readers
+preserve that record as too new. Native-only captures retain their exact schema-1
+payload and envelope. At the existing critical save boundary, the native carrier,
+workshop state and both pooled-storage entries are frozen under the same engine
+monitor. The save succeeds only after the matching archive records and native I/O
+are verified; failed or stale captures preserve the previous destination file.
+Reentrant custom mutations are refused while that checkpoint is frozen.
+
+### Adopt an already-paid legacy manufacturing charge
+
+An enrolled consumer migrating an original legacy record can attach
+`WeaponProductionPaidManufacturing` declarations with
+`WeaponProduction.TryPrepareManufacturingAdoption`. This is a deliberately bounded
+Armourer manufacturing capability, not a converter for every legacy phase. Reuse
+the existing `NativeStorageImportPlan` and the exact `CriticalSaveParticipant` and
+`VersionedSaveLoad` received in that participant's current `Prepared` callback.
+The service copies declarations and binds them to that exact original window.
+Identical repeated declarations return the existing attachment; changed declarations,
+copied/expired receivers and different originals refuse. Preparation changes no
+live workshop or previous ledger and publishes no stock/cargo.
+
+Each row names the exact process recipe registration, saved workshop/worker
+slots and unsigned Global IDs, producing player, original base yield and declared
+already-paid ingredient count. The recipe must belong to that participant, deliver
+the exact registered custom Armory good, have the same explicit base/cost and
+use native timing (`WorkTicks == null`). The legacy record must actually establish
+paid input: the native state number corroborates current manufacturing but cannot
+prove a historical debit. No second iron payment or managed progress reset occurs.
+Register the native-timed recipe at startup; do not reinterpret a current recipe's
+different base or override duration as the old batch. See the additional methods
+in the [compiled example](../examples/ThirdPartyMod/CustomWorkshopExample.cs).
+
+Commit the existing storage plan with `NativeStorageClient.TryCommitImport` while
+already holding the real engine monitor after the complete matching load in a
+known offline/editor world. The existing production owner verifies its admitted
+catalogue, exact live Armourer/workshop/owner/link, manufacturing state5, zero carry
+and zero local template product, and refuses an existing shared actor/selection
+collision. Native actor, progress, input and product bytes are never written.
+Preallocated producer maps and shared stock publish together under the storage
+import's existing original-generation lease. Trusted private wire/demand rows
+follow outside the registry lease before releasing the engine monitor. Other pending
+imports keep physical storage unavailable; normal stored-output delivery refuses
+until the shared world is ready. The imported paid job belongs to this same native
+production owner, not a consumer callback or competing hook.
+
+The consumer must retire its former worker/output mutation route before allowing
+shared continuation. This API does not coordinate an additional private worker
+interceptor. Adoption revalidates the existing owner's published native cohorts;
+it cannot authorize a foreign route merely because the saved IDs match.
+
+Preallocate the consumer's retired actor map before commit, then on success use
+only nonthrowing reference assignments under that same engine monitor. Exact retry
+must not restart a job that has since progressed or finished. Future selection is
+unchanged by adoption: use the existing recipe-selection API for the next charge.
+Successful adoption also opts this native epoch into a direct archive-generation
+admission stamp. The existing managed engine-run gate checks current registry
+generation before Original, without taking a registry lock or waiting for delayed
+observers. Metadata load/unload revocation therefore pauses new engine runs until
+actual native-world Admit/Retire, even if the raw optional production guard was
+subsequently disabled. A later metadata import cannot overwrite the revoked stamp
+in the same native epoch. One run already admitted before revocation may finish;
+this does not undo its work or claim to stop an in-flight native call. No-adoption
+worlds retain their existing admission decisions and perform no registry query.
+This protects the post-registry-lease private wire publication window without
+claiming registry-atomic native writes or adding another native hook.
+
+The adopted batch uses the existing workshop wire and reader2 stored-output format;
+native-only worlds retain their existing catalogue and reader1 bytes. No additional
+goods/cargo ledger or per-batch save sidecar is created by this subset.
+
+Ready/local-product and Carrying adoption are outside this capability. A suppressed
+native local-product buffer needs qualified recovery and per-lot base provenance;
+final cargo cannot be imported as a separate external lot and also treated as native
+custody. Managed stored-output delivery authorization still requires a live home.
+The arrival forwarding guard described above retains/refuses custom custody when
+that authorization is absent; it does not establish arrival reachability, orphan
+hauling, or Ready/Carrying adoption. Those extensions must extend that same owner
+and its checkpoint, not bypass these prerequisites.
+
 ## Select recipes in a mission
 
 `GetOptions` returns the active catalogue for a workshop type. The building HUD
@@ -93,6 +242,51 @@ template field write cannot distinguish recipes that share a template.
 For AI workshops, call `TrySetAiNextOption` from the same deterministic simulation
 callback on every peer. Supply the same AI-owned building identity and admitted
 option. The consumer decides when the AI should change recipes.
+
+## Observe a worker's latched batch
+
+For carry art or diagnostics, call `WeaponProduction.TryGetWorkerBatch(unitId,
+globalId, out batch)` while **already holding the actual engine monitor** in an
+existing protected readback or simulation callback. Supply the one-based unit slot
+and its exact unsigned Global ID. The read installs no hooks and changes no recipe,
+selection or cargo. It returns a small immutable `WeaponProductionWorkerBatch`
+value containing worker identity, home workshop identity, the admitted latched
+`Option` and recorded `Phase`. Selecting the next recipe does not reinterpret it.
+
+`Manufacturing`, `LocalProduct` and `Cargo` describe the existing framework batch
+owner's phases. They do not identify native AI/animation states or prove a cargo
+quantity, delivery destination, historical owner or manufacturing progress. Use
+the exact recipe identity or `Option.StoredOutput` for consumer presentation
+policy; do not guess those missing facts from the next selection or native template.
+
+```csharp
+// Already inside a protected engine boundary; presentation policy belongs to the mod.
+if (WeaponProduction.TryGetWorkerBatch(unitId, globalId, out var batch)
+        && batch.Phase == WeaponProductionBatchPhase.Cargo)
+{
+    var recipeId = batch.Option.Id;
+    var customOutput = batch.Option.StoredOutput;
+    // Select your presentation from this latched recipe; no cargo quantity is inferred.
+}
+```
+
+Only an existing tracked **additional recipe** is supported. Vanilla-only or
+untracked workers return false. The query validates the exact live worker and
+home, workshop type, worker role, production link and matching current owner. A
+paused worker with no native death marker is supported. A dead, destroyed,
+recycled or unlinked home makes the read unavailable even while cargo remains;
+this does not promise carrying-after-home-destruction compatibility.
+
+A known, admitted, nonfaulted native world is required. Its observation receipt
+binds once at the first successful outer native-load completion. Metadata refresh
+keeps that receipt, but an unusual later native-world replacement within the same
+production mission makes reads fail until a new production mission begins. This
+prevents retained batch rows from being presented as a replacement world's state.
+False returns the default value, whose fields are not a valid observation; keep
+the consumer's ordinary presentation fallback. Retained successful values are
+historical evidence: reacquire after loading or before treating them as current.
+APIShared supplies no art policy or per-unit presentation polling service. See the
+[compiled protected helper](../examples/ThirdPartyMod/CustomWorkshopExample.cs).
 
 ## Multiplayer and saved worlds
 
