@@ -77,6 +77,50 @@ building as well, without knowing the presenting mod:
   `BuildingActions.GetActionKey(owner, actionId)` (FNV-1a, the same in every process) and resolves
   it on each peer with `TryGetActionByKey`, which refuses unknown and ambiguous keys.
 
+## Recruitment-area replacements
+
+A mod whose building variant is built on a native type, for example a custom garrison on the stone
+barracks, registers a replacement of Vanilla's recruitment area for exactly that variant:
+
+    var options = new BuildingPanelRecruitmentAreaOptions(MyGuid, "imperial-garrison",
+        new[] { eStructs.STRUCT_BARRACKS_STONE }, CreateRecruitmentControl)
+    {
+        Selects = context => garrisons.Contains(context.GlobalId),
+        Opened = args => ShowRecruitsFor(args.Context.BuildingId, args.Context.GlobalId),
+        Closed = args => StopWaitingForRequests()
+    };
+    if (!BuildingPanelSections.TryRegisterRecruitmentArea(options, out var area, out string reason)) Log(reason);
+
+- **Showing.** The factory works like a section factory; its control sits in the same host and
+  positions itself where Vanilla's recruitment area is. While it is shown, Vanilla's recruitment
+  panels (barracks, mercenary post, Bedouin stockade, engineers' and tunnellers' guilds, cathedral)
+  and the full-panel click mask are collapsed, and APIShared features attached to Vanilla's barracks
+  panel hide with it. Every other building, including other stone barracks the selector rejects,
+  keeps Vanilla's area. Never shown in the map editor. `Selects` must be cheap and free of side
+  effects; it runs on every GUI check for a building of the variant's types.
+- **Coexistence.** Any number of owners can register variants on one native type. Registration
+  refuses only invalid options or a variant ID the owner already registered. Two replacements compete
+  only when both select the same open building; then one is shown by a fixed precedence that never
+  depends on registration order: a replacement with a selector before one for every building of its
+  types, then ordinal owner GUID, then ordinal variant ID. A replacement whose factory or callback fails
+  lets the next one, or Vanilla, show the area.
+- **Settings.** `SetEnabled` on the registration is logical activation for the owner's settings; a
+  disabled replacement matches nothing and hands a shown area back at the next GUI check.
+
+### Explaining the effective owner in settings
+
+APIShared shows no popup. Each competing pair is logged once, and
+`BuildingPanelSections.TryGetRecruitmentAreaStatus` (or `area.TryGetStatus`) returns an immutable
+explanation for the owner's own settings presentation, as described in issue #47: the variant's
+selector and enabled state, whether it is shown in the open panel now, and every rival variant on a
+shared native type in precedence order, with `Precedes` (the rival is shown instead where both
+select a building) and `ObservedOverlap` (this process has seen both select one building). Which
+variant applies depends on the building, so there is no single effective value: show the rule and
+the rivals, for example in the tooltip of the setting that enables the variant ("On garrisons that
+also match Fort mod's selector, Fort mod's recruitment area is shown"). Reading the status evaluates
+no selector and changes nothing. It is per process and not synchronized; peers decide from their own
+registrations.
+
 ## Limits
 
 - Unity thread only. Callbacks, conditions and factories are isolated: a failure is logged once
@@ -99,3 +143,14 @@ and is active only while sections exist. Detection follows Vanilla's
 `MainViewModel.setUpInbuilding`, which selects the building panel from `app_sub_mode` and the
 building from `in_structure`; it reuses one context object while nothing changes, so a steady
 panel allocates nothing per frame.
+
+Recruitment-area replacements share that observer and host. `MainViewModel.setUpInbuilding` is the
+only game code that writes the visibility of the recruitment panels and the click mask, and it
+writes only Hidden and Visible (Cecil scan of the audited Assembly-CSharp). A shown replacement
+therefore hides them with Collapsed, records what Vanilla had, re-records and re-hides any later
+Vanilla write while it stays shown, and on deactivation restores only panels that still carry its
+Collapsed, so a newer Vanilla write always wins. The members are validated at the first replacement
+registration; sections are unaffected if they are missing. A steady replaced panel, including a
+known competing pair, allocates nothing per GUI check; the first observation of a pair allocates
+its record once. These rules are covered by `BuildingPanelRecruitmentAreaTests` with a fake view;
+the live barracks panel, Noesis rendering and multiplayer presentation are not yet tested in game.
