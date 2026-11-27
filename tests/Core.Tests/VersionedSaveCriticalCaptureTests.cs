@@ -1131,14 +1131,17 @@ public partial class VersionedSaveDataTests
         internal VersionedSavePreparedOrigin Origin;
         internal Action DuringCapture;
         internal int Captures;
+        internal VersionedSaveCapture CaptureOverride;
 
         internal CriticalParticipantFixture(string owner, string identifier, FakeExtender extender = null,
-            Action<VersionedSaveDataRegistration> configure = null)
+            Action<VersionedSaveDataRegistration> configure = null, IEnumerable<string> knownEntries = null)
         {
             Owner = owner; Extender = extender ?? new FakeExtender();
-            var registration = new VersionedSaveDataRegistration(owner, identifier, 3, 1, new[] { "value", "cutover" }, writer =>
+            var registration = new VersionedSaveDataRegistration(owner, identifier, 3, 1, knownEntries ?? new[] { "value", "cutover" }, writer =>
             {
-                Captures++; DuringCapture?.Invoke(); writer.Write("value", new byte[] { 1 }); return true;
+                Captures++; DuringCapture?.Invoke();
+                if (CaptureOverride != null) return CaptureOverride(writer);
+                writer.Write("value", new byte[] { 1 }); return true;
             }, ignored => { })
             {
                 Scope = VersionedSaveScope.SaveGamesAndMaps,
@@ -1161,6 +1164,189 @@ public partial class VersionedSaveDataTests
         }
     }
 
+
+    // The real registry/frame/capture/transport paths are exercised; native file I/O is not simulated as success.
+    private static CriticalParticipantFixture LargeCriticalParticipant(string owner, string identifier, FakeExtender extender, int chunkCount = 6)
+    {
+        var fixture = new CriticalParticipantFixture(owner, identifier, extender,
+            knownEntries: new[] { "data/", "value", "cutover" });
+        byte[] chunk = new byte[VersionedSaveData.MaximumEntryBytes];
+        fixture.CaptureOverride = writer =>
+        {
+            for (int i = 0; i < chunkCount; i++) writer.Write("data/" + i, chunk);
+            return true;
+        };
+        return fixture;
+    }
+
+    [TestMethod]
+    [DataRow(CriticalSaveAggregateBudget.Standard8MiB, CriticalSaveAggregateBudget.Standard8MiB, false, 4)]
+    [DataRow(CriticalSaveAggregateBudget.Standard8MiB, CriticalSaveAggregateBudget.Extended16MiB, false, 6)]
+    [DataRow(CriticalSaveAggregateBudget.Extended16MiB, CriticalSaveAggregateBudget.Standard8MiB, false, 6)]
+    [DataRow(CriticalSaveAggregateBudget.Extended16MiB, CriticalSaveAggregateBudget.Extended16MiB, true, 6)]
+    public void CriticalAggregateCaptureUsesEveryEnrolledCeilingAndItsSnapshot(
+        CriticalSaveAggregateBudget firstBudget, CriticalSaveAggregateBudget secondBudget, bool allowed, int chunkCount)
+    {
+        var extender = new FakeExtender();
+        var first = LargeCriticalParticipant("unrelated.owner.z", "Aggregate.First", extender, chunkCount);
+        var second = LargeCriticalParticipant("unrelated.owner.a", "Aggregate.Second", extender, chunkCount);
+        int prepares = 0, releases = 0;
+        CriticalSavePrepare prepare = (VersionedSaveContext context, ref object state) =>
+        { prepares++; state = new object(); return true; };
+        CriticalSaveRelease release = (context, state) => { Assert.IsNotNull(state); releases++; };
+        var a = new CriticalSaveOptions("cutover", 3, prepare, release) { AggregateBudget = firstBudget };
+        var b = new CriticalSaveOptions("cutover", 3, prepare, release) { AggregateBudget = secondBudget };
+        first.Enroll(a);
+        Assert.IsTrue(extender.Registry.TryPrepareCriticalParticipant(second.Owner, second.Mod.Handle, b,
+            out var plan, out string enrollmentReason), enrollmentReason);
+        // The second option changes before commit; the first changes after enrollment.
+        b.AggregateBudget = secondBudget == CriticalSaveAggregateBudget.Standard8MiB
+            ? CriticalSaveAggregateBudget.Extended16MiB : CriticalSaveAggregateBudget.Standard8MiB;
+        Assert.IsTrue(extender.Registry.TryCommitCriticalParticipant(plan, out second.Participant, out enrollmentReason), enrollmentReason);
+        a.AggregateBudget = firstBudget == CriticalSaveAggregateBudget.Standard8MiB
+            ? CriticalSaveAggregateBudget.Extended16MiB : CriticalSaveAggregateBudget.Standard8MiB;
+        first.LoadAbsent();
+        using (var preparation = extender.Registry.BeginParticipantPreparation(CriticalLogicalContext))
+        {
+            Assert.IsTrue(preparation.Prepare()); preparation.RequireCurrent();
+            using (var frame = extender.Registry.BeginCriticalWriterFrame(CriticalLogicalContext))
+            {
+                frame.CompleteOwnedPreparation(); frame.Capture(CriticalLogicalContext);
+                if (!allowed)
+                {
+                    Assert.IsNotNull(frame.Failure);
+                    Assert.IsFalse(frame.TryGetWrittenCapture(out _, out _));
+                    Assert.IsNull(first.Mod.SaveCallback(CriticalLogicalContext));
+                    Assert.IsNull(second.Mod.SaveCallback(CriticalLogicalContext));
+                }
+                else
+                {
+                    Assert.IsNull(frame.Failure);
+                    byte[] x = first.Mod.SaveCallback(CriticalLogicalContext);
+                    byte[] y = second.Mod.SaveCallback(CriticalLogicalContext);
+                    Assert.IsNotNull(x); Assert.IsNotNull(y);
+                    Assert.IsTrue(x.Length <= VersionedSaveData.MaximumRecordBytes);
+                    Assert.IsTrue(y.Length <= VersionedSaveData.MaximumRecordBytes);
+                    Assert.IsTrue((long)x.Length + y.Length > VersionedSaveData.MaximumRecordBytes);
+                    Assert.IsTrue(frame.TryGetWrittenCapture(out var capture, out string reason), reason);
+                    Assert.IsTrue(capture.MatchesRecord(first.Participant.CriticalSource, x, out reason), reason);
+                    Assert.IsTrue(capture.MatchesRecord(second.Participant.CriticalSource, y, out reason), reason);
+                }
+            }
+        }
+        Assert.IsNull(VersionedSaveFactoryFrame.Current);
+        Assert.AreEqual(1, first.Captures); Assert.AreEqual(1, second.Captures);
+        Assert.AreEqual(2, prepares); Assert.AreEqual(2, releases);
+        extender.Registry.RequireCriticalWriterReady();
+    }
+
+    [TestMethod]
+    public void CriticalAggregateInternalStorageDefaultCannotBeBypassedByAnExtendedSubset()
+    {
+        var extender = new FakeExtender();
+        var first = LargeCriticalParticipant("one.mod", "Aggregate.StorageA", extender);
+        var second = LargeCriticalParticipant("another.mod", "Aggregate.StorageB", extender);
+        var storage = new CriticalSourceFixture("Aggregate.InternalStorage", extender);
+        var options = CriticalParticipantOptions(true); options.AggregateBudget = CriticalSaveAggregateBudget.Extended16MiB;
+        first.Enroll(options); second.Enroll(options);
+        Assert.IsTrue(extender.Registry.TryJoinNativeStorageCriticalSource(storage.Enrollment, out string reason), reason);
+        first.LoadAbsent();
+        Assert.IsFalse(extender.Registry.TryFreezeCriticalRecords(new[]
+        {
+            new VersionedSaveCriticalRecord(first.Participant.CriticalSource, first.Origin, new byte[] { 7 })
+        }, CriticalLogicalContext, 16 * 1024 * 1024, out var rejected, out reason));
+        Assert.IsNull(rejected); Assert.AreEqual(0, first.Captures);
+        using (var frame = extender.Registry.BeginCriticalWriterFrame(CriticalLogicalContext))
+        {
+            frame.CompleteOwnedPreparation(); frame.Capture(CriticalLogicalContext);
+            Assert.IsNotNull(frame.Failure); Assert.IsFalse(frame.TryGetWrittenCapture(out _, out _));
+        }
+        Assert.IsNull(VersionedSaveFactoryFrame.Current);
+        extender.Registry.RequireCriticalWriterReady();
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void CriticalAggregateOptInCannotRaiseEntryOrRecordLimitsAndFailureReleasesCapture(bool oversizedEntry)
+    {
+        var fixture = LargeCriticalParticipant("entry.record.owner", "Aggregate.RecordBound", new FakeExtender());
+        var options = CriticalParticipantOptions(); options.AggregateBudget = CriticalSaveAggregateBudget.Extended16MiB;
+        fixture.Enroll(options); fixture.LoadAbsent();
+        byte[] chunk = new byte[VersionedSaveData.MaximumEntryBytes + (oversizedEntry ? 1 : 0)];
+        fixture.CaptureOverride = writer =>
+        {
+            for (int i = 0; i < 8; i++) writer.Write("data/" + i, chunk);
+            return true;
+        };
+        using (var frame = fixture.Extender.Registry.BeginCriticalWriterFrame(CriticalLogicalContext))
+        {
+            frame.CompleteOwnedPreparation(); frame.Capture(CriticalLogicalContext);
+            Assert.IsNotNull(frame.Failure); Assert.IsFalse(frame.TryGetWrittenCapture(out _, out _));
+            Assert.AreEqual(oversizedEntry ? VersionedSaveWriteStatus.CaptureFailed : VersionedSaveWriteStatus.TooLarge,
+                fixture.Mod.Handle.LastWriteStatus);
+        }
+        // A separate small save after the refused capture proves its reservations/TLS were released.
+        fixture.CaptureOverride = writer => { writer.Write("value", new byte[] { 1 }); return true; };
+        using (var frame = fixture.Extender.Registry.BeginCriticalWriterFrame(CriticalLogicalContext))
+        {
+            frame.CompleteOwnedPreparation(); frame.Capture(CriticalLogicalContext);
+            Assert.IsNull(frame.Failure); Assert.IsNotNull(fixture.Mod.SaveCallback(CriticalLogicalContext));
+            Assert.IsTrue(frame.TryGetWrittenCapture(out _, out string reason), reason);
+        }
+        Assert.IsNull(VersionedSaveFactoryFrame.Current);
+    }
+
+    [TestMethod]
+    public void CriticalAggregateCeilingIsResourcePolicyNotPersistedCohortIdentity()
+    {
+        byte[] original;
+        var first = new CriticalParticipantFixture("budget.owner", "Aggregate.Compatible");
+        var options = CriticalParticipantOptions(); options.AggregateBudget = CriticalSaveAggregateBudget.Extended16MiB;
+        first.Enroll(options); first.LoadAbsent();
+        using (var frame = first.Extender.Registry.BeginCriticalWriterFrame(CriticalLogicalContext))
+        {
+            frame.CompleteOwnedPreparation(); frame.Capture(CriticalLogicalContext);
+            original = first.Mod.SaveCallback(CriticalLogicalContext);
+            Assert.IsTrue(frame.TryGetWrittenCapture(out _, out string reason), reason);
+        }
+        var lower = new CriticalParticipantFixture("budget.owner", "Aggregate.Compatible");
+        lower.Enroll(CriticalParticipantOptions());
+        lower.Extender.Registry.BeginLoad(VersionedSaveLoadSource.SaveGame, "budget.sav", 78);
+        lower.Mod.Load(original); lower.Extender.Registry.PrepareLoad(); lower.Extender.Registry.EndLoad();
+        lower.Extender.Registry.RequireCriticalWriterReady();
+        Assert.IsTrue(lower.Participant.PreparedSource.TryValidateCompleted(lower.Origin, out string detail), detail);
+        using (var frame = lower.Extender.Registry.BeginCriticalWriterFrame(CriticalLogicalContext))
+        {
+            frame.CompleteOwnedPreparation(); frame.Capture(CriticalLogicalContext);
+            byte[] again = lower.Mod.SaveCallback(CriticalLogicalContext);
+            CollectionAssert.AreEqual(original, again, "Changing only resource consent must not rewrite provenance or format.");
+            Assert.IsTrue(frame.TryGetWrittenCapture(out _, out detail), detail);
+        }
+        Assert.IsNull(VersionedSaveFactoryFrame.Current);
+    }
+
+    [TestMethod]
+    public void CriticalAggregateSixteenMiBCeilingStillRefusesAThirdLargeParticipant()
+    {
+        var extender = new FakeExtender();
+        var first = LargeCriticalParticipant("aggregate.a", "Aggregate.TotalA", extender);
+        var second = LargeCriticalParticipant("aggregate.b", "Aggregate.TotalB", extender);
+        var third = LargeCriticalParticipant("aggregate.c", "Aggregate.TotalC", extender);
+        var options = CriticalParticipantOptions(); options.AggregateBudget = CriticalSaveAggregateBudget.Extended16MiB;
+        first.Enroll(options); second.Enroll(options); third.Enroll(options); first.LoadAbsent();
+        using (var frame = extender.Registry.BeginCriticalWriterFrame(CriticalLogicalContext))
+        {
+            frame.CompleteOwnedPreparation(); frame.Capture(CriticalLogicalContext);
+            Assert.IsNotNull(frame.Failure); Assert.IsFalse(frame.TryGetWrittenCapture(out _, out _));
+            Assert.IsNull(first.Mod.SaveCallback(CriticalLogicalContext));
+            Assert.IsNull(second.Mod.SaveCallback(CriticalLogicalContext));
+            Assert.IsNull(third.Mod.SaveCallback(CriticalLogicalContext));
+        }
+        Assert.AreEqual(1, first.Captures); Assert.AreEqual(1, second.Captures); Assert.AreEqual(1, third.Captures);
+        Assert.IsNull(VersionedSaveFactoryFrame.Current);
+    }
+
     private static CriticalSaveOptions CriticalParticipantOptions(bool storage = false) => new("cutover", 3,
         (VersionedSaveContext context, ref object state) => true, (context, state) => { }) { RequiresNativeStorage = storage };
 
@@ -1179,6 +1365,7 @@ public partial class VersionedSaveDataTests
     [DataRow("prepare-null")]
     [DataRow("release-null")]
     [DataRow("options-null")]
+    [DataRow("aggregate-unknown")]
     public void CriticalParticipantInvalidEnrollmentLeavesTheOrdinaryRecordAndDemandUntouched(string invalid)
     {
         const string owner = "unrelated.mod.arbitrary-guid";
@@ -1197,6 +1384,7 @@ public partial class VersionedSaveDataTests
             invalid == "release-null" ? null : (context, state) => { });
         if (invalid == "modes-none") options.Modes = CriticalSaveModes.None;
         if (invalid == "modes-unknown") options.Modes = (CriticalSaveModes)2;
+        if (invalid == "aggregate-unknown") options.AggregateBudget = (CriticalSaveAggregateBudget)2;
         if (invalid == "options-null") options = null;
         string caller = invalid == "foreign-owner" ? "another.mod" : owner;
         Assert.IsFalse(fixture.Extender.Registry.TryPrepareCriticalParticipant(caller, handle, options, out var plan, out string reason));
@@ -1224,6 +1412,7 @@ public partial class VersionedSaveDataTests
         Assert.IsTrue(fixture.Extender.Registry.TryPrepareCriticalParticipant(fixture.Owner, fixture.Mod.Handle, options, out var plan, out string reason), reason);
         Assert.IsFalse(fixture.Extender.Registry.HasCriticalWriterDemand);
         options.Modes = CriticalSaveModes.None; options.RequiresNativeStorage = true;
+        options.AggregateBudget = CriticalSaveAggregateBudget.Extended16MiB;
         var foreign = new FakeExtender();
         Assert.IsFalse(foreign.Registry.TryCommitCriticalParticipant(plan, out _, out _));
         Assert.IsFalse(foreign.Registry.HasCriticalWriterDemand);

@@ -11,6 +11,17 @@ namespace APIShared.Savegames
         SinglePlayerAndEditor = 1
     }
 
+    /// <summary>Maximum total encoded bytes one participant accepts for a protected save cohort.</summary>
+    /// <remarks>This is process resource consent, not a record format, native-state permission or save certificate.
+    /// The smallest ceiling among every joined source applies. Internal sources retain the standard ceiling.</remarks>
+    public enum CriticalSaveAggregateBudget
+    {
+        /// <summary>The existing 8 MiB aggregate ceiling; the default.</summary>
+        Standard8MiB = 0,
+        /// <summary>Accept up to 16 MiB only when every joined source also accepts that ceiling.</summary>
+        Extended16MiB = 1
+    }
+
     /// <summary>Prepares one participant's private checkpoint for the current protected save attempt.</summary>
     /// <param name="context">The owned logical save flags and nullable path, not a native temporary filename.</param>
     /// <param name="state">Private state for this attempt, passed to release even when null or preparation fails.</param>
@@ -58,6 +69,25 @@ namespace APIShared.Savegames
         /// <summary>Whether this participant requires the shared NativeStorage checkpoint; defaults false.
         /// Set before enrollment and before the first NativeStorage registration when that request is needed.</summary>
         public bool RequiresNativeStorage { get; set; }
+        /// <summary>Ceiling accepted for all encoded records in the protected cohort; defaults to 8 MiB.</summary>
+        /// <remarks>Snapshotted at enrollment. Every joined source must opt into 16 MiB for the cohort to exceed
+        /// 8 MiB; a default or internal source keeps it at 8 MiB. Unknown enum values refuse enrollment.
+        /// Headers, framework markers and retained unknown entries count. Each record remains bounded to 8 MiB
+        /// and each entry to 1 MiB. This option is not serialized: lowering it on a later startup can refuse a
+        /// larger save without changing readable origins, cohort identity or the destination. It grants no
+        /// native/pre-effect capacity, load success, legacy-import permission or record-format compatibility.</remarks>
+        public CriticalSaveAggregateBudget AggregateBudget { get; set; } = CriticalSaveAggregateBudget.Standard8MiB;
+
+        internal const int MaximumAggregateBytes = 16 * 1024 * 1024;
+        internal static bool TryGetAggregateBytes(CriticalSaveAggregateBudget budget, out int bytes)
+        {
+            switch (budget)
+            {
+                case CriticalSaveAggregateBudget.Standard8MiB: bytes = VersionedSaveRecordCodec.MaximumRecordBytes; return true;
+                case CriticalSaveAggregateBudget.Extended16MiB: bytes = MaximumAggregateBytes; return true;
+                default: bytes = 0; return false;
+            }
+        }
     }
 
     /// <summary>A process-lived enrollment for one exact owner-matching versioned record.</summary>

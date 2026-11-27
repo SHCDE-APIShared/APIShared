@@ -98,6 +98,28 @@ Every archived participant also needs a complete readable origin whose positive
 mission association matches the current native world. Zero or mismatched source
 session IDs refuse saving, including state-only cohorts.
 
+The default aggregate ceiling is **8 MiB of complete encoded records across the
+whole protected cohort**, including headers, framework markers and retained unknown
+entries. A participant may explicitly set
+`options.AggregateBudget = CriticalSaveAggregateBudget.Extended16MiB` before enrollment.
+The runtime uses the **smallest** ceiling accepted by every joined source: all must
+opt into 16 MiB to raise it. A default participant or an internal source such as
+NativeStorage keeps the entire cohort at 8 MiB; a consumer cannot opt in for another
+owner. Additional unit records, goods and future participants count toward this same
+total. This is bounded resource consent, not a promise that every mod's maximum
+history can coexist. Unknown enum values refuse enrollment without changing the cohort. The option
+is snapshotted, so editing it after enrollment has no effect. Each record still has
+an 8 MiB limit and each entry a 1 MiB limit; splitting one record does not enlarge
+the shared total. Over-budget capture refuses replacement and releases its frozen
+capture reservations through the existing failure path.
+
+This ceiling is process resource consent, not saved schema or provenance. It is not
+part of the existing marker identity. A later process with a lower ceiling can read
+compatible individual records, but must refuse an oversized new save instead of
+dropping entries or rewriting the originals. Require a provider build exporting
+`AggregateBudget` when using the option. Native creation capacity, pre-effect
+admission, legacy migration and game acceptance remain separate obligations.
+
 An enrolled source reading its original protected marker requires the **exact
 ordered participant configuration**: owner GUID, record identifier, reserved marker
 and reader floor. Adding or removing an enrollment, or changing a marker/floor,

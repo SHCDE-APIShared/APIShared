@@ -3679,6 +3679,9 @@ APIShared.SavegameModSettingsRecordFormatter | public sealed class APIShared.Sav
 APIShared.SavegameModSettingsRecordFormatter | public .ctor()
 APIShared.SavegameModSettingsRecordFormatter | public APIShared.SavegameModSettingsRecord Deserialize(ref MessagePack.MessagePackReader reader, MessagePack.MessagePackSerializerOptions options)
 APIShared.SavegameModSettingsRecordFormatter | public void Serialize(ref MessagePack.MessagePackWriter writer, APIShared.SavegameModSettingsRecord value, MessagePack.MessagePackSerializerOptions options)
+APIShared.Savegames.CriticalSaveAggregateBudget | public enum APIShared.Savegames.CriticalSaveAggregateBudget : int
+APIShared.Savegames.CriticalSaveAggregateBudget | Extended16MiB = 1
+APIShared.Savegames.CriticalSaveAggregateBudget | Standard8MiB = 0
 APIShared.Savegames.CriticalSaveClient | public sealed class APIShared.Savegames.CriticalSaveClient
 APIShared.Savegames.CriticalSaveClient | public bool TryConfirmCreatedWorld(APIShared.Savegames.CriticalSaveParticipant participant, APIShared.MissionContext context, out string reason)
 APIShared.Savegames.CriticalSaveClient | public bool TryEnroll(APIShared.Savegames.VersionedSaveDataHandle handle, APIShared.Savegames.CriticalSaveOptions options, out APIShared.Savegames.CriticalSaveParticipant participant, out string reason)
@@ -3687,6 +3690,7 @@ APIShared.Savegames.CriticalSaveModes | None = 0
 APIShared.Savegames.CriticalSaveModes | SinglePlayerAndEditor = 1
 APIShared.Savegames.CriticalSaveOptions | public sealed class APIShared.Savegames.CriticalSaveOptions
 APIShared.Savegames.CriticalSaveOptions | public .ctor(string reservedMarkerEntry, int minimumReaderVersion, APIShared.Savegames.CriticalSavePrepare prepare, APIShared.Savegames.CriticalSaveRelease release)
+APIShared.Savegames.CriticalSaveOptions | public APIShared.Savegames.CriticalSaveAggregateBudget AggregateBudget { get; set; }
 APIShared.Savegames.CriticalSaveOptions | public APIShared.Savegames.CriticalSaveModes Modes { get; set; }
 APIShared.Savegames.CriticalSaveOptions | public APIShared.Savegames.CriticalSavePrepare Prepare { get; }
 APIShared.Savegames.CriticalSaveOptions | public APIShared.Savegames.CriticalSaveRelease Release { get; }
