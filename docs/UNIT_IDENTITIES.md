@@ -73,8 +73,11 @@ intervals. `GetMembers` returns a retainable read-only list ordered by slot;
 previously returned lists remain point-in-time values after a world ends.
 
 Stable reads and unchanged reconciliation allocate nothing after warm-up. Changes
-publish fresh immutable dictionaries/member lists. This deliberately avoids
-recycling public results that consumers may retain. There is no position/facing,
+publish fresh immutable views, so results that consumers retain are never recycled.
+One mark, unmark or pending change copies only fixed 128-slot pages (the slot map
+and its variant's member set), so its cost does not grow with the number of marks.
+Binding a world, restoring a save and reconciling more than 32 changes in one tick
+rebuild the view once. There is no position/facing,
 AI-state or general unit-table snapshot in this API.
 
 ## Save and load
@@ -122,6 +125,11 @@ legacy identities at a permitted post-load boundary; no legacy record is guessed
 `Core.Tests.UnitIdentityTests` exercises the actual registry/codec using a native
 reader boundary: unsigned identities, conflicts, paid pending recruits, world
 replacement, canceled deletion, dormant records, canonical bytes, malformed loads
-and zero-allocation reads. Installed interop validation pins the pending-carrier
+and zero-allocation reads. A randomized test compares incremental publication with an
+independent model, including retained member lists. A scaling test bounds the
+allocation of one mark: in a Debug .NET 10 test run (BelowNormal priority, not Unity or
+Mono) one mark/unmark took about 1 µs and 9 KB with 200 or 4,000 existing marks,
+against about 125 µs/68 KB and 946 µs/855 KB for the previous full rebuild.
+Installed interop validation pins the pending-carrier
 field at offset 710, width 2, within the 1168-byte packed SE unit view. These checks
 do not establish in-game rendering, purchase correctness or two-peer determinism.
