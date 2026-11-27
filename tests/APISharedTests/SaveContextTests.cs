@@ -8,6 +8,7 @@ using System.Threading;
 using APIShared.ScriptExtenderFixes;
 using APIShared;
 using APIShared.GameModes;
+using APIShared.Savegames;
 using System.Collections.Generic;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using MonoMod.Cil;
@@ -22,7 +23,7 @@ using SHCDESE.API.Components.Archive;
 namespace APISharedTests
 {
     [TestClass, DoNotParallelize]
-    public sealed class SaveContextTests
+    public sealed partial class SaveContextTests
     {
         private ResolveEventHandler resolve;
         [TestInitialize]
@@ -40,6 +41,17 @@ namespace APISharedTests
         }
         [TestCleanup]
         public void ReleaseDependencyResolver() => AppDomain.CurrentDomain.AssemblyResolve -= resolve;
+
+        // Snapshot the IDictionary contract directly. A generic dictionary can
+        // expose KeyValuePair from IEnumerable.Current rather than DictionaryEntry.
+        // Entry retains the exact key/value pairs and their original enumeration order.
+        private static DictionaryEntry[] SnapshotHandlers(IDictionary handlers)
+        {
+            var snapshot = new List<DictionaryEntry>(handlers.Count);
+            IDictionaryEnumerator enumerator = handlers.GetEnumerator();
+            while (enumerator.MoveNext()) snapshot.Add(enumerator.Entry);
+            return snapshot.ToArray();
+        }
 
         [TestMethod]
         public void SynchronizedSavesCorrectStaleFlagsWithoutLeakingIntoMapsOrOtherThreads()
@@ -222,7 +234,7 @@ namespace APISharedTests
             var pathField = manager.GetType().GetField("_currentFilePath", flags);
             var saveField = manager.GetType().GetField("_currentFileIsSaveFile", flags);
             var handlers = (IDictionary)typeof(ModSaveDataAPI).GetField("_handlers", flags).GetValue(ModSaveDataAPI.Instance);
-            var previousHandlers = handlers.Cast<DictionaryEntry>().ToArray();
+            var previousHandlers = SnapshotHandlers(handlers);
             object previousArchive = archiveField.GetValue(manager), previousPath = pathField.GetValue(manager), previousSave = saveField.GetValue(manager);
             string file = Path.Combine(Path.GetTempPath(), "api-context-" + Guid.NewGuid().ToString("N") + ".msv");
             try
@@ -263,6 +275,135 @@ namespace APISharedTests
                     saveField.SetValue(manager, false);
                     factory.Invoke(null, new object[] { manager, true });
                     Assert.IsNull(archiveField.GetValue(manager), "Editor map unexpectedly received a save-only record.");
+                }
+            }
+            finally
+            {
+                if (!ReferenceEquals(archiveField.GetValue(manager), previousArchive))
+                    (archiveField.GetValue(manager) as IDisposable)?.Dispose();
+                archiveField.SetValue(manager, previousArchive); pathField.SetValue(manager, previousPath); saveField.SetValue(manager, previousSave);
+                handlers.Clear(); foreach (var entry in previousHandlers) handlers.Add(entry.Key, entry.Value);
+                if (File.Exists(file)) File.Delete(file);
+            }
+        }
+
+        [TestMethod]
+        [DataRow(false)]
+        [DataRow(true)]
+        public void OwnedFactoryFreezesBeforeActualEnrolledTransportAndRetainsCaptureFailures(bool captureThrows)
+        {
+            const BindingFlags flags = BindingFlags.NonPublic | BindingFlags.Instance;
+            const string identifier = "CriticalFactoryFixture";
+            Assert.IsNull(VersionedSaveFactoryFrame.Current, "Fixture requires no active factory frame.");
+            var manager = GameMapArchiveManagerAPI.Instance;
+            var archiveField = manager.GetType().GetField("_mapArchive", flags);
+            var pathField = manager.GetType().GetField("_currentFilePath", flags);
+            var saveField = manager.GetType().GetField("_currentFileIsSaveFile", flags);
+            var handlers = (IDictionary)typeof(ModSaveDataAPI).GetField("_handlers", flags).GetValue(ModSaveDataAPI.Instance);
+            var previousHandlers = SnapshotHandlers(handlers);
+            object previousArchive = archiveField.GetValue(manager), previousPath = pathField.GetValue(manager), previousSave = saveField.GetValue(manager);
+            string file = Path.Combine(Path.GetTempPath(), "api-critical-factory-" + Guid.NewGuid().ToString("N") + ".msv");
+            try
+            {
+                handlers.Clear();
+                archiveField.SetValue(manager, null); pathField.SetValue(manager, file); saveField.SetValue(manager, false);
+                var events = new List<string>();
+                int factoryCaptures = 0, recordCaptures = 0, transports = 0;
+                VersionedSaveContext factoryContext = default, transportContext = default;
+                VersionedSavePreparedSource prepared = null;
+                VersionedSavePreparedOrigin origin = null;
+                string originError = null;
+                var adapterMethod = typeof(VersionedSaveDataRuntime).GetMethod("RegisterWithExtender", BindingFlags.NonPublic | BindingFlags.Static);
+                Assert.IsNotNull(adapterMethod);
+                // Keep the production SaveContext converter and actual SE handler dispatch.
+                // Only this local registry and its declared consumer are supplied by the fixture.
+                var adapter = (VersionedSaveDataRegistry.Transport)Delegate.CreateDelegate(typeof(VersionedSaveDataRegistry.Transport), adapterMethod);
+                var registry = new VersionedSaveDataRegistry((id, save, load) => adapter(id, context => {
+                    transports++; events.Add("transport"); transportContext = context;
+                    return save(context);
+                }, load), ignored => { }, ignored => { });
+                var registration = new VersionedSaveDataRegistration("owner", identifier, 3, 1, new[] { "value", "cutover" }, writer => {
+                    recordCaptures++; events.Add("capture"); writer.Write("value", new byte[] { 23 }); return true;
+                }, ignored => { });
+                registration.Scope = VersionedSaveScope.SaveGamesAndMaps;
+                registration.SimulationRelevant = true;
+                registration.Prepared = load => {
+                    if (!prepared.TryGetCurrent(load, out origin, out string reason)) originError = reason;
+                };
+                Assert.IsTrue(registry.TryRegister(registration, out var handle, out string detail), detail);
+                Assert.IsTrue(registry.TryTrackPreparedSource("owner", handle, out prepared, out detail), detail);
+                Assert.IsTrue(registry.TryEnrollCriticalSource(prepared, "cutover", 3, out var enrollment, out detail), detail);
+                registry.BeginLoad(VersionedSaveLoadSource.SaveGame, "loaded-source.sav");
+                registry.PrepareLoad(); registry.EndLoad();
+                Assert.IsNull(originError);
+                Assert.IsTrue(prepared.TryValidateCompleted(origin, out detail), detail);
+
+                var method = manager.GetType().GetMethod("PrepareMapArchiveAndGetBytes", flags);
+                using (var definition = new DynamicMethodDefinition(method))
+                using (var il = new ILContext(definition.Definition))
+                {
+                    il.ReferenceBag = RuntimeILReferenceBag.Instance;
+                    il.Invoke(SaveContextRuntime.CorrectSaveFactory);
+                    // As in the existing factory fixture, retain the actual constructor,
+                    // transformation and handler dispatch, cutting only the native tail.
+                    var dispatch = il.Body.Instructions.Single(i => i.Operand is Mono.Cecil.MethodReference m &&
+                        m.Name == "WriteAllModDataToArchive");
+                    while (dispatch.Next != null) il.Body.Instructions.Remove(dispatch.Next);
+                    il.Body.Instructions.Add(Mono.Cecil.Cil.Instruction.Create(Mono.Cecil.Cil.OpCodes.Ldnull));
+                    il.Body.Instructions.Add(Mono.Cecil.Cil.Instruction.Create(Mono.Cecil.Cil.OpCodes.Ret));
+                    MethodInfo factory = definition.Generate();
+                    var failure = new InvalidOperationException("controlled critical factory capture failure");
+                    VersionedSaveCriticalCapture frozen = null;
+                    using (var frame = VersionedSaveFactoryFrame.Begin(context => {
+                        factoryCaptures++; events.Add("factory"); factoryContext = context;
+                        if (captureThrows) throw failure;
+                        if (!registry.TryFreezeCriticalRecords(new[] { new VersionedSaveCriticalRecord(enrollment, origin, new byte[] { 7 }) },
+                            context, 4096, out frozen, out string reason)) throw new InvalidOperationException(reason);
+                        return frozen;
+                    }))
+                    {
+                        // Stale map/editor fields must become the same known synchronized
+                        // null-path policy for the frame and the real transport converter.
+                        SaveContextRuntime.RunSynchronizedSave(() => factory.Invoke(null, new object[] { manager, true }));
+                        Assert.AreEqual(1, factoryCaptures); Assert.AreEqual(1, transports);
+                        Assert.IsTrue(factoryContext.IsSaveFile); Assert.IsFalse(factoryContext.IsMapEditorSave); Assert.IsNull(factoryContext.FilePath);
+                        Assert.IsTrue(transportContext.IsSaveFile); Assert.IsFalse(transportContext.IsMapEditorSave); Assert.IsNull(transportContext.FilePath);
+                        CollectionAssert.AreEqual(captureThrows ? new[] { "factory", "transport", "capture" } :
+                            new[] { "factory", "capture", "transport" }, events);
+                        // Assertions remain outside SE callbacks, whose failures are isolated.
+                        if (captureThrows)
+                        {
+                            Assert.AreSame(failure, frame.Failure);
+                            Assert.IsFalse(frame.TryGetWrittenCapture(out _, out detail));
+                            Assert.IsFalse(string.IsNullOrEmpty(detail));
+                        }
+                        else
+                        {
+                            Assert.IsNull(frame.Failure);
+                            Assert.IsTrue(frame.TryGetWrittenCapture(out var written, out detail), detail);
+                            Assert.AreSame(frozen, written);
+                            Assert.AreEqual(1, recordCaptures);
+                            Assert.AreEqual(VersionedSaveWriteStatus.Written, handle.LastWriteStatus);
+                            var archive = (MapArchive)archiveField.GetValue(manager);
+                            Assert.IsNotNull(archive); archive.CommitChanges();
+                            byte[] bytes = archive.TryReadBinaryFile("_SE_ModData_" + identifier + ".msgpack", true);
+                            Assert.IsTrue(written.MatchesRecord(enrollment, bytes, out detail), detail);
+                            var decoded = VersionedSaveRecordCodec.Decode(bytes, 3);
+                            Assert.AreEqual(3, decoded.MinimumReaderVersion);
+                            Assert.IsTrue(decoded.Entries.TryGet("value", out var value)); CollectionAssert.AreEqual(new byte[] { 23 }, value);
+                            Assert.IsTrue(decoded.Entries.TryGet("cutover", out var marker)); CollectionAssert.AreEqual(new byte[] { 7 }, marker);
+                            Assert.AreEqual(VersionedSaveRecordCodec.DecodeStatus.TooNew, VersionedSaveRecordCodec.Decode(bytes, 2).Status);
+                        }
+
+                        SaveContextRuntime.RunSynchronizedSave(() => factory.Invoke(null, new object[] { manager, true }));
+                        Assert.AreEqual(1, factoryCaptures, "A duplicate factory must never recapture its consumer.");
+                        Assert.AreEqual(2, transports);
+                        Assert.IsFalse(frame.TryGetWrittenCapture(out _, out detail), "Duplicate dispatch cannot authorize replacement.");
+                        Assert.IsFalse(string.IsNullOrEmpty(detail));
+                        if (captureThrows) Assert.AreSame(failure, frame.Failure, "Later failures must retain the first callback failure.");
+                        else Assert.AreEqual(1, recordCaptures, "Duplicate transport must not recapture a frozen source.");
+                    }
+                    Assert.IsNull(VersionedSaveFactoryFrame.Current);
                 }
             }
             finally

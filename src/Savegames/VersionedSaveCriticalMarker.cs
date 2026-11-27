@@ -24,7 +24,7 @@ namespace APIShared.Savegames
                 { reason = "The exact readable current enrolled source origin is required."; return false; }
                 bool active = windowOpen && origin.Active && ReferenceEquals(activePreparedOrigin, origin) &&
                     origin.CallbackThread == Thread.CurrentThread.ManagedThreadId;
-                bool finalized = !windowOpen && origin.Completed;
+                bool finalized = !windowOpen && finalizedLoadGeneration == generation && origin.Completed;
                 if (!active && !finalized)
                 { reason = "Read the marker in its exact active Prepared delivery or after the complete load window."; return false; }
                 VersionedSaveLoad load = slot.PreparedOutcome?.Load;

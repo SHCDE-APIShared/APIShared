@@ -962,6 +962,8 @@ The registry's internal [tracked-origin and enrolled-capture protocol](SAVE_DATA
 binds existing records to frozen bytes and original markers without adding a
 public enrollment or legacy-storage migration API. The existing protected writer
 retains [explicit cleanup/commit outcomes](SAVE_DATA.md#critical-save-cleanup-outcomes).
+The [internal managed Trail metadata](SAVE_DATA.md#internal-managed-trail-producer-metadata)
+has a separate binding and supplies no public pre-capture or enrollment API.
 
 ## Workshop inventory
 

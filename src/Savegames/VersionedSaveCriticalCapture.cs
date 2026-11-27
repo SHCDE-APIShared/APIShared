@@ -45,6 +45,9 @@ namespace APIShared.Savegames
         internal readonly VersionedSaveContext Context;
         internal readonly long Generation;
         internal readonly int ThreadId;
+        // Null for existing standalone preparation. An optional factory frame
+        // stamps only bundles constructed inside its actual prepare callback.
+        internal readonly object FactoryPreparationTag;
         internal bool Ready, Failed, Closed;
         internal string Failure = string.Empty;
 
@@ -53,6 +56,7 @@ namespace APIShared.Savegames
         {
             Registry = registry; Records = records; Context = context; Generation = generation;
             ThreadId = Thread.CurrentThread.ManagedThreadId;
+            FactoryPreparationTag = VersionedSaveFactoryFrame.PreparationTag;
         }
 
         // The caller reads actual completed-archive bytes outside the registry lock.
@@ -65,6 +69,141 @@ namespace APIShared.Savegames
         // Independent finally cleanup in the critical writer must call Dispose even
         // when path restoration, another record release, capture or verification fails.
         public void Dispose() => Registry.EndCriticalCapture(this);
+    }
+
+    // Dormant managed handoff for the existing critical writer. Only an explicit
+    // internal owner opens a frame; this is not enrollment, logical save-attempt
+    // provenance, native Original reachability or an archive-commit certificate.
+    internal sealed class VersionedSaveFactoryFrame : IDisposable
+    {
+        [ThreadStatic] private static VersionedSaveFactoryFrame current;
+        [ThreadStatic] private static object preparingTag;
+        private readonly VersionedSaveFactoryFrame previous;
+        private readonly Func<VersionedSaveContext, VersionedSaveCriticalCapture> prepare;
+        private readonly object preparationTag = new object();
+        private readonly int threadId;
+        private VersionedSaveCriticalCapture capture;
+        private Exception failure;
+        private bool observed, closed;
+
+        internal static VersionedSaveFactoryFrame Current => current;
+        internal static object PreparationTag => preparingTag;
+        internal Exception Failure => Volatile.Read(ref failure);
+
+        private VersionedSaveFactoryFrame(Func<VersionedSaveContext, VersionedSaveCriticalCapture> prepare)
+        {
+            this.prepare = prepare ?? throw new ArgumentNullException(nameof(prepare));
+            threadId = Thread.CurrentThread.ManagedThreadId;
+            previous = current;
+            if (previous != null)
+            {
+                var error = new InvalidOperationException("Nested critical factory frames cannot authorize replacement.");
+                previous.RecordFailure(error); RecordFailure(error);
+            }
+            current = this;
+        }
+
+        // Creator-thread stack lifetime. The callback returns ownership of one
+        // newly prepared, unserved bundle for the supplied context. If it throws
+        // before returning, it owns its own cleanup.
+        internal static VersionedSaveFactoryFrame Begin(
+            Func<VersionedSaveContext, VersionedSaveCriticalCapture> prepare) => new VersionedSaveFactoryFrame(prepare);
+
+        internal void RecordFailure(Exception error)
+        {
+            if (error == null) throw new ArgumentNullException(nameof(error));
+            Interlocked.CompareExchange(ref failure, error, null);
+        }
+
+        private bool IsActive()
+        {
+            if (Thread.CurrentThread.ManagedThreadId == threadId && !closed && ReferenceEquals(current, this))
+                return true;
+            RecordFailure(new InvalidOperationException("The critical factory frame changed thread or lifetime."));
+            return false;
+        }
+
+        // Called by the existing SaveContext factory owner before real handler
+        // dispatch. SE can swallow an error: retain it here instead of treating a
+        // thrown callback as native cancellation. No callback is retried.
+        internal void Capture(VersionedSaveContext context)
+        {
+            if (!IsActive() || Failure != null) return;
+            if (observed)
+            {
+                RecordFailure(new InvalidOperationException("The critical factory dispatched more than once."));
+                return;
+            }
+            observed = true;
+            try
+            {
+                VersionedSaveCriticalCapture prepared;
+                object previousTag = preparingTag;
+                preparingTag = preparationTag;
+                try { prepared = prepare(context); }
+                finally { preparingTag = previousTag; }
+                // Consumer capture can reenter internal save code. A frame
+                // closed/replaced during that callback cannot acquire ownership
+                // after its finally has already run; release the returned bundle.
+                if (!IsActive())
+                {
+                    prepared?.Dispose();
+                    return;
+                }
+                capture = prepared;
+                if (capture == null)
+                    RecordFailure(new InvalidOperationException("The critical factory did not prepare its enrolled records."));
+                else if (!ReferenceEquals(capture.FactoryPreparationTag, preparationTag))
+                    RecordFailure(new InvalidOperationException("The critical factory bundle was not prepared by this frame's callback."));
+                else if (!capture.Ready || capture.Failed || capture.Closed ||
+                    capture.ThreadId != threadId || capture.Context.IsSaveFile != context.IsSaveFile ||
+                    capture.Context.IsMapEditorSave != context.IsMapEditorSave ||
+                    !string.Equals(capture.Context.FilePath, context.FilePath, StringComparison.Ordinal))
+                    RecordFailure(new InvalidOperationException("The critical factory returned a different capture context or lifetime."));
+                else
+                    foreach (var record in capture.Records)
+                        if (record.Served)
+                        {
+                            RecordFailure(new InvalidOperationException("A critical factory record was already served before dispatch."));
+                            break;
+                        }
+            }
+            catch (Exception error) { RecordFailure(error); }
+        }
+
+        // The writer calls this after Original, before examining the completed
+        // temporary archive. Once-only transport is necessary but not sufficient:
+        // every actual archive record must also match the returned bundle.
+        internal bool TryGetWrittenCapture(out VersionedSaveCriticalCapture written, out string reason)
+        {
+            written = null;
+            if (!IsActive()) { reason = Failure.Message; return false; }
+            if (Failure != null) { reason = Failure.Message; return false; }
+            if (!observed || capture == null)
+                RecordFailure(new InvalidOperationException("The critical factory dispatch was missing."));
+            else if (!capture.AllWritten(out reason))
+                RecordFailure(new InvalidOperationException(reason));
+            if (Failure != null) { reason = Failure.Message; return false; }
+            written = capture; reason = string.Empty; return true;
+        }
+
+        public void Dispose()
+        {
+            if (Thread.CurrentThread.ManagedThreadId != threadId)
+            {
+                var error = new InvalidOperationException("The critical factory frame must close on its owning thread.");
+                RecordFailure(error); throw error;
+            }
+            if (closed) return;
+            if (!ReferenceEquals(current, this))
+            {
+                var error = new InvalidOperationException("Critical factory frames must close in stack order.");
+                RecordFailure(error); throw error;
+            }
+            closed = true;
+            try { capture?.Dispose(); }
+            finally { capture = null; current = previous; }
+        }
     }
 
     internal sealed partial class VersionedSaveDataRegistry
@@ -104,8 +243,8 @@ namespace APIShared.Savegames
             VersionedSaveCriticalCapture bundle;
             lock (sync)
             {
-                if (windowOpen)
-                { reason = "Critical capture cannot run inside a load window."; return false; }
+                if (windowOpen || finalizedLoadGeneration != generation)
+                { reason = "Critical capture requires the complete current load pass."; return false; }
                 var selected = new Dictionary<VersionedSaveCriticalSource, VersionedSaveCriticalCapture.Record>();
                 foreach (VersionedSaveCriticalRecord item in requested)
                 {
@@ -187,7 +326,8 @@ namespace APIShared.Savegames
         private bool CriticalCurrent(VersionedSaveCriticalCapture bundle, out string reason)
         {
             if (bundle == null || !ReferenceEquals(bundle.Registry, this) || bundle.Closed || bundle.Failed || windowOpen ||
-                bundle.Generation != generation || bundle.ThreadId != Thread.CurrentThread.ManagedThreadId)
+                finalizedLoadGeneration != generation || bundle.Generation != generation ||
+                bundle.ThreadId != Thread.CurrentThread.ManagedThreadId)
             { reason = bundle == null || string.IsNullOrEmpty(bundle.Failure) ? "The critical capture lifetime/thread changed." : bundle.Failure; return false; }
             foreach (var record in bundle.Records)
             {
