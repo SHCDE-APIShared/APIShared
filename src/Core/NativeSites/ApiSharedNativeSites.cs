@@ -270,7 +270,8 @@ namespace APIShared
             Group("Units.AiMilitary.Calls", Units.AiMilitary.Native.AiMilitaryNativeBindings.CallOnlySpans()),
             Group(Units.AiMilitary.Native.AiMilitaryNativeObservers.SiteName, Units.AiMilitary.Native.AiMilitaryNativeObservers.Spans()),
             Group(Units.AiMilitary.Quota.AiMilitaryQuotaRuntime.SiteName, Units.AiMilitary.Quota.AiMilitaryQuotaRuntime.Spans()),
-            Group(Units.AiMilitary.Engineering.AiMilitaryEngineeringRuntime.SiteName, Units.AiMilitary.Engineering.AiMilitaryEngineeringRuntime.Spans())
+            Group(Units.AiMilitary.Engineering.AiMilitaryEngineeringRuntime.SiteName, Units.AiMilitary.Engineering.AiMilitaryEngineeringRuntime.Spans()),
+            Group(Units.UnitRelocationRuntime.Site, Units.UnitRelocationRuntime.Spans())
         }.Concat(WeaponProductionNativeRuntime.StoredDeliveryGroups()).ToArray();
 
         // Claims a group for APIShared before installation. Throws the service's own failure type

@@ -4376,6 +4376,49 @@ APIShared.Units.UnitMoveRunStatus | Redirected = 4
 APIShared.Units.UnitMoveRunStatus | Unavailable = 0
 APIShared.Units.UnitMoveRunStatus | UnidentifiedWorld = 2
 APIShared.Units.UnitMoveRunStatus | WorldChanged = 7
+APIShared.Units.UnitRelocationContext | public sealed class APIShared.Units.UnitRelocationContext
+APIShared.Units.UnitRelocationContext | public APIShared.Units.UnitRelocationOrigin Origin { get; }
+APIShared.Units.UnitRelocationContext | public SHCDESE.Interop.eChimps UnitType { get; }
+APIShared.Units.UnitRelocationContext | public int ControllingPlayerId { get; }
+APIShared.Units.UnitRelocationContext | public int TargetX { get; }
+APIShared.Units.UnitRelocationContext | public int TargetY { get; }
+APIShared.Units.UnitRelocationContext | public int UnitId { get; }
+APIShared.Units.UnitRelocationContext | public string OriginOwnerGuid { get; }
+APIShared.Units.UnitRelocationContext | public uint GlobalId { get; }
+APIShared.Units.UnitRelocationContext | public ushort Height { get; }
+APIShared.Units.UnitRelocationOrigin | public enum APIShared.Units.UnitRelocationOrigin : int
+APIShared.Units.UnitRelocationOrigin | ExplicitApiRequest = 2
+APIShared.Units.UnitRelocationOrigin | InvalidStandingTerrainRecovery = 1
+APIShared.Units.UnitRelocationOrigin | Native = 0
+APIShared.Units.UnitRelocationPolicyRegistration | public sealed class APIShared.Units.UnitRelocationPolicyRegistration
+APIShared.Units.UnitRelocationPolicyRegistration | public bool IsEnabled { get; }
+APIShared.Units.UnitRelocationPolicyRegistration | public void SetEnabled(bool enabled)
+APIShared.Units.UnitRelocationRequest | public struct APIShared.Units.UnitRelocationRequest
+APIShared.Units.UnitRelocationRequest | public .ctor(long sessionId, long generation, int unitId, uint globalId, SHCDESE.Interop.eChimps unitType, int controllingPlayerId, int targetX, int targetY)
+APIShared.Units.UnitRelocationRequest | public SHCDESE.Interop.eChimps UnitType { get; }
+APIShared.Units.UnitRelocationRequest | public int ControllingPlayerId { get; }
+APIShared.Units.UnitRelocationRequest | public int TargetX { get; }
+APIShared.Units.UnitRelocationRequest | public int TargetY { get; }
+APIShared.Units.UnitRelocationRequest | public int UnitId { get; }
+APIShared.Units.UnitRelocationRequest | public long Generation { get; }
+APIShared.Units.UnitRelocationRequest | public long SessionId { get; }
+APIShared.Units.UnitRelocationRequest | public uint GlobalId { get; }
+APIShared.Units.UnitRelocationResult | public sealed class APIShared.Units.UnitRelocationResult
+APIShared.Units.UnitRelocationResult | public APIShared.Units.UnitRelocationStatus Status { get; }
+APIShared.Units.UnitRelocationResult | public bool NativeInvoked { get; }
+APIShared.Units.UnitRelocationResult | public bool NativeReturned { get; }
+APIShared.Units.UnitRelocationService | public static class APIShared.Units.UnitRelocationService
+APIShared.Units.UnitRelocationService | public static bool EnsureAvailable(string ownerGuid, out string reason)
+APIShared.Units.UnitRelocationService | public static bool IsAvailable { get; }
+APIShared.Units.UnitRelocationService | public static bool TryRegisterPolicy(string ownerGuid, string registrationId, SHCDESE.Interop.eChimps? unitType, System.Func<APIShared.Units.UnitRelocationContext, bool> shouldCancel, out APIShared.Units.UnitRelocationPolicyRegistration registration, out string reason, int order = 0)
+APIShared.Units.UnitRelocationService | public static bool TryRelocate(string ownerGuid, APIShared.Units.UnitRelocationRequest request, out APIShared.Units.UnitRelocationResult result, out string reason)
+APIShared.Units.UnitRelocationStatus | public enum APIShared.Units.UnitRelocationStatus : int
+APIShared.Units.UnitRelocationStatus | IdentityChanged = 2
+APIShared.Units.UnitRelocationStatus | PostconditionFailed = 5
+APIShared.Units.UnitRelocationStatus | Rejected = 1
+APIShared.Units.UnitRelocationStatus | Unavailable = 0
+APIShared.Units.UnitRelocationStatus | VerifiedRelocated = 4
+APIShared.Units.UnitRelocationStatus | Vetoed = 3
 APIShared.Units.UnitSettledCause | public enum APIShared.Units.UnitSettledCause : int
 APIShared.Units.UnitSettledCause | Created = 0
 APIShared.Units.UnitSettledCause | Disband = 4

@@ -1,5 +1,7 @@
 # API catalog
 
+`UnitRelocationService` (0.79.0+) coordinates one native relocation owner, exact-lifetime simulation-tick requests and ordered type-filtered veto policies. Consumers retain game rules and network authority; availability is based on sticky live integrity, not diagnostic counts. See [shared unit relocation](UNIT_RELOCATION.md).
+
 `UnitMoveEvents`, `WorldMutationEvents` and the bootstrap early-plugin activation contracts below require APIShared **0.78.0** or newer. Earlier private observer builds are not the public0.77 API.
 
 `APIShared.DependencyBootstrap.EarlyPluginActivation` (bootstrap companion assembly) observes the actual selected plugin immediately before construction/Awake. Preloader registration or deferred assembly declarations, identity, deadline and failure contracts: [early activation](DEPENDENCY_BOOTSTRAP.md#early-plugin-activation-observers).

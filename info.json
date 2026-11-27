@@ -3,13 +3,21 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.78.0",
+  "Version": "0.79.0",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
   "Manifest": 1,
   "NetworkMode": 1,
   "SerpChangelog": [
+    {
+      "Version": "0.79.0",
+      "Changes": [
+        "Provide one shared native unit-relocation owner with ordered, type-filtered veto policies and explicit logical activation.",
+        "Expose exact-lifetime guarded relocation requests in current simulation ticks, with source/destination occupancy validation and qualified outcomes.",
+        "Keep native hook availability independent of diagnostic deduplication and permanently revoke the service after integrity loss."
+      ]
+    },
     {
       "Version": "0.78.0",
       "Changes": [

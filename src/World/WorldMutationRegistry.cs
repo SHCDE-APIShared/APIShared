@@ -54,6 +54,8 @@ namespace APIShared.WorldMutations
         private object nativeIdentity;
         [ThreadStatic] private static Dictionary<WorldMutationRegistry, ThreadState> threads;
         private sealed class ThreadState { internal Batch Batch; internal long Invocation; }
+        // Current-thread source mutation scope; does not allocate a TLS entry on an idle path.
+        internal bool HasOpenBatch => threads != null && threads.TryGetValue(this, out var value) && value.Batch != null;
 
         internal WorldMutationRegistry(Func<WorldMutationWorld> readWorld, Action<Exception> report)
         { this.readWorld = readWorld ?? throw new ArgumentNullException(nameof(readWorld)); this.report = report; }

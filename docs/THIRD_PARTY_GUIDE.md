@@ -2727,3 +2727,7 @@ false. After a failed rebuild, skip the dependent operation.
 ### Human-only construction extras and refunds
 
 See [Human construction costs](HUMAN_CONSTRUCTION_COSTS.md) for owner registration, effective quotes, reservations, persisted receipts and refund policies. Consumers retain mode authorization. Existing SE Post events alone are not payment commits.
+
+## Shared unit relocation
+
+Use `APIShared.Units.UnitRelocationService` (0.79.0+) for the common native unit-relocation entry. Acquire it explicitly during LibraryLoaded; register read-only policies with a native type filter and explicit `SetEnabled` transitions, then issue exact-lifetime requests only in the existing admitted simulation-tick scope. Do not retain private scanners, hook owners or return-address assumptions. The service supplies no route/job continuation or network authorization. See [the complete contract](UNIT_RELOCATION.md).

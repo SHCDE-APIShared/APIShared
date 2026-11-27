@@ -160,6 +160,7 @@ spans are built from each service's native contract constants in
 
 | Group | Spans | When |
 |---|---|---|
+| `Units.Relocation` | Exclusive0x19BA40/16; Observe0x19BA50/265 and0x18300F/5 | Explicit startup acquisition; [contract](UNIT_RELOCATION.md) |
 | `Audio.UnitContext` | Exclusive 0x2960/15, 0x2990/15, 0x1A41E0/14; Observe the 91 catalog CALL sites (5 bytes each) | LibraryLoaded |
 | `Gatehouse.PermanentHooks` | Exclusive 0xB7B70/75 (distance), 0xB7BBB/37 (decision); Observe 0xB7C32/7 (human-delay prefix, ends where the Fixes hook at 0xB7C39 begins) | Native publication, for the parts whose live bytes validated |
 | `Gatehouse.Automation` | Exclusive 0xB7A4E/17, 0xB7BF4/15, 0xC53D5/18, 0xC54A0/16, 0xD5835/15, 0xB79E2/18; Observe 0xC5300/15 | First automation resolver |

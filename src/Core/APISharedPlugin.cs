@@ -19,7 +19,7 @@ namespace APIShared
         /// <summary>Display name of the API plugin.</summary>
         public const string PluginName = "APIShared";
         /// <summary>Current API plugin version.</summary>
-        public const string PluginVersion = "0.78.0";
+        public const string PluginVersion = "0.79.0";
 
         // Services retain this forwarding logger after startup cleanup (failures via RuntimeHealth; Debug only with diagnostics).
         private BepInEx.Logging.ManualLogSource RuntimeLogger => Internal.DebugLogHelper.ForExternalCode(Logger);
@@ -199,6 +199,7 @@ namespace APIShared
                 new NativeInitializationStep("multiplayer resync data channel", () => Multiplayer.MultiplayerResyncDataRuntime.Initialize(RuntimeLogger)),
                 new NativeInitializationStep("effective world-mutation observations", () => WorldMutations.WorldMutationRuntime.Initialize(context, hash, RuntimeLogger)),
                 new NativeInitializationStep("effective unit-move observations", () => Units.UnitMoveRuntime.Initialize(context, hash, RuntimeLogger)),
+                new NativeInitializationStep("shared unit relocation metadata", () => Units.UnitRelocationRuntime.Initialize(context, hash, RuntimeLogger)),
                 // One summary of registrations and refusals after this frame's startup handlers.
                 new NativeInitializationStep("native site report", () =>
                     NativeSites.NativeSiteRegistry.ScheduleStartupReport(RuntimeLogger)));
