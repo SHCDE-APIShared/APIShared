@@ -167,6 +167,7 @@ src/
     HudExtras/                  independent side-HUD buttons, layout and rendering
     BriefingGold/               briefing gold contracts and service
     Lords/                      packaged Lord presentation and Coop restart names
+    Paint/                      shared managed draw sites: body sprites, tiles, chevrons, tile colour, map layers
   ModSettings/
     Presets/                    contracts, host adapter, controller, catalog and storage
     Lobby/                      per-player synchronization and convergence
@@ -493,6 +494,10 @@ retains the compatible building-text adapter and selection contract. APIShared o
 shared presentation and registration; consumers own localized text, symbols,
 activation and gameplay decisions. See the [tooltip guide](docs/TOOLTIPS.md). See the [catalog](docs/API_CATALOG.md#building-tooltip-contributions)
 for the public entry point and integration documentation.
+
+Shared paint sites belong to Presentation. APIShared owns one MonoMod hook per managed draw
+method, installed at the first registration, the dispatch order and the claim protocol; consumers
+own their art, renderer bindings and unit identity. See [Shared paint sites](docs/PAINT.md).
 
 Buildings/EnemyProximity owns the shared category-query implementation and the
 single subscription to the existing Script Extender event, not another live hook.
