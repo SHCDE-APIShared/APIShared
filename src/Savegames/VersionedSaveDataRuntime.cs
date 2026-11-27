@@ -85,6 +85,11 @@ namespace APIShared.Savegames
             VersionedSaveDataRegistry current; lock (Sync) current = registry;
             return current?.BeginAtomicSave(new VersionedSaveContext(!map, map, path));
         }
+        internal static VersionedSaveDataRegistry.AtomicSnapshot BeginAtomicSave(VersionedSaveContext context)
+        {
+            VersionedSaveDataRegistry current; lock (Sync) current = registry;
+            return current?.BeginAtomicSave(context);
+        }
         internal static void EndAtomicSave(VersionedSaveDataRegistry.AtomicSnapshot frozen) => frozen?.Owner.EndAtomicSave(frozen);
 
         internal static long CallbackFailures
@@ -120,7 +125,7 @@ namespace APIShared.Savegames
         }
 
         // Metadata-only startup tracking. It neither creates another registry nor
-        // enrolls a native writer; public migration remains unavailable at this step.
+        // enrolls a native writer; owner-bound enrollment is a separate operation.
         internal static bool TryTrackPreparedSource(string owner, VersionedSaveDataHandle handle,
             out VersionedSavePreparedSource source, out string reason)
         {
@@ -132,6 +137,17 @@ namespace APIShared.Savegames
         }
 
         internal static bool HasCriticalWriterDemand => System.Threading.Volatile.Read(ref registry)?.HasCriticalWriterDemand == true;
+        internal static VersionedSaveDataRegistry CurrentRegistry => System.Threading.Volatile.Read(ref registry);
+
+        internal static bool TryObserveGeneration(Action<long> observer, out string reason)
+        {
+            var current = CurrentRegistry;
+            if (current == null) { reason = "Register the exact storage source first."; return false; }
+            return current.TryObserveGeneration(observer, out reason);
+        }
+
+        internal static CriticalSavePreparation BeginParticipantPreparation(VersionedSaveContext context) =>
+            CurrentRegistry?.BeginParticipantPreparation(context);
 
         internal static bool TryJoinCriticalWriterCohort(VersionedSavePreparedSource source, string reservedEntry,
             int minimumReader, out string reason)
@@ -139,7 +155,7 @@ namespace APIShared.Savegames
             var current = System.Threading.Volatile.Read(ref registry);
             if (current == null) { reason = "Register the source first."; return false; }
             return current.TryEnrollCriticalSource(source, reservedEntry, minimumReader, out var enrollment, out reason) &&
-                current.TryJoinCriticalWriterCohort(enrollment, out reason);
+                current.TryJoinNativeStorageCriticalSource(enrollment, out reason);
         }
 
         internal static bool TryAuthorizeCriticalCreatedWorld(VersionedSavePreparedSource source, object world, long sessionId, out string reason)

@@ -644,6 +644,66 @@ namespace APISharedTests
             }
         }
 
+        [TestMethod]
+        [DataRow(false)]
+        [DataRow(true)]
+        public void ParticipantReleaseFailureCannotSkipCleanupOrReplaceThePrimaryOrCommittedResult(bool committed)
+        {
+            // Exercise the actual transaction cleanup entry and its result projection;
+            // the supplied committed flag does not execute a native writer or file commit.
+            Assert.IsNull(VersionedSaveFactoryFrame.Current);
+            var primary = new IOException("controlled earlier writer failure");
+            var restore = new IOException("restore"); var participants = new IOException("participant release");
+            var production = new IOException("production"); var workshops = new IOException("workshops");
+            var storage = new IOException("storage"); var factory = new IOException("factory frame release");
+            var calls = new List<string>();
+            var frame = VersionedSaveFactoryFrame.Begin(context => null);
+            WorkerProductionSaveCleanupReport report;
+            try
+            {
+                report = WorkerProductionCriticalSaveRuntime.CompleteSaveCleanup(1, committed, primary,
+                    () => { calls.Add("restore"); throw restore; },
+                    () => { calls.Add("production"); throw production; },
+                    () => { calls.Add("workshops"); throw workshops; },
+                    () => { calls.Add("storage"); throw storage; },
+                    () => { calls.Add("frame"); frame.Dispose(); throw factory; },
+                    () => { calls.Add("participants"); throw participants; });
+            }
+            finally { frame.Dispose(); }
+            CollectionAssert.AreEqual(new[] { "restore", "participants", "production", "workshops", "storage", "frame" }, calls);
+            Assert.AreSame(primary, report.Primary);
+            Assert.AreSame(restore, report.RestoreError); Assert.AreSame(participants, report.ParticipantError);
+            Assert.AreSame(production, report.ProductionError); Assert.AreSame(workshops, report.WorkshopError);
+            Assert.AreSame(storage, report.StorageError); Assert.AreSame(factory, report.FactoryFrameError);
+            Assert.IsTrue(report.CleanupFailed); Assert.AreEqual(committed, report.Committed);
+            Assert.AreEqual(1UL, report.ActualWriterResult); Assert.AreEqual(committed ? 1UL : 0UL, report.ReturnValue);
+            Assert.IsNull(VersionedSaveFactoryFrame.Current);
+        }
+
+        [TestMethod]
+        [DataRow("current", true)]
+        [DataRow("world", false)]
+        [DataRow("generation", false)]
+        [DataRow("zero-session", false)]
+        [DataRow("session-mismatch", false)]
+        [DataRow("unknown-or-multiplayer", false)]
+        [DataRow("fault", false)]
+        [DataRow("pending-import", false)]
+        public void FinalCriticalSaveBoundaryRequiresTheExactReadyWorldAndSession(string boundary, bool expectedResult)
+        {
+            object expected = new object();
+            object current = boundary == "world" ? new object() : expected;
+            long currentGeneration = boundary == "generation" ? 8 : 7;
+            long worldSession = boundary == "zero-session" ? 0 : 77;
+            long activeSession = boundary == "zero-session" ? 0 : boundary == "session-mismatch" ? 78 : 77;
+            bool knownSinglePlayer = boundary != "unknown-or-multiplayer";
+            Assert.AreEqual(expectedResult, CriticalSaveRuntime.IsSameSaveWorld(expected, 7, current, currentGeneration,
+                worldSession, activeSession, knownSinglePlayer, boundary == "fault", boundary == "pending-import"));
+            if (boundary == "world")
+                Assert.IsFalse(CriticalSaveRuntime.IsSameSaveWorld(null, 7, null, 7, 77, 77, true, false, false),
+                    "Two absent world references must not satisfy identity equality.");
+        }
+
         [DllImport("kernel32.dll")] private static extern IntPtr VirtualAlloc(IntPtr address, UIntPtr size, uint allocation, uint protection);
         [DllImport("kernel32.dll")] private static extern bool VirtualFree(IntPtr address, UIntPtr size, uint kind);
 
@@ -681,6 +741,32 @@ namespace APISharedTests
                 Assert.IsFalse(SaveContextRuntime.NormalizeSave(new SaveContext(false, false)).IsSaveFile);
             }
             finally { probe?.Dispose(); GC.KeepAlive(callback); VirtualFree(copy, UIntPtr.Zero, 0x8000); }
+        }
+    }
+
+    public partial class NativeStorageCargoSaveTests
+    {
+        [TestMethod]
+        public void OwnedCriticalSinkWithoutANativeOwnerCannotReplaceThePreviousDestination()
+        {
+            Assert.IsNull(VersionedSaveFactoryFrame.Current);
+            Assert.IsNull(MissionLifecycleService.NativeClock);
+            Assert.IsNull(WorkerProductionWorldSafety.EngineGate);
+            using (var files = new Files())
+            {
+                byte[] previous = File.ReadAllBytes(files.Destination);
+                byte[] temporary = { 1, 3, 5, 7 };
+                File.WriteAllBytes(files.Temporary, temporary);
+                var io = CompleteIo();
+                var requirements = new WorkerProductionSaveRequirements(false, false, false, false, true, false);
+                Assert.ThrowsExactly<InvalidOperationException>(() =>
+                    WorkerProductionCriticalSaveRuntime.CommitSavedFile(files.Temporary, files.Destination, null, in io,
+                        requirements, null, new object(), 0, null));
+                CollectionAssert.AreEqual(previous, File.ReadAllBytes(files.Destination));
+                Assert.IsTrue(File.Exists(files.Temporary));
+                CollectionAssert.AreEqual(temporary, File.ReadAllBytes(files.Temporary));
+            }
+            Assert.IsNull(VersionedSaveFactoryFrame.Current);
         }
     }
 }

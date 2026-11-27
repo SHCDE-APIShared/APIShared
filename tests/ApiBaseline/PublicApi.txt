@@ -835,6 +835,7 @@ APIShared.Economy.NativeStorageChange | public APIShared.Economy.NativeStoredGoo
 APIShared.Economy.NativeStorageChange | public int QuantityDelta { get; }
 APIShared.Economy.NativeStorageClient | public sealed class APIShared.Economy.NativeStorageClient
 APIShared.Economy.NativeStorageClient | public bool IsCurrentWorldReady { get; }
+APIShared.Economy.NativeStorageClient | public bool TryCommitImport(APIShared.Economy.NativeStorageImportPlan plan, out APIShared.Goods.GoodsTransactionStatus status, out string reason)
 APIShared.Economy.NativeStorageClient | public bool TryCreateCargo(long creationSequence, APIShared.Economy.NativeStoredGood good, int playerId, int quantity, out APIShared.Economy.NativeCargoSnapshot cargo, out APIShared.Goods.GoodsTransactionStatus status, out string reason)
 APIShared.Economy.NativeStorageClient | public bool TryDepositCargo(APIShared.Economy.NativeCargoSnapshot expectedCargo, APIShared.Economy.NativeStorageSnapshot destination, int quantity, out APIShared.Economy.NativeCargoSnapshot updatedCargo, out APIShared.Goods.GoodsTransactionStatus status, out string reason)
 APIShared.Economy.NativeStorageClient | public bool TryDiscardCargo(APIShared.Economy.NativeCargoSnapshot expectedCargo, out APIShared.Economy.NativeCargoSnapshot updatedCargo, out APIShared.Goods.GoodsTransactionStatus status, out string reason)
@@ -842,7 +843,29 @@ APIShared.Economy.NativeStorageClient | public bool TryExchangeBatch(long operat
 APIShared.Economy.NativeStorageClient | public bool TryGetCargo(long creationSequence, out APIShared.Economy.NativeCargoSnapshot cargo, out string reason)
 APIShared.Economy.NativeStorageClient | public bool TryGetLastCargoSequence(out long sequence, out string reason)
 APIShared.Economy.NativeStorageClient | public bool TryObserve(int buildingId, out APIShared.Economy.NativeStorageSnapshot storage, out string reason)
+APIShared.Economy.NativeStorageClient | public bool TryPrepareImport(APIShared.Savegames.CriticalSaveParticipant participant, APIShared.Savegames.VersionedSaveLoad load, System.Collections.Generic.IReadOnlyList<APIShared.Economy.NativeStorageImportAllocation> allocations, System.Collections.Generic.IReadOnlyList<APIShared.Economy.NativeStorageImportCargo> cargo, out APIShared.Economy.NativeStorageImportPlan plan, out string reason)
 APIShared.Economy.NativeStorageClient | public bool TryRegisterGood(string goodId, APIShared.Economy.NativeStoragePool pool, out APIShared.Economy.NativeStoredGood good, out string reason)
+APIShared.Economy.NativeStorageClient | public static int MaximumImportAccounts { get; }
+APIShared.Economy.NativeStorageClient | public static int MaximumImportAllocations { get; }
+APIShared.Economy.NativeStorageClient | public static int MaximumImportCargo { get; }
+APIShared.Economy.NativeStorageImportAllocation | public struct APIShared.Economy.NativeStorageImportAllocation
+APIShared.Economy.NativeStorageImportAllocation | public .ctor(APIShared.Economy.NativeStoredGood good, int buildingId, uint buildingGlobalId, int playerId, int quantity)
+APIShared.Economy.NativeStorageImportAllocation | public APIShared.Economy.NativeStoredGood Good { get; }
+APIShared.Economy.NativeStorageImportAllocation | public int BuildingId { get; }
+APIShared.Economy.NativeStorageImportAllocation | public int PlayerId { get; }
+APIShared.Economy.NativeStorageImportAllocation | public int Quantity { get; }
+APIShared.Economy.NativeStorageImportAllocation | public uint BuildingGlobalId { get; }
+APIShared.Economy.NativeStorageImportCargo | public struct APIShared.Economy.NativeStorageImportCargo
+APIShared.Economy.NativeStorageImportCargo | public .ctor(APIShared.Economy.NativeStoredGood good, long creationSequence, int playerId, int quantity)
+APIShared.Economy.NativeStorageImportCargo | public APIShared.Economy.NativeStoredGood Good { get; }
+APIShared.Economy.NativeStorageImportCargo | public int PlayerId { get; }
+APIShared.Economy.NativeStorageImportCargo | public int Quantity { get; }
+APIShared.Economy.NativeStorageImportCargo | public long CreationSequence { get; }
+APIShared.Economy.NativeStorageImportPlan | public sealed class APIShared.Economy.NativeStorageImportPlan
+APIShared.Economy.NativeStorageImportPlan | public System.Collections.Generic.IReadOnlyList<APIShared.Economy.NativeStorageImportCargo> Cargo { get; }
+APIShared.Economy.NativeStorageImportPlan | public long MissionSessionId { get; }
+APIShared.Economy.NativeStorageImportPlan | public string OwnerGuid { get; }
+APIShared.Economy.NativeStorageImportPlan | public string SaveDataIdentifier { get; }
 APIShared.Economy.NativeStoragePool | public enum APIShared.Economy.NativeStoragePool : int
 APIShared.Economy.NativeStoragePool | Armory = 1
 APIShared.Economy.NativeStoragePool | Granary = 2
@@ -1770,6 +1793,7 @@ APIShared.ModApiClient | public APIShared.Economy.NativeStorageClient NativeStor
 APIShared.ModApiClient | public APIShared.NativeApiState State { get; }
 APIShared.ModApiClient | public APIShared.Networking.ModNetworkClient Network { get; }
 APIShared.ModApiClient | public APIShared.Presentation.UiWorkClient Ui { get; }
+APIShared.ModApiClient | public APIShared.Savegames.CriticalSaveClient CriticalSaves { get; }
 APIShared.ModApiClient | public APIShared.Units.UnitIdentityClient UnitIdentities { get; }
 APIShared.ModApiClient | public APIShared.Workshop.WorkshopClient Workshop { get; }
 APIShared.ModApiClient | public bool TryGetAiMilitary(out APIShared.Units.AiMilitary.IAiMilitaryCapability capability, out APIShared.NativeCapabilityDiagnostic diagnostic)
@@ -3639,6 +3663,28 @@ APIShared.SavegameModSettingsRecordFormatter | public sealed class APIShared.Sav
 APIShared.SavegameModSettingsRecordFormatter | public .ctor()
 APIShared.SavegameModSettingsRecordFormatter | public APIShared.SavegameModSettingsRecord Deserialize(ref MessagePack.MessagePackReader reader, MessagePack.MessagePackSerializerOptions options)
 APIShared.SavegameModSettingsRecordFormatter | public void Serialize(ref MessagePack.MessagePackWriter writer, APIShared.SavegameModSettingsRecord value, MessagePack.MessagePackSerializerOptions options)
+APIShared.Savegames.CriticalSaveClient | public sealed class APIShared.Savegames.CriticalSaveClient
+APIShared.Savegames.CriticalSaveClient | public bool TryConfirmCreatedWorld(APIShared.Savegames.CriticalSaveParticipant participant, APIShared.MissionContext context, out string reason)
+APIShared.Savegames.CriticalSaveClient | public bool TryEnroll(APIShared.Savegames.VersionedSaveDataHandle handle, APIShared.Savegames.CriticalSaveOptions options, out APIShared.Savegames.CriticalSaveParticipant participant, out string reason)
+APIShared.Savegames.CriticalSaveModes | public enum APIShared.Savegames.CriticalSaveModes : int
+APIShared.Savegames.CriticalSaveModes | None = 0
+APIShared.Savegames.CriticalSaveModes | SinglePlayerAndEditor = 1
+APIShared.Savegames.CriticalSaveOptions | public sealed class APIShared.Savegames.CriticalSaveOptions
+APIShared.Savegames.CriticalSaveOptions | public .ctor(string reservedMarkerEntry, int minimumReaderVersion, APIShared.Savegames.CriticalSavePrepare prepare, APIShared.Savegames.CriticalSaveRelease release)
+APIShared.Savegames.CriticalSaveOptions | public APIShared.Savegames.CriticalSaveModes Modes { get; set; }
+APIShared.Savegames.CriticalSaveOptions | public APIShared.Savegames.CriticalSavePrepare Prepare { get; }
+APIShared.Savegames.CriticalSaveOptions | public APIShared.Savegames.CriticalSaveRelease Release { get; }
+APIShared.Savegames.CriticalSaveOptions | public bool RequiresNativeStorage { get; set; }
+APIShared.Savegames.CriticalSaveOptions | public int MinimumReaderVersion { get; }
+APIShared.Savegames.CriticalSaveOptions | public string ReservedMarkerEntry { get; }
+APIShared.Savegames.CriticalSaveParticipant | public sealed class APIShared.Savegames.CriticalSaveParticipant
+APIShared.Savegames.CriticalSaveParticipant | public APIShared.Savegames.VersionedSaveDataHandle Handle { get; }
+APIShared.Savegames.CriticalSaveParticipant | public bool RequiresNativeStorage { get; }
+APIShared.Savegames.CriticalSaveParticipant | public bool TryReadPreparedProtection(APIShared.Savegames.VersionedSaveLoad load, out bool protectedRecord, out string reason)
+APIShared.Savegames.CriticalSaveParticipant | public string OwnerGuid { get; }
+APIShared.Savegames.CriticalSaveParticipant | public string SaveDataIdentifier { get; }
+APIShared.Savegames.CriticalSavePrepare | public delegate bool APIShared.Savegames.CriticalSavePrepare(APIShared.Savegames.VersionedSaveContext context, ref object state)
+APIShared.Savegames.CriticalSaveRelease | public delegate void APIShared.Savegames.CriticalSaveRelease(APIShared.Savegames.VersionedSaveContext context, object state)
 APIShared.Savegames.ManagedSaveCall | public sealed class APIShared.Savegames.ManagedSaveCall
 APIShared.Savegames.ManagedSaveCall | public bool LockMap { get; }
 APIShared.Savegames.ManagedSaveCall | public bool MapSave { get; }
@@ -3717,6 +3763,10 @@ APIShared.Savegames.SaveLoadDialogOutcome | Confirmed = 0
 APIShared.Savegames.SaveLoadDialogOutcome | Failed = 3
 APIShared.Savegames.SaveLoadDialogOutcome | Replaced = 2
 APIShared.Savegames.VersionedSaveCapture | public delegate bool APIShared.Savegames.VersionedSaveCapture(APIShared.Savegames.VersionedSaveWriter writer)
+APIShared.Savegames.VersionedSaveContext | public struct APIShared.Savegames.VersionedSaveContext
+APIShared.Savegames.VersionedSaveContext | public bool IsMapEditorSave { get; }
+APIShared.Savegames.VersionedSaveContext | public bool IsSaveFile { get; }
+APIShared.Savegames.VersionedSaveContext | public string FilePath { get; }
 APIShared.Savegames.VersionedSaveData | public static class APIShared.Savegames.VersionedSaveData
 APIShared.Savegames.VersionedSaveData | public static bool IsAtomicWriteAvailable { get; }
 APIShared.Savegames.VersionedSaveData | public static bool TryRegister(APIShared.Savegames.VersionedSaveDataRegistration registration, out APIShared.Savegames.VersionedSaveDataHandle handle, out string reason)

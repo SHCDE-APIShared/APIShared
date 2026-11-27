@@ -100,9 +100,10 @@ namespace APIShared.Savegames
         private readonly Func<VersionedSaveContext, VersionedSaveCriticalCapture> prepare;
         private readonly object preparationTag = new object();
         private readonly int threadId;
+        private readonly bool ownedPreparation;
         private VersionedSaveCriticalCapture capture;
         private Exception failure;
-        private bool observed, closed, preparationReady;
+        private bool observed, closed, preparationReady, preparingCapture;
 
         internal static VersionedSaveFactoryFrame Current => current;
         internal static object PreparationTag => preparingTag;
@@ -112,6 +113,7 @@ namespace APIShared.Savegames
         {
             this.prepare = prepare ?? throw new ArgumentNullException(nameof(prepare));
             this.preparationReady = preparationReady;
+            ownedPreparation = !preparationReady;
             threadId = Thread.CurrentThread.ManagedThreadId;
             previous = current;
             if (previous != null)
@@ -162,15 +164,30 @@ namespace APIShared.Savegames
             return false;
         }
 
+        // The mixed atomic/cohort writer needs bytes before native file creation.
+        // This prepares only; it cannot credit the later real SaveContext factory
+        // observation or any record delivery. Standalone Begin remains lazy.
+        internal void PrepareOwnedCapture(VersionedSaveContext context)
+        {
+            if (!IsActive() || Failure != null) throw Failure;
+            if (!ownedPreparation || !preparationReady || observed || capture != null || preparingCapture)
+            {
+                RecordFailure(new InvalidOperationException("The owned critical capture preparation is not ready or already occurred."));
+                throw Failure;
+            }
+            PrepareCapture(context);
+            if (Failure != null) throw Failure;
+        }
+
         // Called by the existing SaveContext factory owner before real handler
         // dispatch. SE can swallow an error: retain it here instead of treating a
         // thrown callback as native cancellation. No callback is retried.
         internal void Capture(VersionedSaveContext context)
         {
             if (!IsActive() || Failure != null) return;
-            if (observed)
+            if (observed || preparingCapture)
             {
-                RecordFailure(new InvalidOperationException("The critical factory dispatched more than once."));
+                RecordFailure(new InvalidOperationException("The critical factory dispatched more than once or during preparation."));
                 return;
             }
             observed = true;
@@ -179,6 +196,13 @@ namespace APIShared.Savegames
                 RecordFailure(new InvalidOperationException("The critical factory dispatched before owned preparation completed."));
                 return;
             }
+            if (capture == null) PrepareCapture(context);
+            else ValidateCapture(context);
+        }
+
+        private void PrepareCapture(VersionedSaveContext context)
+        {
+            preparingCapture = true;
             try
             {
                 VersionedSaveCriticalCapture prepared;
@@ -186,33 +210,38 @@ namespace APIShared.Savegames
                 preparingTag = preparationTag;
                 try { prepared = prepare(context); }
                 finally { preparingTag = previousTag; }
-                // Consumer capture can reenter internal save code. A frame
-                // closed/replaced during that callback cannot acquire ownership
-                // after its finally has already run; release the returned bundle.
+                // Reentrant close/replacement cannot acquire a bundle after its
+                // finally cleanup has already run. Release the returned ownership.
                 if (!IsActive())
                 {
                     prepared?.Dispose();
                     return;
                 }
                 capture = prepared;
-                if (capture == null)
-                    RecordFailure(new InvalidOperationException("The critical factory did not prepare its enrolled records."));
-                else if (!ReferenceEquals(capture.FactoryPreparationTag, preparationTag))
-                    RecordFailure(new InvalidOperationException("The critical factory bundle was not prepared by this frame's callback."));
-                else if (!capture.Ready || capture.Failed || capture.Closed ||
-                    capture.ThreadId != threadId || capture.Context.IsSaveFile != context.IsSaveFile ||
-                    capture.Context.IsMapEditorSave != context.IsMapEditorSave ||
-                    !string.Equals(capture.Context.FilePath, context.FilePath, StringComparison.Ordinal))
-                    RecordFailure(new InvalidOperationException("The critical factory returned a different capture context or lifetime."));
-                else
-                    foreach (var record in capture.Records)
-                        if (record.Served)
-                        {
-                            RecordFailure(new InvalidOperationException("A critical factory record was already served before dispatch."));
-                            break;
-                        }
+                ValidateCapture(context);
             }
             catch (Exception error) { RecordFailure(error); }
+            finally { preparingCapture = false; }
+        }
+
+        private void ValidateCapture(VersionedSaveContext context)
+        {
+            if (capture == null)
+                RecordFailure(new InvalidOperationException("The critical factory did not prepare its enrolled records."));
+            else if (!ReferenceEquals(capture.FactoryPreparationTag, preparationTag))
+                RecordFailure(new InvalidOperationException("The critical factory bundle was not prepared by this frame's callback."));
+            else if (!capture.Ready || capture.Failed || capture.Closed ||
+                capture.ThreadId != threadId || capture.Context.IsSaveFile != context.IsSaveFile ||
+                capture.Context.IsMapEditorSave != context.IsMapEditorSave ||
+                !string.Equals(capture.Context.FilePath, context.FilePath, StringComparison.Ordinal))
+                RecordFailure(new InvalidOperationException("The critical factory returned a different capture context or lifetime."));
+            else
+                foreach (var record in capture.Records)
+                    if (record.Served)
+                    {
+                        RecordFailure(new InvalidOperationException("A critical factory record was already served before dispatch."));
+                        break;
+                    }
         }
 
         // The writer calls this after Original, before examining the completed
@@ -279,21 +308,32 @@ namespace APIShared.Savegames
         // Only the exact existing EditorCreated boundary may call this. This is
         // intentionally not a Prepared delivery and never finalizes an archive.
         internal bool TryAuthorizeCriticalCreatedWorld(VersionedSavePreparedSource source, object world,
-            long sessionId, out string reason)
+            long sessionId, out string reason) =>
+            TryAuthorizeCriticalCreatedWorld(source, world, sessionId, out _, out reason);
+
+        // Return the minted/reused token in the same metadata transaction. The world
+        // adapter retains this exact evidence; a later activation may not recapture
+        // whichever created-world token happens to be current after revocation.
+        internal bool TryAuthorizeCriticalCreatedWorld(VersionedSavePreparedSource source, object world,
+            long sessionId, out VersionedSaveCriticalCreatedWorldOrigin created, out string reason)
         {
+            created = null;
             lock (sync)
             {
                 Slot slot = FindPreparedSource(source);
                 if (world == null || sessionId <= 0 || windowOpen || deliveringLoadGeneration == generation || slot?.CriticalSource?.WriterCohortJoined != true ||
                     slot.CriticalCapture != null || slot.ActiveCriticalSourceCaptures != 0)
                 { reason = "An exact idle joined source and explicit created world/session are required."; return false; }
-                if (slot.CreatedWorldOrigin != null && ReferenceEquals(slot.CreatedWorldOrigin.World, world) && slot.CreatedWorldOrigin.Session == sessionId)
-                { reason = string.Empty; return true; }
+                var previous = slot.CreatedWorldOrigin;
+                if (previous != null && previous.Generation == generation && ReferenceEquals(previous.Source, source) &&
+                    ReferenceEquals(previous.World, world) && previous.Session == sessionId)
+                { created = previous; reason = string.Empty; return true; }
+                var prepared = new VersionedSaveCriticalCreatedWorldOrigin(source, generation, world, sessionId);
                 criticalCreatedWorldStarted = true;
                 slot.PreparedOrigin?.Invalidate(); slot.PreparedOrigin = null;
                 slot.PreparedOutcome = null; slot.PreparedFailed = false;
                 slot.LoadedBytes = null; slot.Unknown = null; slot.KeepLoaded = false; slot.Handle.SetKeepsLoaded(false);
-                slot.CreatedWorldOrigin = new VersionedSaveCriticalCreatedWorldOrigin(source, generation, world, sessionId);
+                slot.CreatedWorldOrigin = prepared; created = prepared;
                 reason = string.Empty; return true;
             }
         }
@@ -397,6 +437,8 @@ namespace APIShared.Savegames
             {
                 if (writerCohort.Length == 0 || windowOpen)
                 { reason = "An idle joined cohort is required."; return false; }
+                if (requiresNativeStorage && nativeStorageCriticalSource == null)
+                { reason = "The required shared storage source has not completed startup enrollment."; return false; }
                 byte[] marker = WriterCohortMarker();
                 var selected = new VersionedSaveCriticalRecord[writerCohort.Length];
                 VersionedSaveCriticalCreatedWorldOrigin created = null;
@@ -441,13 +483,7 @@ namespace APIShared.Savegames
                 Slot slot = FindPreparedSource(source);
                 if (slot?.CriticalSource?.WriterCohortJoined != true || world == null || sessionId <= 0)
                 { reason = "An exact joined source and current world/session are required."; return false; }
-                if (slot.CreatedWorldOrigin != null)
-                {
-                    if (!ReferenceEquals(slot.CreatedWorldOrigin.World, world) || slot.CreatedWorldOrigin.Session != sessionId)
-                    { reason = "The created-world origin belongs to another world/session."; return false; }
-                }
-                else if (slot.PreparedOutcome?.Load.MissionSessionId != sessionId)
-                { reason = "The archive origin belongs to another mission attempt."; return false; }
+                if (!TryValidateWriterWorld(world, sessionId, out reason)) return false;
                 return TryGetWriterRecords(out _, out reason);
             }
         }
@@ -617,7 +653,7 @@ namespace APIShared.Savegames
             reason = string.Empty; return true;
         }
 
-        private byte[] ServeCriticalRecord(Slot slot, VersionedSaveContext context, VersionedSaveCriticalCapture bundle)
+        private byte[] ServeCriticalRecord(Slot slot, VersionedSaveContext context, VersionedSaveCriticalCapture bundle, bool delivered = true)
         {
             lock (sync)
             {
@@ -637,8 +673,11 @@ namespace APIShared.Savegames
                     return null;
                 }
                 byte[] bytes = (byte[])selected.Bytes.Clone();
-                selected.Served = true;
-                slot.Handle.SetLastWrite(VersionedSaveWriteStatus.Written);
+                if (delivered)
+                {
+                    selected.Served = true;
+                    slot.Handle.SetLastWrite(VersionedSaveWriteStatus.Written);
+                }
                 return bytes;
             }
         }

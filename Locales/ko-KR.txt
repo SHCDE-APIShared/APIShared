@@ -258,5 +258,5 @@ ModKeybinds.ResetHelp=Restore the default shortcut for this action.
 ModKeybinds.Capture=Press a key or mouse button. Esc cancels.
 ModKeybinds.Unassigned=Unassigned
 ModKeybinds.Conflict=This shortcut is also assigned to another action.
-AllyGoods.More=More...
 WeaponProduction.StoredOutputsOfflineOnly=Custom stored-goods workshop recipes are currently available only in single-player and the map editor.
+AllyGoods.More=More...

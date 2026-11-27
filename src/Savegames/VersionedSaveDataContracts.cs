@@ -372,6 +372,10 @@ namespace APIShared.Savegames
         /// registration is refused unless the protected atomic writer is available. Capture runs once
         /// under the actual engine monitor before native file creation. Archive serialization reuses
         /// those frozen bytes; omitted/stale records or write failures prevent destination replacement.
+        /// When this save also contains an explicitly enrolled CriticalSaves cohort, all of that
+        /// cohort's records prepare once after participant freezes and before file creation;
+        /// actual factory dispatch and once-only transport are still required. This moves those
+        /// cohort capture callbacks earlier than their ordinary lazy factory timing.
         /// Capture is read-only with respect to simulation: do not issue gameplay calls. The callback
         /// must not save, wait for another thread, or acquire the engine monitor while holding its own state lock. Acquire consumer locks only inside this callback.</summary>
         public bool RequireAtomicWrite { get; set; }

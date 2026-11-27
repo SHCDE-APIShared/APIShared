@@ -267,6 +267,12 @@ unchanged. Changed ImprovedHunters yield/routing still
 disables only this optional stored-output capability, preserving legacy/native
 Tanner compatibility rather than guessing the carried product.
 
+The built-in Tanner source is decided at the first pre-native mission
+initialization, after all plugins have loaded. Its separate retained owner shares
+the startup receipt relay; only a completed owned publication grants this route
+attestation. Pending or external receipt availability does not certify a modified
+stored-output route.
+
 The existing critical production save owner freezes the workshop and pooled
 storage pair before native serialization, rejects reentrant mutations, verifies
 actual archive bytes/write status and commits only a complete temporary file.

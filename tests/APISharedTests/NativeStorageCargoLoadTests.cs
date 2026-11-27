@@ -14,7 +14,7 @@ namespace APISharedTests
     // The same prepared-load controller used by Runtime.Prepare is bound to the actual
     // versioned registry. The transport is managed; no native world or archive is executed.
     [TestClass, DoNotParallelize]
-    public sealed class NativeStorageCargoLoadTests
+    public sealed partial class NativeStorageCargoLoadTests
     {
         private sealed class Binding
         {
@@ -178,13 +178,18 @@ namespace APISharedTests
             internal long Session;
             internal Func<VersionedSaveContext, byte[]> Save;
             private Action<byte[]> load;
+            internal readonly Dictionary<string, Func<VersionedSaveContext, byte[]>> Saves =
+                new Dictionary<string, Func<VersionedSaveContext, byte[]>>(StringComparer.Ordinal);
+            internal readonly Dictionary<string, Action<byte[]>> Loads = new Dictionary<string, Action<byte[]>>(StringComparer.Ordinal);
+            internal Action BeforePrepare;
             internal int Captures;
             internal NativeStorageState CurrentState => (NativeStorageState)typeof(NativeStorageRuntime).GetField("state", Fields).GetValue(Runtime);
             internal object BoundWorld => typeof(NativeStorageRuntime).GetField("boundWorld", Fields).GetValue(Runtime);
             internal object PreparedArchive => typeof(NativeStorageRuntime).GetField("preparedLoad", Fields).GetValue(Runtime);
             internal string StartupFailure => (string)typeof(NativeStorageRuntime).GetField("failure", Fields).GetValue(Runtime);
 
-            internal RuntimeBinding(bool editorCreated, bool cargo = true)
+            internal RuntimeBinding(bool editorCreated, bool cargo = true, bool protectedStorage = false,
+                Action<RuntimeBinding> configure = null, bool activate = true, Action<bool> demandSink = null)
             {
                 // Demand updates would write native fixture memory if a process-wide cohort
                 // existed. Preserve it; do not clear/replace it to make this fixture run.
@@ -199,7 +204,9 @@ namespace APISharedTests
                     execution = (MissionExecutionSession)typeof(MissionLifecycleService).GetField("executionSession", Fields).GetValue(service);
                     executing = typeof(MissionLifecycleService).GetField("executing", Fields);
                     Published.SetValue(null, service);
-                    Runtime = (NativeStorageRuntime)Activator.CreateInstance(typeof(NativeStorageRuntime), true);
+                    Runtime = demandSink == null
+                        ? (NativeStorageRuntime)Activator.CreateInstance(typeof(NativeStorageRuntime), true)
+                        : ImportRuntimeWithDemandSink(demandSink);
                     typeof(NativeStorageRuntime).GetField("engine", Fields).SetValue(Runtime, Gate);
                     typeof(NativeStorageRuntime).GetField("ready", Fields).SetValue(Runtime, true);
                     var stock = State(cargo, out Good);
@@ -207,22 +214,39 @@ namespace APISharedTests
                     var definitions = (List<NativeStorageGoodRegistration>)typeof(NativeStorageRuntime).GetField("definitions", Fields).GetValue(Runtime);
                     definitions.AddRange(stock.GetRegistrations());
                     StoredGood = new NativeStoredGood(Good, StoragePool.Granary);
+                    typeof(NativeStorageRuntime).GetField("registeredHandles", Fields).SetValue(Runtime, new[] { StoredGood });
                     var capture = (VersionedSaveCapture)Delegate.CreateDelegate(typeof(VersionedSaveCapture), Runtime,
                         typeof(NativeStorageRuntime).GetMethod("Capture", Fields));
                     var prepared = (Action<VersionedSaveLoad>)Delegate.CreateDelegate(typeof(Action<VersionedSaveLoad>), Runtime,
                         typeof(NativeStorageRuntime).GetMethod("Prepare", Fields));
                     var loaded = (Action<VersionedSaveLoad>)Delegate.CreateDelegate(typeof(Action<VersionedSaveLoad>), Runtime,
                         typeof(NativeStorageRuntime).GetMethod("Loaded", Fields));
-                    Registry = new VersionedSaveDataRegistry((id, save, read) => { Save = save; load = read; return true; }, _ => { }, _ => { });
-                    var registration = new VersionedSaveDataRegistration("causal.storage", "causal-storage", 2, 1,
-                        new[] { "ledger", "stores" }, writer => { Captures++; return capture(writer); }, loaded)
-                        { Scope = VersionedSaveScope.SaveGamesAndMaps, Prepared = prepared };
+                    Registry = new VersionedSaveDataRegistry((id, save, read) =>
+                    {
+                        Saves.Add(id, save); Loads.Add(id, read);
+                        if (id == "causal-storage") { Save = save; load = read; }
+                        return true;
+                    }, _ => { }, _ => { });
+                    var registration = new VersionedSaveDataRegistration("causal.storage", "causal-storage", protectedStorage ? 3 : 2, 1,
+                        protectedStorage ? new[] { "ledger", "stores", NativeStorageProductionSave.CriticalMarkerEntry } : new[] { "ledger", "stores" },
+                        writer => { Captures++; return capture(writer); }, loaded)
+                        { Scope = VersionedSaveScope.SaveGamesAndMaps, SimulationRelevant = protectedStorage, Prepared = prepared };
                     Assert.IsTrue(Registry.TryRegister(registration, out Handle, out string reason), reason);
                     typeof(NativeStorageRuntime).GetField("saveHandle", Fields).SetValue(Runtime, Handle);
+                    if (protectedStorage)
+                    {
+                        Assert.IsTrue(Registry.TryTrackPreparedSource(registration.OwnerGuid, Handle, out var source, out reason), reason);
+                        Assert.IsTrue(Registry.TryEnrollCriticalSource(source, NativeStorageProductionSave.CriticalMarkerEntry, 3,
+                            out var enrollment, out reason), reason);
+                        Assert.IsTrue(Registry.TryJoinNativeStorageCriticalSource(enrollment, out reason), reason);
+                        typeof(NativeStorageRuntime).GetField("criticalPreparedSource", Fields).SetValue(Runtime, source);
+                        Assert.IsTrue(Registry.TryObserveGeneration(Runtime.ImportGenerationChanged, out reason), reason);
+                    }
+                    configure?.Invoke(this);
                     Begin(editorCreated ? MissionStartKind.EditorCreated : MissionStartKind.LoadedSave);
                     lock (Gate)
                     {
-                        if (editorCreated)
+                        if (editorCreated && activate)
                         {
                             // A real blank editor world has no archive callback. Exercise that
                             // actual fallback before seeding fixture-owned cargo on its state.
@@ -234,8 +258,8 @@ namespace APISharedTests
                                 using (plan) plan.Publish();
                             }
                         }
-                        else Read(VersionedSaveRecordCodec.Encode(2, 2, Entries(stock)), Session);
-                        Assert.IsTrue(Runtime.TryGetStock(Good, 1, out _, out reason), reason);
+                        else if (!editorCreated) Read(VersionedSaveRecordCodec.Encode(2, 2, Entries(stock)), Session);
+                        if (activate) Assert.IsTrue(Runtime.TryGetStock(Good, 1, out _, out reason), reason);
                     }
                     Ready();
                 }
@@ -251,10 +275,7 @@ namespace APISharedTests
             {
                 Assert.IsFalse(inExecution);
                 bool editor = kind == MissionStartKind.EditorCreated || kind == MissionStartKind.EditorLoaded;
-                var mode = new GameModeSnapshot(false, false, false, false, editor, false, true, false, false,
-                    false, false, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                    editor ? GameModeKind.MapEditor : GameModeKind.CustomGame, GameModeLaunchVariant.Standard,
-                    0, 0, 0, 0, 0, false);
+                var mode = FixtureMode(editor, false);
                 seed = new MissionContext(0, kind, mode, editor ? "editor.map" : "mission.sav", "fixture", false, 160, 1, 1);
                 previousExecution = execution.Enter(lifecycle); inExecution = true;
                 object operation = Activator.CreateInstance(typeof(MissionLifecycleService).GetNestedType("Operation", BindingFlags.NonPublic), true);
@@ -271,6 +292,20 @@ namespace APISharedTests
                 execution.Restore(previousExecution); inExecution = false;
                 executing.SetValue(service, null);
                 Assert.AreEqual(0L, MissionLifecycleService.ExecutingSessionId);
+            }
+
+            private static GameModeSnapshot FixtureMode(bool editor, bool multiplayer) =>
+                new GameModeSnapshot(multiplayer, false, false, false, editor, false, true, false, false,
+                    false, false, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    editor ? GameModeKind.MapEditor : GameModeKind.CustomGame, GameModeLaunchVariant.Standard,
+                    0, 0, 0, 0, 0, false);
+
+            internal void RefreshMode(bool multiplayer)
+            {
+                object prior = MissionLifecycleService.NativeWorld;
+                var context = lifecycle.Context.With(Session, FixtureMode(false, multiplayer));
+                typeof(MissionLifecycleState).GetMethod("RefreshNativeClock", Fields).Invoke(lifecycle, new object[] { context });
+                Assert.AreSame(prior, MissionLifecycleService.NativeWorld);
             }
 
             internal void RefreshMetadata()
@@ -293,6 +328,7 @@ namespace APISharedTests
             {
                 Registry.BeginLoad(source, "causal.sav", session);
                 if (record != null) load(record);
+                BeforePrepare?.Invoke();
                 Registry.PrepareLoad(); Registry.EndLoad();
             }
             internal byte[] SaveCurrent() => Save(new VersionedSaveContext(true, false, "causal.sav"));

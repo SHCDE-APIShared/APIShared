@@ -53,7 +53,7 @@ namespace APIShared.Economy
                 !destination.IsLive || destination.GlobalId != destinationGid || destination.Kind != good.Kind)
             { reason = "The selected destination is not this exact live storage."; return false; }
             bool accepted = deliveries.TryDeliver(state, good.Key, world, destination, actor, out _, out reason);
-            if (accepted) NativeStorageNativeRuntime.UpdateDemand(state.HasRows);
+            if (accepted) PublishCapacityDemand(state.HasRows);
             return accepted;
         }
 

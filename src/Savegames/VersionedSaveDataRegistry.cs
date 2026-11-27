@@ -6,14 +6,19 @@ using APIShared.Events;
 
 namespace APIShared.Savegames
 {
-    /// <summary>Save context reported by the transport, free of Script Extender types.</summary>
-    internal readonly struct VersionedSaveContext
+    /// <summary>Immutable logical save context, free of Script Extender and native state.</summary>
+    /// <remarks>Flags and path identify the owning factory call. They grant no mutation,
+    /// import, thread-dispatch or multiplayer authority. The path may be null.</remarks>
+    public readonly struct VersionedSaveContext
     {
         internal VersionedSaveContext(bool isSaveFile, bool isMapEditorSave, string filePath)
         { IsSaveFile = isSaveFile; IsMapEditorSave = isMapEditorSave; FilePath = filePath; }
-        internal bool IsSaveFile { get; }
-        internal bool IsMapEditorSave { get; }
-        internal string FilePath { get; }
+        /// <summary>Whether this factory is writing a save file.</summary>
+        public bool IsSaveFile { get; }
+        /// <summary>Whether this factory is an editor map save.</summary>
+        public bool IsMapEditorSave { get; }
+        /// <summary>The logical factory path, possibly null; never the native temporary path.</summary>
+        public string FilePath { get; }
     }
 
     // Owns the registrations and the load window. The Script Extender binding
@@ -51,7 +56,12 @@ namespace APIShared.Savegames
         internal sealed class AtomicSnapshot
         {
             internal VersionedSaveDataRegistry Owner;
+            internal object RegistrationIdentity;
+            internal VersionedSaveContext Context;
+            internal long Generation;
+            internal bool Preparing, Failed;
             internal readonly Dictionary<string, byte[]> Records = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
+            internal readonly Dictionary<string, VersionedSaveCriticalCapture> CriticalRecords = new Dictionary<string, VersionedSaveCriticalCapture>(StringComparer.OrdinalIgnoreCase);
             internal readonly HashSet<string> Delivered = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         }
 
@@ -62,34 +72,97 @@ namespace APIShared.Savegames
             return false;
         }
 
-        // Caller owns the actual engine monitor. No registry lock surrounds consumer callbacks.
+        // Caller owns the actual engine monitor. Publish the reentrancy guard before
+        // invoking any consumer, and never hold the registry lock across its callback.
         internal AtomicSnapshot BeginAtomicSave(VersionedSaveContext context)
         {
-            if (atomicSnapshot != null) throw new InvalidOperationException("Nested atomic save capture.");
-            Slot[] snapshot; lock (sync) snapshot = slots;
-            var frozen = new AtomicSnapshot { Owner = this };
-            foreach (Slot slot in snapshot)
+            if (atomicSnapshot != null)
             {
-                if (!slot.RequireAtomicWrite || !slot.Writes(context)) continue;
-                byte[] bytes = SaveCore(slot, context, true);
-                if (bytes == null || slot.Handle.LastWriteStatus != VersionedSaveWriteStatus.Written || slot.Handle.KeepsLoadedRecord)
-                    throw new InvalidDataException("Required fresh save capture failed: " + slot.Identifier);
-                frozen.Records.Add(slot.Identifier, bytes);
+                throw new InvalidOperationException("Nested atomic save capture.");
             }
-            atomicSnapshot = frozen;
-            return frozen;
+            Slot[] snapshot;
+            AtomicSnapshot prepared;
+            lock (sync)
+            {
+                snapshot = slots;
+                prepared = new AtomicSnapshot { Owner = this, Context = context, Generation = generation, RegistrationIdentity = snapshot, Preparing = true };
+            }
+            atomicSnapshot = prepared;
+            try
+            {
+                foreach (Slot slot in snapshot)
+                {
+                    if (!slot.RequireAtomicWrite || !slot.Writes(context)) continue;
+                    RequireAtomicCurrent(prepared, context, true);
+                    byte[] bytes = SaveCore(slot, context, true);
+                    RequireAtomicCurrent(prepared, context, true);
+                    VersionedSaveCriticalCapture critical;
+                    lock (sync) critical = slot.CriticalCapture;
+                    // A frozen critical record is only peeked here. Its existing
+                    // once-only transport must still mark Written during real dispatch.
+                    if (bytes == null || slot.Handle.KeepsLoadedRecord ||
+                        critical == null && slot.Handle.LastWriteStatus != VersionedSaveWriteStatus.Written)
+                        throw new InvalidDataException("Required fresh save capture failed: " + slot.Identifier);
+                    prepared.Records.Add(slot.Identifier, bytes);
+                    if (critical != null) prepared.CriticalRecords.Add(slot.Identifier, critical);
+                }
+                RequireAtomicCurrent(prepared, context, true);
+                prepared.Preparing = false;
+                return prepared;
+            }
+            catch
+            {
+                prepared.Failed = true;
+                EndAtomicSave(prepared);
+                throw;
+            }
         }
 
-        internal void EndAtomicSave(AtomicSnapshot frozen)
+        private void RequireAtomicCurrent(AtomicSnapshot prepared, VersionedSaveContext context, bool preparing = false)
         {
-            if (ReferenceEquals(atomicSnapshot, frozen)) atomicSnapshot = null;
+            lock (sync)
+            {
+                if (prepared != null && ReferenceEquals(atomicSnapshot, prepared) && ReferenceEquals(prepared.Owner, this) &&
+                    !prepared.Failed && (preparing || !prepared.Preparing) && prepared.Generation == generation && !windowOpen &&
+                    AtomicRegistrationsMatch(prepared) &&
+                    prepared.Context.IsSaveFile == context.IsSaveFile && prepared.Context.IsMapEditorSave == context.IsMapEditorSave &&
+                    string.Equals(prepared.Context.FilePath, context.FilePath, StringComparison.Ordinal)) return;
+                if (prepared != null) prepared.Failed = true;
+                throw new InvalidDataException("The atomic save context, generation, registrations or lifetime changed.");
+            }
         }
 
-        internal static void RequireAtomicDelivered(AtomicSnapshot frozen)
+        private bool AtomicRegistrationsMatch(AtomicSnapshot prepared)
         {
-            if (frozen == null) return;
-            foreach (string identifier in frozen.Records.Keys)
-                if (!frozen.Delivered.Contains(identifier))
+            var original = prepared.RegistrationIdentity as Slot[];
+            if (original == null) return false;
+            int remaining = 0;
+            foreach (Slot prior in original)
+                if (prior.RequireAtomicWrite && prior.Writes(prepared.Context)) remaining++;
+            foreach (Slot current in slots)
+            {
+                if (!current.RequireAtomicWrite || !current.Writes(prepared.Context)) continue;
+                bool found = false;
+                foreach (Slot prior in original)
+                    if (ReferenceEquals(prior, current)) { found = true; break; }
+                if (!found) return false;
+                remaining--;
+            }
+            return remaining == 0;
+        }
+
+        internal void EndAtomicSave(AtomicSnapshot prepared)
+        {
+            if (ReferenceEquals(atomicSnapshot, prepared)) atomicSnapshot = null;
+        }
+
+        internal static void RequireAtomicDelivered(AtomicSnapshot prepared)
+        {
+            if (prepared == null) return;
+            if (prepared.Owner == null) throw new InvalidDataException("The atomic save has no owning registry.");
+            prepared.Owner.RequireAtomicCurrent(prepared, prepared.Context);
+            foreach (string identifier in prepared.Records.Keys)
+                if (!prepared.Delivered.Contains(identifier))
                     throw new InvalidDataException("Required fresh archive record was omitted: " + identifier);
         }
 
@@ -184,6 +257,8 @@ namespace APIShared.Savegames
 
         internal void BeginLoad(VersionedSaveLoadSource source, string filePath, long missionSessionId)
         {
+            Action<long> observer;
+            long changedGeneration;
             lock (sync)
             {
                 windowOpen = true;
@@ -193,11 +268,15 @@ namespace APIShared.Savegames
                 windowFile = filePath;
                 windowMissionSessionId = missionSessionId > 0 ? missionSessionId : 0;
                 foreach (Slot slot in slots) { slot.Pending = null; slot.ResetMission(); }
+                observer = generationObserver; changedGeneration = generation;
             }
+            observer?.Invoke(changedGeneration);
         }
 
         internal void Unload()
         {
+            Action<long> observer;
+            long changedGeneration;
             lock (sync)
             {
                 if (windowOpen) return; // The game unloads the previous map while loading the next one.
@@ -205,7 +284,9 @@ namespace APIShared.Savegames
                 finalizedLoadGeneration = -1;
                 windowMissionSessionId = 0;
                 foreach (Slot slot in slots) slot.ResetMission();
+                observer = generationObserver; changedGeneration = generation;
             }
+            observer?.Invoke(changedGeneration);
         }
 
         private void Deliver(Slot slot, byte[] data)
@@ -443,6 +524,10 @@ namespace APIShared.Savegames
 
         private byte[] SaveCore(Slot slot, VersionedSaveContext context, bool freezing = false)
         {
+            // An owned transaction also refuses a wrong-scope attempt, even if that
+            // context would normally omit this registration before touching transport.
+            if (slot.RequireAtomicWrite && !freezing && atomicSnapshot != null && ReferenceEquals(atomicSnapshot.Owner, this))
+                RequireAtomicCurrent(atomicSnapshot, context);
             if (!slot.Writes(context))
             {
                 slot.Handle.SetLastWrite(VersionedSaveWriteStatus.NotWritten);
@@ -451,10 +536,46 @@ namespace APIShared.Savegames
             if (slot.RequireAtomicWrite && !freezing)
             {
                 AtomicSnapshot atomic = atomicSnapshot;
-                if (atomic == null || !ReferenceEquals(atomic.Owner, this) || !atomic.Records.TryGetValue(slot.Identifier, out byte[] frozenBytes))
-                    throw new InvalidOperationException("Required record bypassed the protected atomic writer: " + slot.Identifier);
-                atomic.Delivered.Add(slot.Identifier);
-                return (byte[])frozenBytes.Clone();
+                // Serving a prepared critical bundle invokes no consumer callback.
+                // Keep generation, exact bytes and delivery publication under one lock.
+                lock (sync)
+                {
+                    RequireAtomicCurrent(atomic, context);
+                    if (!atomic.Records.TryGetValue(slot.Identifier, out byte[] frozenBytes))
+                    {
+                        atomic.Failed = true;
+                        throw new InvalidOperationException("Required record bypassed the protected atomic writer: " + slot.Identifier);
+                    }
+                    byte[] bytes;
+                    if (atomic.CriticalRecords.TryGetValue(slot.Identifier, out var critical))
+                    {
+                        if (!ReferenceEquals(slot.CriticalCapture, critical))
+                        {
+                            atomic.Failed = true;
+                            throw new InvalidDataException("The atomic record lost its exact critical capture.");
+                        }
+                        bytes = ServeCriticalRecord(slot, context, critical);
+                        if (bytes == null || !SameCohortMarker(bytes, frozenBytes))
+                        {
+                            atomic.Failed = true; critical.Failed = true;
+                            if (string.IsNullOrEmpty(critical.Failure)) critical.Failure = "The atomic record differs from its frozen critical capture.";
+                            slot.Handle.SetLastWrite(VersionedSaveWriteStatus.CaptureFailed);
+                            return null;
+                        }
+                    }
+                    else
+                    {
+                        if (slot.CriticalCapture != null || slot.CriticalSource?.WriterCohortJoined == true)
+                        {
+                            atomic.Failed = true;
+                            throw new InvalidOperationException("An enrolled atomic record lost its critical capture.");
+                        }
+                        bytes = (byte[])frozenBytes.Clone();
+                        slot.Handle.SetLastWrite(VersionedSaveWriteStatus.Written);
+                    }
+                    atomic.Delivered.Add(slot.Identifier);
+                    return bytes;
+                }
             }
             byte[] loaded;
             VersionedSaveCriticalCapture frozen;
@@ -463,6 +584,7 @@ namespace APIShared.Savegames
             List<KeyValuePair<string, byte[]>> unknown;
             lock (sync)
             {
+                sourceSaveAttempted = true;
                 // Saving inside a load window is not a game flow; never write a half-loaded state.
                 loaded = windowOpen ? slot.Pending : slot.LoadedBytes;
                 keep = windowOpen || slot.KeepLoaded;
@@ -471,7 +593,7 @@ namespace APIShared.Savegames
                 trackedCapture = frozen == null && !keep && slot.CriticalSource != null && !slot.CriticalSource.WriterCohortJoined;
                 if (trackedCapture) slot.ActiveCriticalSourceCaptures++;
             }
-            if (frozen != null) return ServeCriticalRecord(slot, context, frozen);
+            if (frozen != null) return ServeCriticalRecord(slot, context, frozen, !freezing);
             if (!keep && slot.CriticalSource?.WriterCohortJoined == true)
             {
                 // Never downgrade a joined source through an ordinary callback.

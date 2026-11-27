@@ -9,13 +9,19 @@ recipe, art or hauling policy is invented. See [contracts and limits](NATIVE_STO
 and the [compiled example](../examples/ThirdPartyMod/NativeStorageExample.cs).
 
 Ordinary NativeStorage retains its physical-stock/save behavior, including real
-multiplayer. The internal protected-writer opt-in is SP/editor-only and uses
-container version 3/minimum reader 3; public enrollment and consumer migration
-remain required follow-up work. See
+multiplayer. Explicit `client.CriticalSaves` enrollment can request the shared
+SP/editor-only protected writer and container version 3/minimum reader 3.
+Consumer migration remains separate. See
 [save-policy compatibility](NATIVE_STORAGE.md#material-save-policy-compatibility-change).
 
 `NativeStoredGood.TryGetQuantity` reads one registered good in an exact observed
 store under the existing [protected read contract](NATIVE_STORAGE.md#read-one-good-in-one-store).
+
+`NativeStorageClient.TryPrepareImport` and `TryCommitImport` support bounded typed
+cold migration of an enrolled owner's physical allocations and final cargo. A
+successful prepared plan keeps shared publication passive until every matching
+owner commits. See [legacy-ledger import](NATIVE_STORAGE.md#importing-an-existing-owner-ledger)
+for exact provenance, generation, capacity, retry and consumer-cutover requirements.
 
 `NativeStorageClient.TryExchangeBatch` atomically exchanges up to 64 physical
 rows and one player's gold, with bounded replay and joint pooled-capacity checks.
@@ -115,6 +121,14 @@ own existing local setting. See [mod keybind integration](THIRD_PARTY_GUIDE.md#l
 `APIShared.Units.TroopCommandInputEvents` reports local command releases with
 the final map tile and the ordered unit IDs under the cursor.
 See [troop-command observation](THIRD_PARTY_GUIDE.md#troop-command-observation).
+
+## Critical save participants
+
+`ModApiClient.CriticalSaves` enrolls an owner-matching versioned record in the shared
+SP/editor protected writer, with private prepare/release state and original-record
+protection observations. Acquisition is dormant; enrollment is explicit and
+process-lived. See [startup, prerequisites and limits](SAVE_DATA.md#opt-in-protected-save-participants)
+and the [compiled example](../examples/ThirdPartyMod/SaveDataExample.cs).
 
 ## Managed save calls
 
@@ -333,6 +347,7 @@ Rounded fear coefficients and fixed contributions per signed level use [`Economy
 | `APIShared.Units.UnitSettledEvents` | Created, recruited, assigned and disbanded units once their native creation or type change has finished; value notifications | Startup registration; SE simulation-tick thread; trigger order, then order/owner/ID; first registration subscribes to SE; no replay; process lifetime |
 | `APIShared.NativeSites.NativeSiteRegistry` | Prefer a shared APIShared service; use the registry for hooks APIShared doesn't cover yet. Cooperative registry of CrusaderDE.dll native sites: register a span before hooking it (Exclusive, ChainableEntry, CallOnly, Observe), get an acceptance or a refusal naming the owner, query owner and mode by RVA or span. A refusal identifies a conflict without resolving it; an accepted overlap only means no byte overlap, not compatibility | Any thread; register at startup or install time; atomic groups; allocation-free snapshot queries; process lifetime, unregister only to roll back; sees only registered sites ([guide](NATIVE_SITES.md)) |
 | `APIShared.Savegames.VersionedSaveData` | Versioned per-mod save records over Script Extender `ModSaveDataAPI`: migration steps, unknown entries kept, documented load results | Register during startup; capture on the Extender's save thread; one load result per archive load in owner/identifier order; process lifetime |
+| `ModApiClient.CriticalSaves` | Explicit protected-writer enrollment for an owner-matching versioned record; prepare/release checkpoints and original-marker observations | Initialized Unity startup before world/load; SP/editor only; exact Prepared delivery for marker reads; process lifetime; [contract](SAVE_DATA.md#opt-in-protected-save-participants) |
 | `APIShared.Audio.SoundSourceEvents` | Native-stage Pre for attributed soldier and melee-kill sound calls: acting unit ID, GlobalId and type, the killed victim, and sound ID replacement before the native record exists | Any-thread registration; native game-tick thread inside the wrapper; order/owner/ID; no replay; allocation-free struct args; process lifetime |
 | `APIShared.Audio.SoundSourceSelection` | Optional set of catalog sources (by key or situation) for `SoundEvents`/`SoundSourceEvents` registrations; unselected sources stay native | Immutable; any thread; fixed per registration; existing overloads equal `All` ([guide](AUDIO.md#source-selections)) |
 
@@ -429,6 +444,7 @@ Member-level documentation is also shipped as `APIShared.xml` beside the DLL.
 | Mission-start settings log | Automatic for published APIShared preset endpoints; no consumer registration required | Info-level compact JSON, once per successful session; applied host values and this client's player/local values | [Log format](MOD_SETTINGS.md#mission-start-settings-log) |
 | Savegame participation | [Contracts](../src/Savegames/SavegameModSettingsContracts.cs), [exclusion attribute](../src/ModSettings/ExcludeFromSavegameModSettingsAttribute.cs) | [SavegameModSettings](../src/Savegames/SavegameModSettings.cs) | â€” |
 | Versioned save data | [Contracts](../src/Savegames/VersionedSaveDataContracts.cs), [registration](../src/Savegames/VersionedSaveDataRuntime.cs) | [Registry and load window](../src/Savegames/VersionedSaveDataRegistry.cs), [record codec](../src/Savegames/VersionedSaveRecordCodec.cs), [guide](SAVE_DATA.md) | [Save data](../examples/ThirdPartyMod/SaveDataExample.cs) |
+| Critical save participants | [Contracts](../src/Savegames/CriticalSaveContracts.cs), [client](../src/Savegames/CriticalSaveClient.cs) | [Enrollment and limits](SAVE_DATA.md#opt-in-protected-save-participants), [capture protocol](../src/Savegames/VersionedSaveCriticalCapture.cs) | [Save data](../examples/ThirdPartyMod/SaveDataExample.cs) |
 | Additional route search | [Pre/Post contracts](../src/Pathfinding/Routes/RouteSearchContracts.cs) | [Registry and publication](../src/Pathfinding/Routes/RouteSearchEvents.cs) | [Route observer](../examples/ThirdPartyMod/RouteSearchExample.cs) |
 | Route engine status | [RouteEngineInfo](../src/Pathfinding/Routes/RouteEngineInfo.cs) | Passive report; one engine at a time; diagnostics and option texts only. |
 | Route tile rules | [Rules and rule sets](../src/Pathfinding/Routes/RouteTileRules.cs) | Passive registry; route engines read effects and the change journal ([section](#route-tile-rules)) | [Hazard tiles](../examples/ThirdPartyMod/RouteTileRulesExample.cs) |
