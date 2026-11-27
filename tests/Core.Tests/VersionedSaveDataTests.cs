@@ -7,6 +7,127 @@ namespace APIShared.Core.Tests;
 public class VersionedSaveDataTests
 {
     [TestMethod]
+    public void RequiredAtomicRecordFreezesOnceAndArchiveMustActuallyRequestIt()
+    {
+        var extender = new FakeExtender();
+        int calls = 0, value = 4;
+        var registration = extender.Registration("Mod.Atomic", 1, 1, new[] { "state" }, writer =>
+        { calls++; writer.Write("state", new byte[] { (byte)value }); return true; });
+        registration.RequireAtomicWrite = true;
+        var mod = extender.Register(registration);
+        Assert.IsNull(extender.Save(mod), "A required record cannot capture outside the protected writer.");
+        Assert.AreEqual(0, calls);
+        var frozen = extender.Registry.BeginAtomicSave(new VersionedSaveContext(true, false, "test.sav"));
+        try
+        {
+            Assert.AreEqual(1, calls);
+            Assert.ThrowsExactly<InvalidDataException>(() => VersionedSaveDataRegistry.RequireAtomicDelivered(frozen));
+            value = 9;
+            byte[] first = extender.Save(mod), second = extender.Save(mod);
+            Assert.AreEqual(1, calls, "SE serialization must reuse the pre-writer snapshot.");
+            CollectionAssert.AreEqual(first, second);
+            CollectionAssert.AreEqual(frozen.Records["Mod.Atomic"], first);
+            first[0] ^= 1;
+            CollectionAssert.AreEqual(frozen.Records["Mod.Atomic"], second, "Transport cannot mutate the frozen proof.");
+            VersionedSaveDataRegistry.RequireAtomicDelivered(frozen);
+            Assert.ThrowsExactly<InvalidOperationException>(() => extender.Registry.BeginAtomicSave(new VersionedSaveContext(true, false, "nested.sav")));
+        }
+        finally { extender.Registry.EndAtomicSave(frozen); }
+        Assert.IsNull(extender.Save(mod));
+        Assert.AreEqual(1, calls);
+    }
+
+    [TestMethod]
+    public void RequiredAtomicFailuresAndEditorScopeNeverReuseOldGameplaySnapshot()
+    {
+        var extender = new FakeExtender();
+        bool accept = false;
+        var registration = extender.Registration("Mod.AtomicFailure", 1, 1, new[] { "state" }, writer => accept);
+        registration.RequireAtomicWrite = true;
+        var mod = extender.Register(registration);
+        var gameplay = new VersionedSaveContext(true, false, "save.sav");
+        Assert.IsTrue(extender.Registry.RequiresAtomicWrite(gameplay));
+        Assert.IsFalse(extender.Registry.RequiresAtomicWrite(new VersionedSaveContext(false, true, "editor.map")));
+        Assert.ThrowsExactly<InvalidDataException>(() => extender.Registry.BeginAtomicSave(gameplay));
+        accept = true;
+        var frozen = extender.Registry.BeginAtomicSave(gameplay);
+        try { Assert.IsNotNull(extender.Save(mod)); }
+        finally { extender.Registry.EndAtomicSave(frozen); }
+        // An unreadable newer record must fail a fresh required save, preserving its source bytes.
+        byte[] tooNew = SaveWith(2, 2, new[] { "state" }, new() { ["state"] = new byte[] { 2 } });
+        extender.LoadSave(tooNew, mod);
+        Assert.ThrowsExactly<InvalidDataException>(() => extender.Registry.BeginAtomicSave(gameplay));
+        Assert.IsTrue(mod.Handle.KeepsLoadedRecord);
+    }
+
+    [TestMethod]
+    public void PreparedMigratesOnceAndPostOwnsIndependentEntryBytes()
+    {
+        var extender = new FakeExtender();
+        int migrated = 0;
+        var early = new List<VersionedSaveLoad>();
+        var registration = extender.Registration("Mod.Early", 2, 1, new[] { "value" }, Writes(new()));
+        registration.Scope = VersionedSaveScope.SaveGamesAndMaps;
+        registration.Prepared = early.Add;
+        registration.AddMigration(1, entries => { migrated++; entries.Set("value", new byte[] { 8 }); });
+        var mod = extender.Register(registration);
+        byte[] bytes = SaveWith(1, 1, new[] { "value" }, new() { ["value"] = new byte[] { 1 } });
+        extender.Registry.BeginLoad(VersionedSaveLoadSource.MapToPlay, "map.map");
+        mod.Load(bytes);
+        extender.Registry.PrepareLoad();
+        extender.Registry.PrepareLoad();
+        Assert.AreEqual(1, migrated);
+        Assert.AreEqual(1, early.Count);
+        Assert.AreEqual(0, mod.Loads.Count, "Loaded remains a Post notification.");
+        early[0].Entries["value"][0] = 42;
+        mod.Load(bytes); // SE's second read must not replace the prepared result.
+        extender.Registry.EndLoad();
+        Assert.AreEqual(1, migrated);
+        Assert.AreNotSame(early[0], mod.Loads.Single());
+        CollectionAssert.AreEqual(new byte[] { 8 }, mod.Loads[0].Entries["value"]);
+    }
+
+    [TestMethod]
+    public void PreparedReportsMissingRecordsAndDoesNotMoveOtherReadersMigration()
+    {
+        var extender = new FakeExtender();
+        int normalMigration = 0;
+        var early = new List<VersionedSaveLoad>();
+        var first = extender.Registration("Mod.Early", 1, 1, new[] { "value" }, Writes(new()));
+        first.Prepared = early.Add;
+        var earlyMod = extender.Register(first);
+        var normal = extender.Registration("Mod.Normal", 2, 1, new[] { "value" }, Writes(new()));
+        normal.AddMigration(1, _ => normalMigration++);
+        var normalMod = extender.Register(normal);
+        extender.Registry.BeginLoad(VersionedSaveLoadSource.SaveGame, "test.sav");
+        normalMod.Load(SaveWith(1, 1, new[] { "value" }, new() { ["value"] = new byte[] { 1 } }));
+        extender.Registry.PrepareLoad();
+        Assert.AreEqual(VersionedSaveLoadStatus.NoRecord, early.Single().Status);
+        Assert.AreEqual(0, normalMigration);
+        extender.Registry.EndLoad();
+        Assert.AreEqual(1, normalMigration);
+        Assert.AreEqual(early[0].Status, earlyMod.Loads.Single().Status);
+    }
+
+    [TestMethod]
+    public void PreparedFailureKeepsOriginalRecordWithoutSuppressingPost()
+    {
+        var extender = new FakeExtender();
+        var registration = extender.Registration("Mod.Throwing", 1, 1, new[] { "value" },
+            Writes(new() { ["value"] = new byte[] { 99 } }));
+        registration.Prepared = _ => throw new InvalidOperationException("consumer rejected preparation");
+        var mod = extender.Register(registration);
+        byte[] bytes = SaveWith(1, 1, new[] { "value" }, new() { ["value"] = new byte[] { 1 } });
+        extender.Registry.BeginLoad(VersionedSaveLoadSource.SaveGame, "test.sav");
+        mod.Load(bytes);
+        extender.Registry.PrepareLoad();
+        extender.Registry.EndLoad();
+        Assert.AreEqual(1, mod.Loads.Count);
+        Assert.IsTrue(mod.Handle.KeepsLoadedRecord);
+        CollectionAssert.AreEqual(bytes, extender.Save(mod));
+    }
+
+    [TestMethod]
     public void RoundTripRestoresKnownEntriesAndRewritesIdenticalBytes()
     {
         var extender = new FakeExtender();
@@ -492,6 +613,84 @@ public class VersionedSaveDataTests
     }
 
     [TestMethod]
+    public void OnlyDeclaredRecordsAreSimulationRelevantAndTheirNumberIsBounded()
+    {
+        var extender = new FakeExtender();
+        VersionedSaveCapture capture = _ => true;
+        Action<VersionedSaveLoad> loaded = _ => { };
+        Assert.IsTrue(extender.Registry.TryRegister(new("b.mod", "Zeta.Data", 1, 1, new[] { "a" }, capture, loaded)
+            { SimulationRelevant = true }, out _, out _));
+        Assert.IsTrue(extender.Registry.TryRegister(new("a.mod", "alpha.Data", 1, 1, new[] { "a" }, capture, loaded)
+            { SimulationRelevant = true }, out _, out _));
+        Assert.IsTrue(extender.Registry.TryRegister(new("a.mod", "Local.View", 1, 1, new[] { "a" }, capture, loaded), out _, out _));
+        CollectionAssert.AreEqual(new[] { "alpha.Data", "Zeta.Data" }, extender.Registry.SimulationRecords.Select(x => x.Value).ToArray(),
+            "Declared records only, ordered by identifier ignoring case.");
+        Assert.AreEqual("a.mod", extender.Registry.SimulationRecords[0].Key);
+
+        for (int i = 2; i < VersionedSaveData.MaximumSimulationRecords; i++)
+            Assert.IsTrue(extender.Registry.TryRegister(new("c.mod", "Sim" + i, 1, 1, new[] { "a" }, capture, loaded)
+                { SimulationRelevant = true }, out _, out _));
+        Assert.IsFalse(extender.Registry.TryRegister(new("c.mod", "Sim.Over", 1, 1, new[] { "a" }, capture, loaded)
+            { SimulationRelevant = true }, out _, out string reason));
+        StringAssert.Contains(reason, "simulation-relevant");
+        Assert.IsTrue(extender.Registry.TryRegister(new("c.mod", "Local.Over", 1, 1, new[] { "a" }, capture, loaded), out _, out _),
+            "The bound applies to declared records only.");
+    }
+
+    [TestMethod]
+    public void SinglePlayerStateAndLocalRecordsDoNotAffectTheMultiplayerComparison()
+    {
+        // Host and client run the same mods: a declared army record and an undeclared camera record.
+        var host = new FakeExtender();
+        var client = new FakeExtender();
+        var clientArmy = new Dictionary<string, byte[]>();
+        foreach (FakeExtender side in new[] { host, client })
+        {
+            var army = side.Registration("Mod.Army", 1, 1, new[] { "unit/" }, Writes(side == client ? clientArmy : new()));
+            army.SimulationRelevant = true;
+            side.Register(army);
+            side.Register("Mod.Camera", 1, 1, new[] { "view" }, Writes(new()));
+        }
+        FakeExtender.Mod armyOnClient = client.Handlers["Mod.Army"];
+
+        // The client first plays single-player: other army state, plus an entry its version does not know.
+        byte[] singlePlayer = SaveWith(1, 1, new[] { "unit/", "legacy" },
+            new() { ["unit/9"] = new byte[] { 99 }, ["legacy"] = new byte[] { 7 } });
+        client.LoadSave(singlePlayer, armyOnClient);
+        Assert.AreEqual(1, armyOnClient.Loads.Last().KeptEntryCount);
+        clientArmy["unit/9"] = new byte[] { 100 };
+
+        // The shared multiplayer save: the declared record is identical in both copies, the camera
+        // record (local view state) differs.
+        byte[] savedArmy = SaveWith(1, 1, new[] { "unit/" }, new() { ["unit/1"] = new byte[] { 5 } });
+        var hostCopy = new Dictionary<string, byte[]> { ["Mod.Army"] = savedArmy, ["Mod.Camera"] = new byte[] { 1 } };
+        var clientCopy = new Dictionary<string, byte[]> { ["Mod.Army"] = (byte[])savedArmy.Clone(), ["Mod.Camera"] = new byte[] { 2 } };
+        List<SavegameRecordDigest> hostDigests = SavegameRecordDigest.Capture(host.Registry.SimulationRecords,
+            id => hostCopy.TryGetValue(id, out byte[] b) ? b : null);
+        List<SavegameRecordDigest> clientDigests = SavegameRecordDigest.Capture(client.Registry.SimulationRecords,
+            id => clientCopy.TryGetValue(id, out byte[] b) ? b : null);
+        Assert.AreEqual(1, clientDigests.Count, "Only the declared record is compared.");
+        Assert.IsNull(SavegameRecordComparison.Describe(hostDigests, clientDigests, "Bob"),
+            "Earlier single-player state and local records must not reject the shared save.");
+
+        // Loading the multiplayer save replaces the single-player state, including its kept entry.
+        clientArmy.Clear();
+        client.LoadSave(clientCopy["Mod.Army"], armyOnClient, VersionedSaveLoadSource.MultiplayerSave);
+        VersionedSaveLoad loaded = armyOnClient.Loads.Last();
+        Assert.AreEqual(VersionedSaveLoadStatus.Restored, loaded.Status);
+        CollectionAssert.AreEqual(new[] { "unit/1" }, loaded.Entries.Keys.ToArray());
+        Assert.AreEqual(0, loaded.KeptEntryCount);
+        foreach (var entry in loaded.Entries) clientArmy[entry.Key] = entry.Value;
+        AssertEntries(client, armyOnClient, "unit/1");
+
+        // A different declared record in one copy is detected and named.
+        clientCopy["Mod.Army"] = SaveWith(1, 1, new[] { "unit/" }, new() { ["unit/1"] = new byte[] { 6 } });
+        string mismatch = SavegameRecordComparison.Describe(hostDigests, SavegameRecordDigest.Capture(client.Registry.SimulationRecords,
+            id => clientCopy.TryGetValue(id, out byte[] b) ? b : null), "Bob");
+        StringAssert.Contains(mismatch, "record 'Mod.Army' of mod 'owner' differs between the host's save and Bob's");
+    }
+
+    [TestMethod]
     public void EntriesEnforceNamesAndLimitsForMigrations()
     {
         var entries = new VersionedSaveEntries();
@@ -590,7 +789,8 @@ public class VersionedSaveDataTests
             var observed = new VersionedSaveDataRegistration(registration.OwnerGuid, registration.SaveDataIdentifier,
                 registration.CurrentVersion, registration.MinimumReaderVersion, registration.KnownEntries, registration.Capture,
                 load => { mod.Loads.Add(load); registration.Loaded(load); })
-            { Scope = registration.Scope, LegacyReader = registration.LegacyReader };
+            { Scope = registration.Scope, LegacyReader = registration.LegacyReader,
+                SimulationRelevant = registration.SimulationRelevant, RequireAtomicWrite = registration.RequireAtomicWrite, Prepared = registration.Prepared };
             foreach (var step in registration.Migrations) observed.AddMigration(step.Key, step.Value);
             pendingRegistration = mod;
             Assert.IsTrue(Registry.TryRegister(observed, out var handle, out string reason), reason);

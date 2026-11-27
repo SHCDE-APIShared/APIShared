@@ -6,5 +6,18 @@ foreach ($file in Get-ChildItem -LiteralPath $PSScriptRoot -File | Where-Object 
 $references = @((Join-Path $env:SHCDE_GAME_DIR 'BepInEx/core/BepInEx.dll'), (Join-Path $env:SHCDE_GAME_DIR 'BepInEx/plugins/000shcdese/SHCDESE.dll'), (Join-Path $env:SHCDE_GAME_DIR 'Stronghold Crusader Definitive Edition_Data/Managed/UnityEngine.dll'), (Join-Path $env:SHCDE_GAME_DIR 'Stronghold Crusader Definitive Edition_Data/Managed/UnityEngine.CoreModule.dll'), 'System.dll', 'System.Core.dll')
 $output = Join-Path $PSScriptRoot '@@GUID@@.dll'
 if (Test-Path -LiteralPath $output) { Remove-Item -LiteralPath $output }
-Add-Type -Path (Join-Path $PSScriptRoot 'Plugin.cs') -ReferencedAssemblies $references -OutputAssembly $output -OutputType Library
+$compiler = New-Object System.CodeDom.Compiler.CompilerParameters
+$compiler.OutputAssembly = $output
+$compiler.GenerateExecutable = $false
+foreach ($reference in $references) { [void]$compiler.ReferencedAssemblies.Add($reference) }
+$compiler.CompilerOptions = (@(Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'Locales') -File -Filter '*.txt' | ForEach-Object {
+    '/resource:"' + $_.FullName + '",APIShared.Locales.' + $_.Name
+}) -join ' ')
+$sources = @((Join-Path $PSScriptRoot 'Plugin.cs')) + @(Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'Localization') -File -Filter '*.cs' | ForEach-Object {$_.FullName})
+$provider = New-Object Microsoft.CSharp.CSharpCodeProvider
+try {
+    # Compile without loading the game-dependent plugin into the build process.
+    $result = $provider.CompileAssemblyFromFile($compiler, [string[]]$sources)
+    if ($result.Errors.HasErrors) { throw (($result.Errors | ForEach-Object { $_.ToString() }) -join "`r`n") }
+} finally { $provider.Dispose() }
 if (-not (Test-Path -LiteralPath $output)) { throw 'Bootstrap compilation failed.' }

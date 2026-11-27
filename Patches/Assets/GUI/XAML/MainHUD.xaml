@@ -1,66 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Patch xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-  <Operation Type="InsertAfter" XPath="//n:TextBlock[@x:Name='GameHoverText' and not(n:InlineUIContainer/n:ItemsControl[@x:Name='APISharedRepairExtrasHost'])]/n:Run[@Text='{Binding RollOverText_AmountGot2}']">
-    <Content>
-      <InlineUIContainer>
-        <ItemsControl x:Name="APISharedRepairExtrasHost"
-                      ItemsSource="{Binding Costs}" Visibility="{Binding Visibility}"
-                      IsHitTestVisible="False" Tag="Ignore">
-            <ItemsControl.RenderTransform><TranslateTransform Y="10" /></ItemsControl.RenderTransform>
-            <ItemsControl.ItemsPanel>
-              <ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate>
-            </ItemsControl.ItemsPanel>
-            <ItemsControl.ItemTemplate>
-              <DataTemplate>
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                  <TextBlock Text="{Binding Required}" FontSize="20" Foreground="#FFDDDDDD" />
-                  <Image Source="{Binding Icon}" Height="18" Margin="0,4,0,-4" />
-                  <TextBlock Text="{Binding Available}" FontSize="20" Foreground="#FFDDDDDD" />
-                </StackPanel>
-              </DataTemplate>
-            </ItemsControl.ItemTemplate>
-          </ItemsControl>
-      </InlineUIContainer>
-    </Content>
-  </Operation>
-  <Operation Type="InsertBefore" XPath="//n:DockPanel[@Visibility='{Binding RolloverBuilding_TooltipVis, Converter={StaticResource booleanToVisibilityConverter}}']/n:Grid/n:StackPanel/*[1]">
-    <Content>
-      <ItemsControl x:Name="APISharedBuildingTooltipDetailed" ItemsSource="{Binding Lines}" Visibility="{Binding Visibility}" MaxWidth="{Binding MaxWidth}" HorizontalAlignment="Left" IsHitTestVisible="False" Tag="Ignore"
-          FlowDirection="{Binding Path=DataContext.GlobalTextFlowAL2R, RelativeSource={RelativeSource FindAncestor, AncestorLevel=1, AncestorType={x:Type UserControl}}}">
-        
-        <ItemsControl.ItemTemplate>
-          <DataTemplate>
-            <ItemsControl ItemsSource="{Binding Segments}" MaxWidth="{Binding DataContext.MaxWidth, ElementName=APISharedBuildingTooltipDetailed}">
-              <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
-              <ItemsControl.ItemTemplate><DataTemplate>
-                <TextBlock Text="{Binding Text}" Foreground="{Binding Foreground}" FontSize="16" TextWrapping="Wrap" MaxWidth="{Binding DataContext.MaxWidth, ElementName=APISharedBuildingTooltipDetailed}" Tag="Ignore">
-                  <TextBlock.Effect><DropShadowEffect ShadowDepth="2" Direction="315" Color="#CC000000" BlurRadius="0"/></TextBlock.Effect>
-                </TextBlock>
-              </DataTemplate></ItemsControl.ItemTemplate>
-            </ItemsControl>
-          </DataTemplate>
-        </ItemsControl.ItemTemplate>
-      </ItemsControl>
-    </Content>
-  </Operation>
-  <Operation Type="InsertBefore" XPath="//n:StackPanel[@Visibility='{Binding RolloverBuilding_TooltipVisNot, Converter={StaticResource booleanToVisibilityConverter}}']/*[1]">
-    <Content>
-      <ItemsControl x:Name="APISharedBuildingTooltipCompact" ItemsSource="{Binding Lines}" Visibility="{Binding Visibility}" MaxWidth="{Binding MaxWidth}" HorizontalAlignment="Left" IsHitTestVisible="False" Tag="Ignore"
-          FlowDirection="{Binding Path=DataContext.GlobalTextFlowAL2R, RelativeSource={RelativeSource FindAncestor, AncestorLevel=1, AncestorType={x:Type UserControl}}}">
-        <ItemsControl.RenderTransform><TranslateTransform X="-250"/></ItemsControl.RenderTransform>
-        <ItemsControl.ItemTemplate>
-          <DataTemplate>
-            <ItemsControl ItemsSource="{Binding Segments}" MaxWidth="{Binding DataContext.MaxWidth, ElementName=APISharedBuildingTooltipCompact}">
-              <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
-              <ItemsControl.ItemTemplate><DataTemplate>
-                <TextBlock Text="{Binding Text}" Foreground="{Binding Foreground}" FontSize="16" TextWrapping="Wrap" MaxWidth="{Binding DataContext.MaxWidth, ElementName=APISharedBuildingTooltipCompact}" Tag="Ignore">
-                  <TextBlock.Effect><DropShadowEffect ShadowDepth="2" Direction="315" Color="#CC000000" BlurRadius="0"/></TextBlock.Effect>
-                </TextBlock>
-              </DataTemplate></ItemsControl.ItemTemplate>
-            </ItemsControl>
-          </DataTemplate>
-        </ItemsControl.ItemTemplate>
-      </ItemsControl>
-    </Content>
-  </Operation>
+  <Operation Type="AddNamespace" AttributeName="apt" Value="clr-namespace:APIShared.Presentation;assembly=APIShared" />
+  <Operation Type="SetAttribute" XPath="//n:TextBlock[@x:Name='GameHoverText']" AttributeName="apt:TooltipAnchor.Anchor" Value="BuildingCompact" />
+  <Operation Type="SetAttribute" XPath="//n:DockPanel[@Visibility='{Binding RolloverBuilding_TooltipVis, Converter={StaticResource booleanToVisibilityConverter}}']//n:TextBlock[n:Run[@Text='{Binding RollOverText_AmountReq1}']]" AttributeName="apt:TooltipAnchor.Anchor" Value="BuildingDetailed" />
+  <Operation Type="SetAttribute" XPath="//n:TextBlock[@Text='{Binding RolloverBuilding_TooltipBody}']" AttributeName="apt:TooltipAnchor.Anchor" Value="BuildingDescription" />
 </Patch>

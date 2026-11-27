@@ -6,7 +6,7 @@ namespace APIShared.Audio
     /// <summary>Single owner for native-record playback interception; does not intercept UI, speech, music or every direct SFXManager call.</summary>
     public static class SoundEvents
     {
-        internal static readonly SoundDemand Demand = new SoundDemand();
+        internal static readonly SoundDemand Demand = SoundNativeDemand.Playback;
         private static readonly Func<int, bool> ValidEffect = SoundRuntime.IsVanillaEffect;
         private static readonly Func<SoundClipHandle, float, float, bool, bool> PlayClip = SoundClips.TryPlay;
         private static readonly Func<SoundPreEventArgs, object, SoundPostEventArgs> PostFactory = (pre, state) => new SoundPostEventArgs(pre, state);
@@ -42,8 +42,30 @@ namespace APIShared.Audio
         /// <summary>Register during Unity startup after APIShared managed initialization. Callbacks run synchronously on the Unity playback thread, outside registry locks, without replay, ordered by order/ordinal owner/ID. A failed callback rolls back its changes; successful vetoes are sticky. Recursive playback in callbacks bypasses notifications. Registration and handles persist until exit. Changes affect presentation only; audio asset availability is local. Returns false with a reason for invalid/duplicate registrations or unavailable managed interception.</summary>
         public static bool TryRegister(string ownerGuid, string registrationId, Action<SoundPreEventArgs> pre,
             Action<SoundPostEventArgs> post, out SoundRegistration registration, out string reason, int order = 0)
+            => TryRegister(ownerGuid, registrationId, pre, post, SoundSourceSelection.All, out registration, out reason, order);
+        /// <summary>Same contract as the overload without a selection (which equals <see cref="SoundSourceSelection.All"/>),
+        /// but native attribution runs only for the selected soldier sources.</summary>
+        /// <remarks>Callbacks still receive every covered playback call, including Unknown ones. Named context
+        /// (<see cref="SoundContext.Situation"/>, <see cref="SoundContext.SourceKey"/>, unit type and evidence) is
+        /// guaranteed only for selected sources; other sources may arrive as Unknown or, when another registration
+        /// selects them, named. Kill cues never reach playback, so a selection without soldier sources is rejected.
+        /// While no enabled registration selects a source, its wrapper calls stay native.</remarks>
+        /// <param name="ownerGuid">Owning plugin GUID.</param>
+        /// <param name="registrationId">Stable ID, unique per owner.</param>
+        /// <param name="pre">Pre callback, or null.</param>
+        /// <param name="post">Post callback, or null.</param>
+        /// <param name="sources">Soldier sources whose context this registration needs, from <see cref="SoundSourceSelection.TryCreate"/>.</param>
+        /// <param name="registration">Rooted activation handle on success.</param>
+        /// <param name="reason">Failure reason, empty on success.</param>
+        /// <param name="order">Ascending callback order.</param>
+        /// <returns>False with a reason for a missing or kill-only selection, invalid/duplicate registrations or unavailable managed interception.</returns>
+        public static bool TryRegister(string ownerGuid, string registrationId, Action<SoundPreEventArgs> pre,
+            Action<SoundPostEventArgs> post, SoundSourceSelection sources, out SoundRegistration registration, out string reason, int order = 0)
         {
-            var candidate = new SoundRegistration();
+            registration = null;
+            if (sources == null || !sources.HasSoldierSource())
+            { reason = "A source selection with at least one soldier source is required; kill cues never reach playback."; return false; }
+            var candidate = new SoundRegistration(sources);
             if (!Registry.TryRegister(ownerGuid, registrationId, pre, post, out reason, order, isActive: () => candidate.Enabled))
             { registration = null; return false; }
             Demand.Attach(candidate);

@@ -1,5 +1,6 @@
 #nullable enable
 using APIShared;
+using APIShared.ModSettings;
 using CrusaderDE;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Noesis;
@@ -88,15 +89,63 @@ namespace Core.Tests
             Tick(service); Assert.AreEqual(2, Visible(host).Length);
             var a = Visible(host).Single(x => Equals(x.Content, "a")); var b = Visible(host).Single(x => Equals(x.Content, "b"));
             Assert.AreSame(host.Resources["APISharedHudExtrasTooltipStyle"], ((ToolTip)a.ToolTip!).Style); Assert.AreEqual("Blueprints", ((ToolTip)a.ToolTip!).Content);
-            Assert.AreSame(customStyle, ((ToolTip)b.ToolTip!).Style); Assert.AreEqual(60000, a.Duration);
+            var custom = (ToolTip)b.ToolTip!;
+            Assert.AreSame(customStyle, custom.Style); Assert.AreEqual(60000, a.Duration);
+            Assert.IsFalse(SharedToolTipSizing.GetEnabled(custom));
             standard.SetTooltip("Updated"); Tick(service); Assert.AreEqual("Updated", ((ToolTip)a.ToolTip!).Content);
             standard.SetTooltip(""); Tick(service); Assert.IsNull(a.ToolTip);
             retry.RequestContentRefresh(); Tick(service); Assert.AreEqual(3, Visible(host).Length); Assert.AreEqual(2, calls);
         }
         [TestMethod]
+        public void DefaultTooltipFollowsButtonPixelsAndReleasesTheOldHud()
+        {
+            var service = new HudExtrasButtonsService(null);
+            var host = Host();
+            service.Bind("mod").TryRegisterButton(new HudExtrasButtonDefinition("one", new Command(), "Original",
+                _ => new Button { ScreenScaleX = 3, ScreenScaleY = 3 }), out var handle, out _);
+            Tick(service);
+            var button = Visible(host).Single();
+            button.Load();
+            var original = (ToolTip)button.ToolTip!;
+            original.IsOpen = true;
+            original.Load();
+            Assert.AreEqual(42f, original.FontSize);
+            Assert.AreEqual(4.5, original.BorderThickness.Left);
+            Assert.AreSame(button, SharedToolTipSizing.GetReferenceElement(original));
+
+            button.ScreenScaleX = button.ScreenScaleY = 2;
+            host.Resize();
+            Assert.AreEqual(28f, original.FontSize);
+            handle.SetTooltip("Updated");
+            Tick(service);
+            Assert.IsFalse(original.IsOpen);
+            Assert.IsFalse(SharedToolTipSizing.GetEnabled(original));
+            Assert.IsNull(SharedToolTipSizing.GetReferenceElement(original));
+
+            var updated = (ToolTip)button.ToolTip!;
+            updated.Load();
+            updated.IsOpen = true;
+            MainViewModel.Instance!.Show_HUD_Extras = false;
+            Tick(service);
+            Assert.IsFalse(updated.IsOpen);
+            MainViewModel.Instance.Show_HUD_Extras = true;
+            Tick(service);
+            updated.IsOpen = true;
+            Assert.AreEqual(28f, updated.FontSize);
+
+            var replacement = Host();
+            Tick(service);
+            Assert.IsFalse(updated.IsOpen);
+            Assert.IsFalse(SharedToolTipSizing.GetEnabled(updated));
+            Assert.IsNull(button.ToolTip);
+            var newButton = Visible(replacement).Single();
+            Assert.AreSame(newButton, SharedToolTipSizing.GetReferenceElement((ToolTip)newButton.ToolTip!));
+        }
+        [TestMethod]
         public void HostIsSearchedOnlyWhenTheHudTreeCanHaveChanged()
         {
-            var service = new HudExtrasButtonsService(null); var api = service.Bind("mod"); var host = Host(); var views = GameXAMLManagerAPI.Instance;
+            long now = 0;
+            var service = new HudExtrasButtonsService(null, () => now, 1000); var api = service.Bind("mod"); var host = Host(); var views = GameXAMLManagerAPI.Instance;
             // A direct delegate keeps reflection allocations out of the per-frame measurement.
             var frame = (Action)Delegate.CreateDelegate(typeof(Action), service, typeof(HudExtrasButtonsService)
                 .GetMethod("OnBeforeRender", BindingFlags.Instance | BindingFlags.NonPublic)!);
@@ -120,13 +169,33 @@ namespace Core.Tests
             // A rebuilt HUD comes with a new MainViewModel instance.
             MainViewModel.Instance = new MainViewModel(); frame(); frame();
             Assert.AreEqual(searches + 3, views.Searches); Assert.AreEqual(1, Visible(replacement).Length);
-            // A missing host has no change notification: shown frames keep searching, hidden frames do not.
+            // A missing host has no creation signal. Retry every 100 ms without tree work between deadlines.
             views.Element = null; frame(); frame();
-            Assert.AreEqual(searches + 5, views.Searches); Assert.IsFalse(replacement.IsVisible);
+            Assert.AreEqual(searches + 4, views.Searches); Assert.IsFalse(replacement.IsVisible);
+            now = 99; frame(); Assert.AreEqual(searches + 4, views.Searches);
+            now = 100; frame(); Assert.AreEqual(searches + 5, views.Searches);
             MainViewModel.Instance.Show_HUD_Extras = false; frame(); Assert.AreEqual(searches + 5, views.Searches);
             var restored = Host(); frame(); Assert.AreEqual(searches + 5, views.Searches); Assert.AreEqual(0, Visible(restored).Length);
             MainViewModel.Instance.Show_HUD_Extras = true; frame(); frame();
             Assert.AreEqual(searches + 6, views.Searches); Assert.AreEqual(1, Visible(restored).Length);
+        }
+
+        [TestMethod]
+        public void MissingHostDiscoveryWakesImmediatelyForKnownChanges()
+        {
+            long now = 0;
+            var service = new HudExtrasButtonsService(null, () => now, 1000); var api = service.Bind("mod");
+            var views = GameXAMLManagerAPI.Instance; views.Element = null;
+            api.TryRegisterButton(new HudExtrasButtonDefinition("one", new Command(), "one", _ => new Button()), out var work, out _);
+            Tick(service); int searches = views.Searches;
+            now = 1; Tick(service); Assert.AreEqual(searches, views.Searches);
+            MainViewModel.Instance!.Raise(nameof(MainViewModel.Show_HUD_Extras_Button_Objectves)); Tick(service);
+            Assert.AreEqual(++searches, views.Searches, "Known HUD changes bypass a pending retry deadline.");
+            work.SetTooltip("changed"); Tick(service); Assert.AreEqual(++searches, views.Searches);
+            api.TryRegisterButton(new HudExtrasButtonDefinition("two", new Command(), "two", _ => new Button()), out _, out _);
+            Tick(service); Assert.AreEqual(++searches, views.Searches);
+            MainViewModel.Instance = new MainViewModel(); var host = Host(); Tick(service);
+            Assert.AreEqual(++searches, views.Searches); Assert.AreEqual(2, Visible(host).Length);
         }
     }
 }

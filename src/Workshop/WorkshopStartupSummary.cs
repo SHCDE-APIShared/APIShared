@@ -8,7 +8,10 @@ namespace APIShared.Workshop
     // Display evidence never substitutes for the receipt or authorizes removal.
     internal static class WorkshopStartupSummary
     {
-        internal static string Describe(WorkshopInstallPlan plan, bool german)
+        internal static string Describe(WorkshopInstallPlan plan, bool german) => Describe(plan, german ? "de-DE" : "en-US");
+        internal static string FormatVersion(Version version) => version.ToString(version.Revision > 0 ? 4 : 3);
+
+        internal static string Describe(WorkshopInstallPlan plan, string locale, Version localVersion = null)
         {
             string name = plan.PackageId, oldVersion = null;
             bool existing = plan.Package != null && plan.Package.Roots.Any(root => Directory.Exists(WorkshopPaths.Inside(plan.GameRoot, root)));
@@ -35,15 +38,19 @@ namespace APIShared.Workshop
             } else if (existing) uncertain = true;
 
             string text;
-            if (plan.Action == WorkshopAction.Install && existing) {
-                text = german ? "bestehende Installation" : "existing installation";
+            if (localVersion != null && plan.Package != null && WorkshopPackageCodec.Version(plan.Version) < localVersion) {
+                text = Localization.UiText.ForLocale(locale, "Workshop.Summary.Downgrade", "Previous", FormatVersion(localVersion), "Version", plan.Version);
+            } else if (plan.Action == WorkshopAction.Install && existing) {
+                text = Localization.UiText.ForLocale(locale, "Workshop.Summary.Existing");
                 if (oldVersion != null) text += " " + oldVersion;
-                text += german ? " auf " + plan.Version + " umstellen (mit Sicherung)." : " to " + plan.Version + " — migrate with backup.";
-                if (uncertain) text += german ? " Bisherige Version/Identität nicht eindeutig nachweisbar." : " Previous version/identity could not be verified.";
-                if (plan.Package.Bootstrap != null) text += german ? " Der Bootstrap ist bereits bereit; die Modpackdateien müssen noch übernommen werden." : " The bootstrap is ready; the package files still need to be applied.";
-            } else if (plan.Action == WorkshopAction.Install) text = german ? "erstmals installieren: " + plan.Version : "first installation: " + plan.Version;
-            else if (plan.Action == WorkshopAction.Update) text = german ? "aktualisieren: " + plan.Previous.Version + " auf " + plan.Version : "update: " + plan.Previous.Version + " to " + plan.Version;
-            else text = german ? "Paketdateien entfernen: " + plan.Version : "remove package files: " + plan.Version;
+                text += Localization.UiText.ForLocale(locale, "Workshop.Summary.Migrate", "Version", plan.Version);
+                if (uncertain) text += Localization.UiText.ForLocale(locale, "Workshop.Summary.Uncertain");
+                if (plan.Package.Bootstrap != null) text += Localization.UiText.ForLocale(locale, "Workshop.Summary.BootstrapReady");
+            } else if (plan.Action == WorkshopAction.Install) text = Localization.UiText.ForLocale(locale, "Workshop.Summary.Install", "Version", plan.Version);
+            else if (plan.Action == WorkshopAction.Update) text = Localization.UiText.ForLocale(locale, "Workshop.Summary.Update", "Previous", plan.Previous.Version, "Version", plan.Version);
+            else if (plan.Action == WorkshopAction.Reinstall) text = Localization.UiText.ForLocale(locale, "Workshop.Summary.Reinstall", "Version", plan.Version);
+            else if (plan.Action == WorkshopAction.Downgrade) text = Localization.UiText.ForLocale(locale, "Workshop.Summary.Downgrade", "Previous", plan.Previous.Version, "Version", plan.Version);
+            else text = Localization.UiText.ForLocale(locale, "Workshop.Summary.Remove", "Version", plan.Version);
             return name + ": " + text;
         }
     }

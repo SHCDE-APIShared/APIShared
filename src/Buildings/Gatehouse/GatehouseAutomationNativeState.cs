@@ -46,7 +46,7 @@ namespace APIShared
             Hex("66 41 89 84 0A 1C 03 00 00 41 83 F8 0A 75 09"),
             Hex("66 89 84 2B CC CE 4C 06 44 39 B4 29 58 CE 79 03 75 11")
         };
-        private static readonly byte[] CouplingEntry = Hex("48 89 6C 24 08 48 89 74 24 10 48 89 7C 24 18");
+        internal static readonly byte[] CouplingEntry = Hex("48 89 6C 24 08 48 89 74 24 10 48 89 7C 24 18");
         private static readonly List<GatehouseAutomationNativeState> Published = new List<GatehouseAutomationNativeState>();
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
         private delegate int ManualQuery(int buildingId);
@@ -56,6 +56,7 @@ namespace APIShared
         private readonly INativeMemory memory;
         private readonly ManualLogSource log;
         private readonly NativeSection section;
+        private readonly NativeOwnershipRegistry ownership;
         private readonly HookHandle<X64InlineHook>[] hooks =
         {
             new HookHandle<X64InlineHook>(), new HookHandle<X64InlineHook>(),
@@ -63,6 +64,7 @@ namespace APIShared
             new HookHandle<X64InlineHook>(), new HookHandle<X64InlineHook>()
         };
         private HookTransaction transaction;
+        private readonly NativeHookPublicationState publication = new NativeHookPublicationState();
         private Func<int, bool> resolver;
         private bool installed;
         private string installationFailure;
@@ -79,24 +81,26 @@ namespace APIShared
         }
 
         private GatehouseAutomationNativeState(ulong moduleBase, ScanRegion region,
-            INativeMemory memory, ManualLogSource log, NativeSection section)
+            INativeMemory memory, ManualLogSource log, NativeSection section, NativeOwnershipRegistry ownership)
         {
             this.moduleBase = moduleBase;
             this.region = region;
             this.memory = memory;
             this.log = log;
             this.section = section;
+            this.ownership = ownership;
             query = QueryManual;
             QueryAddress = unchecked((ulong)Marshal.GetFunctionPointerForDelegate(query).ToInt64());
         }
 
+        // ownership receives the automation spans when they are installed (null: not registered).
         internal static GatehouseAutomationNativeState Prepare(ulong moduleBase, ScanRegion region,
-            ReadOnlySpan<byte> image, INativeMemory memory, ManualLogSource log)
+            ReadOnlySpan<byte> image, INativeMemory memory, ManualLogSource log, NativeOwnershipRegistry ownership = null)
         {
             try
             {
                 NativeSection section = ValidateImage(image, moduleBase);
-                return new GatehouseAutomationNativeState(moduleBase, region, memory, log, section);
+                return new GatehouseAutomationNativeState(moduleBase, region, memory, log, section, ownership);
             }
             catch (Exception ex)
             {
@@ -166,8 +170,13 @@ namespace APIShared
                     // All targets are checked before the first patch. A foreign hook is never overwritten.
                     for (int site = 0; site < HookRvas.Length; site++) RequireLive(HookRvas[site], HookBytes[site]);
                     RequireLive(CouplingRva, CouplingEntry);
+                    ApiSharedNativeSites.Claim(ownership, ApiSharedNativeSites.GatehouseAutomation,
+                        ApiSharedNativeSites.GatehouseAutomationSpans(), reason => new InvalidOperationException(reason));
+                    // A consumer may publish during a match, while the simulation thread runs these
+                    // functions: Commit only prepares, the displaced lengths are checked, and only then
+                    // are the patches written. A rejected candidate never unpatches live code.
                     transaction = new HookTransaction(region, SHCDESE.BepInEx.Bootstrap.Plugin.Instance.LoggerFactory,
-                        new HookTransactionOptions { FailureMode = TransactionFailureMode.RollbackAndThrow, OwnsHooks = true });
+                        new HookTransactionOptions { InstallOnCommit = false, FailureMode = TransactionFailureMode.RollbackAndThrow, OwnsHooks = true });
                     for (int site = 0; site < HookRvas.Length; site++)
                     {
                         int capturedSite = site;
@@ -177,17 +186,16 @@ namespace APIShared
                     }
                     CommitResult result = transaction.Commit();
                     if (!result.IsCompleteSuccess) throw new InvalidOperationException($"Incomplete gate automation transaction: {result}.");
-                    for (int site = 0; site < HookRvas.Length; site++)
-                    {
-                        if (!hooks[site].Success || !hooks[site].IsInstalled ||
-                            hooks[site].Hook.DisplacedByteCount != HookBytes[site].Length)
-                            throw new InvalidOperationException($"Gate automation DisplacedByteCount mismatch at 0x{HookRvas[site]:X}.");
-                    }
+                    RequireHookState(installed: false, "DisplacedByteCount mismatch");
+                    NativeHookPublication.Enable(transaction, result, publication, this,
+                        () => RequireHookState(installed: true, "hook not installed after publication"));
                 }
                 catch (Exception ex)
                 {
-                    // Only the unpublished initialization candidate can be rolled back.
-                    transaction?.Dispose();
+                    // Only an unpublished candidate is rolled back; a started publication stays rooted,
+                    // and QueryManual keeps Vanilla behavior because installed remains false.
+                    publication.RollbackUnpublished(transaction,
+                        () => ApiSharedNativeSites.Release(ownership, ApiSharedNativeSites.GatehouseAutomation));
                     installationFailure = failure = ex.ToString();
                     NativeApiLog.Error(log, $"capability=gatehouse-automation, status=installation-failed, error={ex}");
                     return false;
@@ -198,6 +206,17 @@ namespace APIShared
             }
             Volatile.Write(ref resolver, value);
             return true;
+        }
+
+        private void RequireHookState(bool installed, string failure)
+        {
+            for (int site = 0; site < HookRvas.Length; site++)
+            {
+                X64InlineHook hook = hooks[site].Hook;
+                if (!hooks[site].Success || hook == null || hook.IsInstalled != installed ||
+                    hook.DisplacedByteCount != HookBytes[site].Length)
+                    throw new InvalidOperationException($"Gate automation {failure} at 0x{HookRvas[site]:X}.");
+            }
         }
 
         private int QueryManual(int buildingId)

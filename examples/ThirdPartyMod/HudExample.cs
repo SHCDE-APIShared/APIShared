@@ -1,5 +1,6 @@
 using System;
 using APIShared;
+using APIShared.Presentation;
 using Noesis;
 using System.Windows.Input;
 
@@ -10,6 +11,27 @@ namespace ThirdPartyMod
         // Load a mod-owned image through your normal asset pipeline on the Unity thread.
         // Null deliberately preserves the current image until an asset is assigned.
         internal static ImageSource Icon;
+
+        // Call once on the Unity thread with the registering mod's stable GUID.
+        // This is independent of Register(), which contributes to the separate strip.
+        internal static ITroopActionButtonRegistration RegisterVanillaAction(string ownerGuid, Action<string> log)
+        {
+            var definition = new TroopActionButtonDefinition("example-vanilla-action", new ExampleCommand(log),
+                "Example troop action", context => {
+                    var button = new Button { Width = 36, Height = 37,
+                        Style = context.Hud.TryFindResource("BTN_Image") as Style };
+                    var normal = context.Hud.TryFindResource("UI-Buttons L009") as ImageSource;
+                    var highlight = context.Hud.TryFindResource("UI-Buttons L010") as ImageSource;
+                    CrusaderDE.PropEx.SetSprite1(button, normal); CrusaderDE.PropEx.SetSprite2(button, highlight);
+                    CrusaderDE.PropEx.SetSprite3(button, highlight); CrusaderDE.PropEx.SetSprite4(button, normal);
+                    return button;
+                }, priority: 100);
+            if (!TroopActionHud.TryRegisterButton(ownerGuid, definition, out var registration, out var reason))
+            { log(reason); return null; }
+            // Replace true with the mod's current feature applicability.
+            registration.SetVisible(true);
+            return registration;
+        }
 
         internal static void RegisterSideButtons(ModApiClient client, Action<string> log)
         {

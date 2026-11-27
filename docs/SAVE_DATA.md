@@ -47,6 +47,18 @@ Use `NoRecord` and `OutOfScope` to reset state from an earlier mission: the Exte
 calls the `onUnload` callback of `ModSaveDataAPI` in 2.14.1 (see
 [implementation](#script-extender-behaviour-it-relies-on)).
 
+**Optional early preparation.** Set `registration.Prepared` only when the consumer
+must decode its record before native initialization. It runs after the complete
+Pre-phase archive read, including `NoRecord`/`OutOfScope`, on that load's caller.
+Migrations run once at this earlier point for opted-in registrations. `Loaded`
+still runs exactly once in Post with the same result and independent entry arrays;
+registrations without `Prepared` retain their previous migration and callback timing.
+Early preparation does not mean the saved native world is available: decode private
+candidates there and use an appropriate lifecycle boundary for native application.
+An exception is isolated and preserves the original record bytes. Consumers which
+require protection before simulation must independently refuse native initialization
+when preparation or application fails; throwing this callback alone is no load veto.
+
 **Scope.** `SaveGames` (default) reads and writes gameplay saves only. `SaveGamesAndMaps`
 also writes map editor saves and reads every map load, for data that belongs to the map,
 such as a theme chosen in the editor.
@@ -131,9 +143,9 @@ thrown into the game or the Extender.
   entries belong to one mission: they are dropped at the next load and at a map unload
   outside a load.
 - Multiplayer: every peer reads its own save copy, and client copies can differ from the
-  host's. Records are not compared across peers; the multiplayer save readiness agreement
-  ([SavegameLoadCoordinator](../src/Savegames/SavegameLoadCoordinator.cs)) covers mod settings
-  only. Keep simulation-relevant records identical on every peer, or synchronize them yourself.
+  host's. Records declared `SimulationRelevant` are compared before a multiplayer save loads
+  (see [multiplayer record comparison](#multiplayer-record-comparison)); other records are not.
+  Nothing is synchronized or repaired.
 - Load paths: the result `Source` names the Extender event (`SaveGame`, `MultiplayerSave`,
   `MapToPlay`, `EditorMap`). Multiplayer saves load through `OnLoadMap`, whose Extender
   `LoadContext` reports a map; `MultiplayerSave` is chosen while APIShared's confirmed
@@ -141,7 +153,96 @@ thrown into the game or the Extender.
   `LoadContext` flag is never used. Which other menu paths raise which event, and the thread
   of the save and load callbacks, are not yet verified in the game: single-player and
   multiplayer save loads, map and campaign starts, editor loads and saves are pending
-  in-game checks.
+  in-game checks, as is the multiplayer record comparison with two players.
+
+## Prepared multiplayer save lifetime
+
+`APIShared.Savegames.MultiplayerSavePreparation` observes the existing save-load
+coordinator; it does not initiate a second load or send another protocol. Register
+an owner-bound observer on Unity during initialization. The current snapshot is
+immutable and may be retained or read from another thread. Notifications and
+optional current-state replay run on Unity, outside registry locks, in deterministic
+priority/owner/ID order; observer failures are isolated.
+
+Each snapshot identifies the SDK attempt, revision, lobby/host, local role, detached
+human roster, native save name/checksum/time, and this computer's checked local path
+and SHA-256. The latter is **not** a checksum to compare with another computer's
+whole save. Original native save checks and declared-record comparison remain in
+force. `Preparing` is published before the first readiness evaluation, including
+solo hosts that can proceed synchronously from the original call. The coordinator
+waits until all `Preparing` observers have returned before its first evaluation.
+A synchronous tick requested by an observer cannot bypass that delivery boundary.
+If an observer starts another save, that operation's entry continuation runs after
+the queued notifications, outside observer dispatch; it does not wait for a render
+frame. Subsequent `Released` and `NativeLoading` observers still finish synchronously
+before admission is revalidated or the ordinary native loader is invoked. Cancelled
+or replaced operations cannot execute an already queued entry continuation.
+
+The subsequent phases are `Acknowledged`, `Released`, `NativeLoading` and `Ended`.
+Not every peer reaches every phase. End reasons distinguish cancellation,
+replacement, timeout, rejection and ordinary scope completion. Scope completion is
+not evidence that a mission started: use the mission lifecycle and advancing native
+ticks for that. `Current` is cleared when an operation ends; queued callbacks can
+already observe a newer operation, so always match operation ID and revision.
+
+Use `LobbyLaunchGuards.TryRegisterReadiness` to return a typed `Ready`, `Waiting` or
+`Rejected` result. Waiting preserves the existing bounded save preparation, before
+client acknowledgement and host release. Final native admission remains strict.
+For ordinary buttons a waiting result still blocks that click. Existing string
+guards keep their original rejection semantics. The guard's optional `PreparedSave`
+snapshot supplies this same checked provenance and is null for ordinary buttons.
+
+A dialog preparation that publishes consumer data should keep an immutable local
+candidate bound to the selected file. Transfer it to the matching SDK attempt from
+`Preparing`, not from `AttemptFinished`: a solo host may have progressed further
+before the dialog callback returns. Discard untransferred candidates on failed
+attempts. On cancellation/replacement/timeout, withdraw only the ending operation's
+temporary overlays. After mission ownership transfers, stale preparation cleanup
+must not restore data over the new mission. Dialog `Confirmed` means its original
+callback returned, not that multiplayer loading or simulation completed.
+
+## Multiplayer record comparison
+
+Set `SimulationRelevant = true` on a registration whose record holds simulation state that
+must be identical on every player, for example unit identities or building state that the
+mod's simulation reads. Leave it false (the default) for local, view or presentation data,
+and keep such data in a separate record. At most 64 registrations may declare it.
+
+**What is compared.** When the host selects a multiplayer save, the save readiness agreement
+([SavegameLoadCoordinator](../src/Savegames/SavegameLoadCoordinator.cs)) reads, on every
+player, that player's own copy of the selected save and takes the SHA-256 of each declared
+record's stored bytes (or notes that the record is absent or unreadable). Clients send their
+list with their readiness confirmation; the host compares each list with its own and releases
+the load only when every player's settings fingerprint and declared records match.
+
+**What is not compared.** Undeclared records; mod settings (the agreement already brings
+every client's host settings to the saved values and compares their fingerprint); anything in
+memory, such as state of an earlier single-player mission or of the lobby; other saves; the
+rest of the save file, whose bytes can legitimately differ between players. Players can
+therefore change settings and play single-player freely before loading a shared multiplayer
+save. Loading that save then replaces earlier state: the load reports each record with
+`Restored` or `NoRecord`, and kept entries of the earlier mission are dropped.
+
+**On a difference.** The load does not start. Every player sees an explanation naming the
+player, the mod (owner GUID) and the record, and whether the record differs, is missing on one
+side, is unreadable, or is declared by only one side (different mod versions). At most three
+differences are listed. A hash comparison detects differences only; it neither copies nor
+repairs data.
+
+**Protocol version.** The readiness packets carry protocol version 2. A player whose
+APIShared build speaks the first, unversioned protocol, or a later one, is named in a message
+saying the versions differ, and the load is blocked. A build that cannot read version-2
+packets cannot confirm either; the host's 60-second timeout then names the players that did
+not confirm.
+
+**Cost.** Nothing runs per tick. Per multiplayer load request, when at least one record is
+declared and another player is present, each player reads its save's mod data archive once
+and hashes the declared records. On an 8 MiB test save with a 256 KiB declared record this
+took about 6 ms, against about 12 ms for the whole-file SHA-256 the agreement already takes
+twice per player (`SavegameReadinessProtocolTests`: warm file cache, .NET Framework test host,
+not the game's Mono runtime; not a frame-time measurement). Each declared record adds its
+owner GUID, identifier and 32 bytes to the readiness packets, about 70 bytes for typical
+names; the channel limit allows 64 records with names at their maximum length.
 
 ## Implementation
 
@@ -217,7 +318,48 @@ classifies the source of an `OnLoadMap` load.
 entries across a downgrade and upgrade, deletion of unwritten known entries, the migration
 chain, failed migration, corrupt and too-new records, legacy import, `NoRecord` and mission
 boundaries, both subscription orders, isolation and ordering of several mods, every limit on
-writer and reader, scope and registration validation. `VersionedSaveDataRuntimeTests`
-(APISharedTests) bind to the installed Script Extender handler table and feed the binding the
-real event argument types. Neither runs the game; in-game checks are listed under
+writer and reader, scope and registration validation, the bounded set of simulation-relevant
+declarations, and the single-player to multiplayer-save transition (earlier single-player
+state and differing local records do not reject a shared save, the multiplayer load replaces
+that state, a different declared record is named). `SavegameRecordComparisonTests`
+(Core.Tests) cover every kind of difference, the explanation, peer list validation and the
+host's acceptance rules. `VersionedSaveDataRuntimeTests` (APISharedTests) bind to the
+installed Script Extender handler table and feed the binding the real event argument types;
+`SavegameReadinessProtocolTests` cover the version-2 packet, protocol-1 recognition and reply,
+later versions, malformed lists, and digests read from save files built with the Extender's
+own archive class. None of them runs the game; in-game checks are listed under
 [Public limits](#public-limits).
+
+
+## Required atomic simulation records
+
+`VersionedSaveDataRegistration.RequireAtomicWrite` is additive and defaults to false.
+Register opted-in records after native initialization and inspect
+`VersionedSaveData.IsAtomicWriteAvailable`. Registration fails when the shared protected
+writer is unavailable. Existing registrations retain their capture and retention behavior.
+
+For an in-scope save, the existing native writer owner holds the actual engine monitor,
+captures each required record once before creating the temporary native file, and reuses
+the complete frozen record during the Extender archive callback. Capture must be brief:
+copy consumer state under its own lock, in engine-monitor then consumer-lock order.
+Capture must be read-only with respect to simulation and must not issue gameplay calls.
+Never acquire the engine monitor while holding that consumer lock elsewhere. Callbacks
+must not start another save or wait for another thread. The writer verifies complete native
+I/O, archive delivery and exact saved bytes before atomically replacing the destination.
+False/throwing captures, kept unreadable records, stale/omitted archive data and write
+failures reject replacement; they cannot silently retain an earlier required snapshot.
+Empty successful records are valid. No additional work runs per simulation tick.
+
+For early application, `NativeWorldRestoreEvents.TryRegister` shares the existing raw
+restore owner. Register with a stable owner GUID and local ID after native initialization;
+check `IsAvailable` and the returned reason. Participants run after successful raw native
+restoration and existing internal participants, before AI restoration and the first native
+simulation fold, under the actual engine monitor. Order is numeric then ordinal owner/ID.
+Callbacks run outside registration locks, without replay, removal or implicit dispatch.
+A false result or exception rejects native initialization without retrying the original.
+`NativeWorldRestoreContext.Mission` identifies the current pending managed mission and may
+be null; `InvocationId` is local diagnostic identity and must not be persisted or compared
+across peers. Prepare detached bytes in `Prepared`, apply only matching candidates here,
+and avoid applying them again or clearing them in later `Loaded`/mission-start callbacks.
+These events do not synchronize or authorize gameplay. A missing old record may explicitly
+restore empty metadata while leaving existing native state unchanged.

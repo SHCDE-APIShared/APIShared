@@ -8,8 +8,7 @@ namespace APIShared.ModSettings
         /// <summary>Optional mode presentation rules. Configure on the UI thread before settings registration; binding does not alter settings, authority or persistence.</summary>
         public ModSettingsModeAvailability System_ModeAvailability { get; } = new ModSettingsModeAvailability();
         /// <summary>One compact page-level legend, localized through ResolveSettingsUiText.</summary>
-        public string System_ModeNoticeText => ResolveSettingsUiTextSafe("Common.InactiveModeSettingsNotice",
-            "Settings inactive in the selected game mode have a tinted background. Changes are saved for later games.");
+        public string System_ModeNoticeText => ResolveSettingsUiTextSafe("Common.InactiveModeSettingsNotice", APIShared.Localization.UiText.English("Common.InactiveModeSettingsNotice"));
         /// <summary>Shows the compact legend only when some setting is inactive; consumers can combine it with their existing notice.</summary>
         public Visibility System_ModeNoticeVisibility => System_ModeAvailability.HasInactive ? Visibility.Visible : Visibility.Collapsed;
 
@@ -59,10 +58,16 @@ namespace APIShared.ModSettings
 
         private void RaiseModeNoticeProperties()
         {
-            base.OnPropertyChanged(nameof(System_ModeNoticeVisibility));
-            base.OnPropertyChanged(nameof(System_ModeNoticeText));
-            base.OnPropertyChanged(nameof(System_ConsumerModeNoticeVisibility));
-            base.OnPropertyChanged(nameof(System_ConsumerModeNoticeText));
+            derivedAccessOutputScope++;
+            try
+            {
+                RaiseDerivedAccessOutput(nameof(System_ModeNoticeVisibility));
+                RaiseDerivedAccessOutput(nameof(System_ModeNoticeText));
+                RaiseDerivedAccessOutput(nameof(System_ConsumerModeNoticeVisibility));
+                RaiseDerivedAccessOutput(nameof(System_ConsumerModeNoticeText));
+            }
+            finally { derivedAccessOutputScope--; }
+            RefreshAfterDerivedAccessOutputs();
         }
     }
 }

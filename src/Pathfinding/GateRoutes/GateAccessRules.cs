@@ -1,5 +1,6 @@
 using System;
 using System.Threading;
+using APIShared.Events;
 namespace APIShared
 {
     /// <summary>Changes only the additional gate access policy; never overrides native physical checks.</summary>
@@ -38,7 +39,11 @@ namespace APIShared
     /// the preceding decision and are reported to the publisher. Registration does not install hooks or scan gates.</summary>
     public static class GateAccessRules
     {
-        private sealed class Entry { internal string Owner,Id;internal Func<GateAccessQuery,GateAccessDecision> Rule; }
+        private sealed class Entry
+        {
+            internal string Owner,Id;internal Func<GateAccessQuery,GateAccessDecision> Rule;
+            internal static readonly Func<Entry,RegistrationKey> Key=entry=>new RegistrationKey(entry.Owner,entry.Id);
+        }
         private static readonly object Sync=new object();
         private sealed class Registry
         {
@@ -57,9 +62,8 @@ namespace APIShared
             if(string.IsNullOrWhiteSpace(ownerGuid)||string.IsNullOrWhiteSpace(registrationId)||rule==null) { reason="Owner, registration ID and rule required";return false; }
             lock(Sync) {
                 var state=registry; var old=state.Entries;
-                foreach(var e in old)if(e.Owner==ownerGuid&&e.Id==registrationId) { reason="Registration already exists";return false; }
-                var next=new Entry[old.Length+1];Array.Copy(old,next,old.Length);next[old.Length]=new Entry{Owner=ownerGuid,Id=registrationId,Rule=rule};
-                Array.Sort(next,(a,b)=> {int c=StringComparer.Ordinal.Compare(a.Owner,b.Owner);return c!=0?c:StringComparer.Ordinal.Compare(a.Id,b.Id);});
+                if(OrderedRegistrations.Contains(old,Entry.Key,ownerGuid,registrationId)) { reason="Registration already exists";return false; }
+                var next=OrderedRegistrations.WithAdded(old,new Entry{Owner=ownerGuid,Id=registrationId,Rule=rule},Entry.Key);
                 Volatile.Write(ref registry,new Registry(next,checked(state.Version+1)));reason=null;return true;
             }
         }

@@ -38,11 +38,12 @@ namespace APIShared
             catch (Exception ex) { LogCallbackFailure("recruitment " + registration.Category.Key, ex); }
             lock (sync)
             {
-                if (accepted) recruitmentLease = new RecruitmentLease(ticket, Time.realtimeSinceStartup + 10f);
+                if (accepted) { recruitmentLease = new RecruitmentLease(ticket, Time.realtimeSinceStartup + 10f); UpdateFrameDemand(); }
                 else
                 {
                     activeRecruitment.Remove(baseType);
                     refreshRequested = true;
+                    UpdateFrameDemand();
                 }
             }
         }
@@ -58,7 +59,7 @@ namespace APIShared
 
         private void ResetActiveRecruitment(int baseType)
         {
-            lock (sync) { activeRecruitment.Remove(baseType); refreshRequested = true; }
+            lock (sync) { activeRecruitment.Remove(baseType); refreshRequested = true; UpdateFrameDemand(); }
         }
 
         private void ResetRecruitment()
@@ -71,6 +72,7 @@ namespace APIShared
                 restoreImages |= activeImages;
                 refreshRequested = activeSurfaces != UnitHudSurface.None || activeImages;
                 pendingPresentation = restoreSurfaces != UnitHudSurface.None || restoreImages || refreshRequested;
+                UpdateFrameDemand();
             }
         }
 
@@ -141,14 +143,15 @@ namespace APIShared
                 archerVariantNext = next;
                 archerVariantPrevious.PreviewMouseDown += OnRecruitmentPreviousMouseDown;
                 archerVariantNext.PreviewMouseDown += OnRecruitmentNextMouseDown;
+                // Hover handlers are bound once per button instance, like the click handlers.
+                foreach (Button button in new[] { previous, next })
+                {
+                    ToolTipService.SetIsEnabled(button, false);
+                    button.MouseEnter += (sender, args) => ShowRecruitmentHover(button);
+                    button.MouseLeave += (sender, args) => recruitmentHover.Close(button);
+                }
             }
             recruitmentHover.Close();
-            foreach (Button button in new[] { previous, next })
-            {
-                ToolTipService.SetIsEnabled(button, false);
-                button.MouseEnter += (sender, args) => ShowRecruitmentHover(button);
-                button.MouseLeave += (sender, args) => recruitmentHover.Close(button);
-            }
             archerVariantHost = host;
             archerVariantTint = tint;
             recruitmentPanel = main.HUDBuildingPanel;
@@ -208,6 +211,7 @@ namespace APIShared
                 if (next < 0 || next >= choices.Length) activeRecruitment.Remove(baseType);
                 else activeRecruitment[baseType] = choices[next].Category.Key;
                 refreshRequested = true;
+                UpdateFrameDemand();
             }
             args.Handled = true;
         }

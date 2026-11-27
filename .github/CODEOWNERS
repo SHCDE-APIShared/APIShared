@@ -1,0 +1,17 @@
+# Advisory review requests only (issue #2): no rule requires code-owner or any approving review.
+# The last matching line wins: the catch-all applies only where no area line matches.
+*                                   @Serpens66 @Ensrick
+/src/Workshop/                      @Serpens66
+/Workshop/                          @Serpens66
+/src/Pathfinding/                   @Serpens66
+/src/ScriptExtenderFixes/           @Serpens66
+/src/ScriptExtenderReplacements/    @Serpens66
+/src/Lobby/                         @Serpens66
+/src/ModSettings/                   @Serpens66
+/tools/Release/                     @Serpens66
+/tools/WorkshopUploader/            @Serpens66
+/src/Audio/                         @Serpens66 @Ensrick
+/src/Core/Events/                   @Serpens66 @Ensrick
+/src/Units/Settled/                 @Ensrick
+/src/Savegames/VersionedSave*       @Ensrick
+/docs/SAVE_DATA.md                  @Ensrick

@@ -1,4 +1,6 @@
 using APIShared.ModSettings;
+using APIShared.Buildings;
+using SHCDESE.Interop;
 using APIShared;
 using CrusaderDE;
 using Iced.Intel;
@@ -127,16 +129,9 @@ namespace APISharedTests
             Assert(supported.DistanceBlockRva == 0xB7B70 &&
                 supported.DistanceBlockRva + supported.VanillaDistanceBlockBytes.Length == 0xB7BBB,
                 "distance patch must occupy exactly the post-hook Vanilla arithmetic block");
-            Assert(supported.VanillaDistanceBlockBytes.Length == 75 &&
-                supported.CenteredDistanceBlockBytes.Length == supported.VanillaDistanceBlockBytes.Length,
-                "centered distance patch must preserve the 75-byte block size");
-            AssertSequenceEqual(supported.CenteredDistanceBlockBytes, SupportedCenteredDistanceBytes,
-                "supported centered distance bytes must match the reviewed crash-safe sequence");
-
             var originTarget = new GatehouseDistanceOriginTarget(
                 ModuleBase + supported.DistanceBlockRva,
-                supported.VanillaDistanceBlockBytes,
-                supported.CenteredDistanceBlockBytes);
+                supported.VanillaDistanceBlockBytes);
             var timingTarget = new GatehouseTimingTarget(
                 ModuleBase + supported.AiCloseDistanceRva,
                 ModuleBase + supported.AiReopenDelayRva,
@@ -156,25 +151,99 @@ namespace APISharedTests
                 Assert(!originTarget.Intervals[0].Overlaps(timingInterval),
                     "distance-origin and timing intervals must be disjoint");
 
-            byte[] unitYLoad = Hex("0F BF 8C 2A 10 8B 7E 06");
-            int unitYLoadOffset = IndexOfSequence(supported.CenteredDistanceBlockBytes, unitYLoad);
-            int firstCdqOffset = Array.IndexOf(supported.CenteredDistanceBlockBytes, (byte)0x99);
-            Assert(unitYLoadOffset == 9 && unitYLoadOffset + unitYLoad.Length <= firstCdqOffset,
-                "unit Y must be loaded through the live RDX unit offset before CDQ overwrites RDX");
-
-            Assert(GatehouseDistanceOriginService.ComputeCenteredDistanceNative(10, 20, 12, 24, 88, 176) == 0,
-                "integer midpoint should map to zero native distance");
-            Assert(GatehouseDistanceOriginService.ComputeCenteredDistanceNative(10, 20, 11, 23, 84, 172) == 0,
-                "half-tile midpoint should remain exact in native coordinates");
-            Assert(GatehouseDistanceOriginService.ComputeCenteredDistanceNative(12, 24, 10, 20, 88, 176) == 0,
-                "reversed bounds should produce the same midpoint");
-            Assert(GatehouseDistanceOriginService.ComputeCenteredDistanceNative(10, 20, 12, 24, 80, 176) == 8 &&
-                GatehouseDistanceOriginService.ComputeCenteredDistanceNative(10, 20, 12, 24, 96, 176) == 8,
-                "opposite horizontal approaches should have equal distance");
-            Assert(GatehouseDistanceOriginService.ComputeCenteredDistanceNative(10, 20, 12, 24, 80, 168) == 8 &&
-                GatehouseDistanceOriginService.ComputeCenteredDistanceNative(10, 20, 12, 24, 96, 184) == 8,
-                "diagonal approaches should retain Vanilla Chebyshev distance");
         }
+
+        [TestMethod]
+        [TestCategory("NativeContracts")]
+        public void VerifyGatehouseGeometryAndConservativeRange()
+        {
+            Assert(BuildingGeometry.TryGetSquareFootprintCenter(408, 348, 7, out int x, out int y) &&
+                x == 411 * 8 + 4 && y == 351 * 8 + 4, "the large square gate center is the center of its middle tile");
+            Assert(BuildingGeometry.TryGetSquareFootprintCenter(10, 20, 2, out x, out y) &&
+                x == 88 && y == 168, "the center of an even-width footprint lies on a tile boundary");
+            Assert(!BuildingGeometry.TryGetSquareFootprintCenter(10, 20, 0, out _, out _) &&
+                !BuildingGeometry.TryGetSquareFootprintCenter(int.MaxValue, 20, 2, out _, out _),
+                "missing or unrepresentable square bounds cannot produce a midpoint");
+
+            var gate = new GameBuilding
+            {
+                r_TilePositionXBegin = 100, r_TilePositionYBegin = 50, r_OccupyTileGridSize = 7,
+                r_BuildingType = eStructs.STRUCT_GATE_MAIN
+            };
+            var candidate = new GameUnit { r_CurrentWorldPositionX = 1040, r_CurrentWorldPositionY = 400 };
+            Assert(!GatehouseClosingRules.IsDefinitelyOutsideRange(in gate, in candidate,
+                GatehouseDistanceOrigin.VanillaBuildingBegin, 400),
+                "a candidate at 30 fields is still eligible for reachability at a configured 50 fields");
+            Assert(GatehouseClosingRules.IsDefinitelyOutsideRange(in gate, in candidate,
+                GatehouseDistanceOrigin.VanillaBuildingBegin, 200),
+                "the same candidate is outside the Vanilla maximum");
+
+            candidate.r_CurrentWorldPositionX = 1000;
+            Assert(GatehouseClosingRules.IsDefinitelyOutsideRange(in gate, in candidate,
+                GatehouseDistanceOrigin.VanillaBuildingBegin, 200),
+                "equality is outside the strict native threshold from the corner");
+            Assert(!GatehouseClosingRules.IsDefinitelyOutsideRange(in gate, in candidate,
+                GatehouseDistanceOrigin.BuildingBoundsCenter, 200),
+                "centering brings the same candidate inside range");
+            // Derive the positions from editor tile centers, independently of the geometry helper.
+            const int centerX = 103 * 8 + 4, centerY = 53 * 8 + 4;
+            foreach (var (dx, dy) in new[] { (-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (1, 1) })
+            {
+                foreach (int distance in new[] { 200, 199, 201 })
+                {
+                    candidate.r_CurrentWorldPositionX = (ushort)(centerX + dx * distance);
+                    candidate.r_CurrentWorldPositionY = (ushort)(centerY + dy * distance);
+                    Assert(GatehouseClosingRules.IsDefinitelyOutsideRange(in gate, in candidate,
+                        GatehouseDistanceOrigin.BuildingBoundsCenter, 200) == (distance >= 200),
+                        $"centered closing boundary differs at ({dx},{dy}), distance {distance}");
+                }
+            }
+        }
+
+        [TestMethod]
+        [TestCategory("NativeContracts")]
+        public void VerifyEffectiveGatehouseRangePublication()
+        {
+            byte[] image = CreatePeImage(0x4000, true);
+            GatehouseBuildTarget catalog = InstallTestGatehouse(image);
+            var runtime = InitializeRuntime(image, catalog, SeedRuntimeMemory(image, catalog));
+            Assert(runtime.TryReadGatehouseClosingRange(out GatehouseDistanceOrigin initialOrigin, out int initialRange) &&
+                initialOrigin == GatehouseDistanceOrigin.VanillaBuildingBegin && initialRange == 200,
+                "both available services start at the published Vanilla origin and maximum");
+            Assert(runtime.TryGetGatehouseTiming("timing", out IGatehouseTimingCapability timing, out _),
+                "validated timing capability is available");
+            Assert(runtime.TryGetGatehouseDistanceOrigin("origin", out IGatehouseDistanceOriginCapability origin, out _),
+                "validated distance origin capability is available");
+
+            Assert(timing.TryApply(new GatehouseTimingSettings(true, 2, 20, 15, 50), out _) &&
+                runtime.TryReadGatehouseClosingRange(out GatehouseDistanceOrigin aiOrigin, out int aiRange) &&
+                aiOrigin == GatehouseDistanceOrigin.VanillaBuildingBegin && aiRange == 400,
+                "the larger AI range is published independently of origin");
+            Assert(origin.TryApply(GatehouseDistanceOrigin.BuildingBoundsCenter, out _) &&
+                timing.TryApply(new GatehouseTimingSettings(true, 2, 20, 30, 5), out _) &&
+                runtime.TryReadGatehouseClosingRange(out GatehouseDistanceOrigin humanOrigin, out int humanRange) &&
+                humanOrigin == GatehouseDistanceOrigin.BuildingBoundsCenter && humanRange == 240,
+                "the larger human range is read from timing alongside the independently updated origin");
+            Assert(timing.TryApply(new GatehouseTimingSettings(false, 0, 0, 0, 0), out _) &&
+                runtime.TryReadGatehouseClosingRange(out GatehouseDistanceOrigin restoredOrigin, out int restoredRange) &&
+                restoredOrigin == GatehouseDistanceOrigin.BuildingBoundsCenter && restoredRange == 200,
+                "disabling custom timing restores Vanilla distances while leaving centering active");
+
+            foreach (int failedSite in new[] { catalog.DistanceBlockRva, catalog.DecisionBlockRva })
+            {
+                FakeMemory unavailable = SeedRuntimeMemory(image, catalog);
+                unavailable.SetByte(ModuleBase + failedSite, 0x90);
+                var partiallyValidated = InitializeRuntime(image, catalog, unavailable);
+                Assert(!partiallyValidated.TryReadGatehouseClosingRange(out _, out _),
+                    "a partial native validation cannot provide a safe range for skipping");
+            }
+
+            var gate = new GameBuilding { r_BuildingType = eStructs.STRUCT_GATE_MAIN };
+            var distant = new GameUnit { r_CurrentWorldPositionX = 1000, r_CurrentWorldPositionY = 1000 };
+            Assert(!GatehouseClosingRules.IsDefinitelyOutsideRange(in gate, in distant),
+                "the standalone public query cannot skip a candidate without initialized process state");
+        }
+
         [TestMethod]
         [TestCategory("NativeContracts")]
         public void VerifyGatehouseDistanceOriginTransaction() => TestGatehouseDistanceOriginTransaction();
@@ -323,18 +392,6 @@ namespace APISharedTests
                 "Stronghold Crusader Definitive Edition_Data", "Plugins", "x86_64", "CrusaderDE.dll"))));
             const ulong moduleBase = 0x00007FF940F90000;
             const ulong stubAddress = 0x00007FF8D1144000;
-            Instruction[] displaced = DecodeInstructions(
-                GatehouseBuildTarget.Supported.VanillaDistanceBlockBytes,
-                moduleBase + GatehousePermanentRuntimeState.DistanceHookRva);
-            var distanceAssembler = new Assembler(64);
-            GatehousePermanentRuntimeState.GenerateDistanceOrigin(
-                distanceAssembler,
-                displaced,
-                0x000001A000001000);
-            byte[] distanceStub = AssembleAndDecode(distanceAssembler, stubAddress);
-            Assert(distanceStub.Length > displaced.Length,
-                "gatehouse distance generator assembles its logical gate and relocated Vanilla fallback");
-
             var decisionAssembler = new Assembler(64);
             GatehousePermanentRuntimeState.GenerateDecision(
                 decisionAssembler,

@@ -1,0 +1,1030 @@
+using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+
+namespace APIShared.Audio
+{
+    /// <summary>Immutable, game-independent discovery of the audited Vanilla unit-voice assets.</summary>
+    /// <remarks>A cue classifies an asset, not its caller. The same selection asset may also acknowledge
+    /// recruitment; use UnitVoiceSource for the actual invocation provenance. Keys remain stable and
+    /// include the canonical filename; no filesystem or native-memory access occurs during lookup.</remarks>
+    public static class UnitVoiceCatalog
+    {
+        private static readonly UnitVoiceCue[] cues;
+        private static readonly ReadOnlyCollection<UnitVoiceCue> view;
+        private static readonly ReadOnlyCollection<UnitVoiceSourceDescriptor> sources;
+        private static readonly ReadOnlyCollection<UnitVoiceBankDescriptor> voiceBanks;
+        private static readonly Dictionary<string, UnitVoiceCue> keys = new Dictionary<string, UnitVoiceCue>(StringComparer.Ordinal);
+        private static readonly Dictionary<string, UnitVoiceCue> files = new Dictionary<string, UnitVoiceCue>(StringComparer.OrdinalIgnoreCase);
+        private static readonly Dictionary<UnitVoiceCue, string> folders = new Dictionary<UnitVoiceCue, string>();
+        private static readonly Dictionary<UnitVoiceCue, int> ordinals = new Dictionary<UnitVoiceCue, int>();
+        private static readonly Dictionary<string, string> bankFolders = new Dictionary<string, string>(StringComparer.Ordinal);
+
+        static UnitVoiceCatalog()
+        {
+            var result = new List<UnitVoiceCue>();
+            foreach (string row in Data.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                string[] parts = row.TrimEnd('\r').Split('|');
+                var situation = (UnitVoiceSituation)Enum.Parse(typeof(UnitVoiceSituation), parts[2], false);
+                var evidence = situation == UnitVoiceSituation.AttackStrong || situation == UnitVoiceSituation.AttackWeak || situation == UnitVoiceSituation.AttackMelee
+                    ? UnitVoiceEvidence.Inferred : UnitVoiceEvidence.NativeAudited;
+                var cue = new UnitVoiceCue("unitvoice." + parts[0].ToLowerInvariant(), parts[0], parts[1], situation, evidence);
+                keys.Add(cue.Key, cue); files.Add(cue.FileName, cue); folders.Add(cue, parts[3].Length == 0 ? null : parts[3]); ordinals.Add(cue, result.Count); result.Add(cue);
+            }
+            cues = result.ToArray(); view = Array.AsReadOnly(cues);
+            // Every bank keeps all of its routed files in one speech folder (troops or peasants).
+            foreach (var cue in cues)
+                if (folders[cue] != null && !bankFolders.ContainsKey(cue.VoiceBankKey)) bankFolders.Add(cue.VoiceBankKey, folders[cue]);
+            var descriptions = new List<UnitVoiceSourceDescriptor>();
+            foreach (string key in sourceKeys) descriptions.Add(new UnitVoiceSourceDescriptor(key, DescribeSource(key), UnitVoiceEvidence.NativeAudited));
+            sources = descriptions.AsReadOnly();
+            var groups = new SortedDictionary<string, List<UnitVoiceCue>>(StringComparer.Ordinal);
+            foreach (var cue in cues)
+            {
+                if (!groups.TryGetValue(cue.VoiceBankKey, out var group)) groups.Add(cue.VoiceBankKey, group = new List<UnitVoiceCue>());
+                group.Add(cue);
+            }
+            var banks = new List<UnitVoiceBankDescriptor>();
+            foreach (var group in groups) banks.Add(new UnitVoiceBankDescriptor(group.Key, group.Value.AsReadOnly()));
+            voiceBanks = banks.AsReadOnly();
+        }
+
+        /// <summary>All catalog cues in a stable ordinal order for this loaded APIShared build.</summary>
+        /// <remarks>Only cue keys are public identities. Array order and total count may grow.</remarks>
+        public static IReadOnlyList<UnitVoiceCue> Cues => view;
+        /// <summary>Immutable generator-family descriptions and static evidence. Runtime availability remains a UnitVoiceEvents query.</summary>
+        public static IReadOnlyList<UnitVoiceSourceDescriptor> Sources => sources;
+        /// <summary>Immutable bank groups for discovering and comparing complete cue sets. Bank identity does not identify the requesting unit.</summary>
+        public static IReadOnlyList<UnitVoiceBankDescriptor> VoiceBanks => voiceBanks;
+
+        private static string DescribeSource(string key)
+        {
+            switch (key)
+            {
+                case "Troop.Dispatcher": return "Audited troop selection and order generator; requested unit type and selected voice bank may differ.";
+                case "Engineer.SpecialActions": return "Engineer and siege-device action table; an original requested unit type is not always available.";
+                case "Recruitment.European": return "Successful European troop recruitment acknowledgements; adviser and Genie warnings are excluded.";
+                case "Recruitment.Arabian": return "Successful Arabian troop recruitment acknowledgements; the selected confirmation may reuse an earlier recruitment choice.";
+                case "Recruitment.Bedouin": return "Successful Bedouin troop recruitment acknowledgements; the selected bank is distinct from the current recruitment request.";
+                case "Recruitment.Support": return "Successful support-unit recruitment acknowledgements, including alternative religious voice banks.";
+                case "Recruitment.Tunneler": return "Successful Tunneler recruitment acknowledgement; recruitment failure warnings are excluded.";
+                case "Civilian.Selection": return "Selected civilian contextual comments; actual ownership and requesting/view player are separate nullable facts.";
+                default: throw new InvalidOperationException("Missing unit voice source description: " + key);
+            }
+        }
+
+        private static readonly ReadOnlyCollection<string> sourceKeys = Array.AsReadOnly(new[] {
+            "Troop.Dispatcher", "Engineer.SpecialActions", "Recruitment.European", "Recruitment.Arabian",
+            "Recruitment.Bedouin", "Recruitment.Support", "Recruitment.Tunneler", "Civilian.Selection" });
+        /// <summary>Stable source-family keys accepted by source selections. A key identifies a generator, not a unit instance.</summary>
+        public static IReadOnlyList<string> SourceKeys => sourceKeys;
+        internal static bool IsKnownSourceKey(string key)
+        { if (key == null) return false; for (int i = 0; i < sourceKeys.Count; i++) if (sourceKeys[i] == key) return true; return false; }
+
+        /// <summary>Finds an exact, ordinal cue key. Returns false for null or unknown keys.</summary>
+        /// <param name="key">A key from Cues.</param><param name="cue">The immutable cue on success.</param>
+        /// <returns>Whether the key is registered in this catalog.</returns>
+        public static bool TryGetCue(string key, out UnitVoiceCue cue)
+        { cue = null; return key != null && keys.TryGetValue(key, out cue); }
+
+        internal static bool TryResolveFileName(string path, out UnitVoiceCue cue)
+        {
+            cue = null; if (string.IsNullOrEmpty(path)) return false;
+            int slash = Math.Max(path.LastIndexOf('/'), path.LastIndexOf('\\'));
+            return files.TryGetValue(slash < 0 ? path : path.Substring(slash + 1), out cue);
+        }
+        internal static string SpeechFolder(UnitVoiceCue cue) => cue != null && folders.TryGetValue(cue, out string value) ? value : null;
+        // The speech folder used by the other files of the cue's bank. A replacement for an intent that
+        // Vanilla never routes plays through it; the folder only selects the path and speech category.
+        internal static string BankSpeechFolder(UnitVoiceCue cue) =>
+            cue != null && bankFolders.TryGetValue(cue.VoiceBankKey, out string value) ? value : null;
+        internal static int Ordinal(UnitVoiceCue cue) => cue != null && ordinals.TryGetValue(cue, out int value) ? value : -1;
+        internal static bool TryGetOrdinal(int ordinal, out UnitVoiceCue cue)
+        { cue = ordinal >= 0 && ordinal < cues.Length ? cues[ordinal] : null; return cue != null; }
+
+        // spear_ladder1-3 (push an enemy ladder off the wall) also fill the pikeman column of the native table,
+        // but only the spearman handler requests that situation (0x143B16), so they stay in the spearman bank.
+        // Generated from the hash-bound native tables, not from installed language folders.
+        // Null.wav intentionally has no cue: a silent Vanilla branch must remain silent.
+        private const string Data = @"aassasin_atks1.wav|assassin|AttackStrong|troops
+aassasin_atks2.wav|assassin|AttackStrong|troops
+aassasin_atks3.wav|assassin|AttackStrong|troops
+aassasin_atks4.wav|assassin|AttackStrong|troops
+aassasin_atkw1.wav|assassin|AttackWeak|troops
+aassasin_atkw2.wav|assassin|AttackWeak|troops
+aassasin_atkw3.wav|assassin|AttackWeak|troops
+aassasin_atkw4.wav|assassin|AttackWeak|troops
+aassasin_disband1.wav|assassin|Disband|troops
+aassasin_m1.wav|assassin|Move|troops
+aassasin_m2.wav|assassin|Move|troops
+aassasin_m3.wav|assassin|Move|troops
+aassasin_m4.wav|assassin|MoveUnreachable|troops
+aassasin_m5.wav|assassin|MoveDistant|troops
+aassasin_moat1.wav|assassin|DigMoat|troops
+aassasin_s1.wav|assassin|Selection|troops
+aassasin_s2.wav|assassin|Selection|troops
+aassasin_s3.wav|assassin|Selection|troops
+aassasin_s4.wav|assassin|Selection|troops
+aassasin_s5.wav|assassin|Selection|troops
+aassasin_s6.wav|assassin|Selection|troops
+abow_atk_eqp1.wav|arabian-archer|Unknown|troops
+abow_atka1.wav|arabian-archer|Unknown|troops
+abow_atkh1.wav|arabian-archer|Unknown|troops
+abow_atkm1.wav|arabian-archer|AttackMelee|troops
+abow_atkm2.wav|arabian-archer|AttackMelee|troops
+abow_atkm3.wav|arabian-archer|AttackMelee|troops
+abow_atkm4.wav|arabian-archer|AttackMelee|troops
+abow_atknt.wav|arabian-archer|Unknown|troops
+abow_disband1.wav|arabian-archer|Disband|troops
+abow_light_pitch1.wav|arabian-archer|Unknown|troops
+abow_m1.wav|arabian-archer|Move|troops
+abow_m2.wav|arabian-archer|Move|troops
+abow_m3.wav|arabian-archer|Move|troops
+abow_m4.wav|arabian-archer|MoveUnreachable|troops
+abow_m5.wav|arabian-archer|MoveDistant|troops
+abow_moat1.wav|arabian-archer|DigMoat|troops
+abow_s1.wav|arabian-archer|Selection|troops
+abow_s2.wav|arabian-archer|Selection|troops
+abow_s3.wav|arabian-archer|Selection|troops
+abow_s4.wav|arabian-archer|Selection|troops
+abow_s5.wav|arabian-archer|Selection|troops
+abow_s6.wav|arabian-archer|Selection|troops
+aengineer_atks1.wav|arabian-engineer|AttackStrong|troops
+aengineer_balis1.wav|arabian-engineer|EngineerAction|troops
+aengineer_build1.wav|arabian-engineer|EngineerAction|troops
+aengineer_catplt1.wav|arabian-engineer|EngineerAction|troops
+aengineer_disband1.wav|arabian-engineer|Disband|troops
+aengineer_equip1.wav|arabian-engineer|EngineerAction|
+aengineer_equip2.wav|arabian-engineer|EngineerAction|
+aengineer_equip3.wav|arabian-engineer|EngineerAction|
+aengineer_equip4.wav|arabian-engineer|EngineerAction|troops
+aengineer_exit1.wav|arabian-engineer|EngineerAction|troops
+aengineer_launchcow1.wav|arabian-engineer|EngineerAction|troops
+aengineer_launchcow2.wav|arabian-engineer|EngineerAction|
+aengineer_launchcow3.wav|arabian-engineer|EngineerAction|
+aengineer_launchcow4.wav|arabian-engineer|EngineerAction|
+aengineer_launchcow5.wav|arabian-engineer|EngineerAction|
+aengineer_launchcow6.wav|arabian-engineer|EngineerAction|
+aengineer_m1.wav|arabian-engineer|Move|troops
+aengineer_m2.wav|arabian-engineer|Move|troops
+aengineer_m3.wav|arabian-engineer|Move|troops
+aengineer_manequip1.wav|arabian-engineer|EngineerAction|troops
+aengineer_mang1.wav|arabian-engineer|EngineerAction|troops
+aengineer_manoil1.wav|arabian-engineer|EngineerAction|troops
+aengineer_mansmelter1.wav|arabian-engineer|EngineerAction|troops
+aengineer_mcatplt.wav|arabian-engineer|EngineerAction|troops
+aengineer_moat1.wav|arabian-engineer|DigMoat|troops
+aengineer_mram.wav|arabian-engineer|EngineerAction|troops
+aengineer_mshield.wav|arabian-engineer|EngineerAction|troops
+aengineer_mtower.wav|arabian-engineer|EngineerAction|troops
+aengineer_pouroil1.wav|arabian-engineer|EngineerAction|troops
+aengineer_pouroil2.wav|arabian-engineer|EngineerAction|
+aengineer_pouroil3.wav|arabian-engineer|EngineerAction|
+aengineer_pouroil4.wav|arabian-engineer|EngineerAction|
+aengineer_pouroil5.wav|arabian-engineer|EngineerAction|
+aengineer_pouroil6.wav|arabian-engineer|EngineerAction|
+aengineer_pouroil7.wav|arabian-engineer|EngineerAction|
+aengineer_pouroil8.wav|arabian-engineer|EngineerAction|
+aengineer_pouroil9.wav|arabian-engineer|EngineerAction|
+aengineer_ram1.wav|arabian-engineer|EngineerAction|troops
+aengineer_s1.wav|arabian-engineer|Selection|troops
+aengineer_s2.wav|arabian-engineer|Selection|troops
+aengineer_sbalis.wav|arabian-engineer|EngineerAction|troops
+aengineer_scatplt.wav|arabian-engineer|EngineerAction|troops
+aengineer_sman.wav|arabian-engineer|EngineerAction|troops
+aengineer_sram.wav|arabian-engineer|EngineerAction|troops
+aengineer_sshield.wav|arabian-engineer|EngineerAction|
+aengineer_stower.wav|arabian-engineer|EngineerAction|troops
+aengineer_streb.wav|arabian-engineer|EngineerAction|troops
+aengineer_treb1.wav|arabian-engineer|EngineerAction|troops
+agrenadier_atkh1.wav|fire-thrower|Unknown|troops
+agrenadier_atkm1.wav|fire-thrower|AttackMelee|troops
+agrenadier_atkm2.wav|fire-thrower|AttackMelee|troops
+agrenadier_atkm3.wav|fire-thrower|AttackMelee|troops
+agrenadier_atkm4.wav|fire-thrower|AttackMelee|troops
+agrenadier_disband1.wav|fire-thrower|Disband|troops
+agrenadier_m1.wav|fire-thrower|Move|troops
+agrenadier_m2.wav|fire-thrower|Move|troops
+agrenadier_m3.wav|fire-thrower|Move|troops
+agrenadier_m4.wav|fire-thrower|MoveUnreachable|troops
+agrenadier_m5.wav|fire-thrower|MoveDistant|troops
+agrenadier_moat1.wav|fire-thrower|DigMoat|troops
+agrenadier_s1.wav|fire-thrower|Selection|troops
+agrenadier_s2.wav|fire-thrower|Selection|troops
+agrenadier_s3.wav|fire-thrower|Selection|troops
+agrenadier_s4.wav|fire-thrower|Selection|troops
+agrenadier_s5.wav|fire-thrower|Selection|troops
+agrenadier_s6.wav|fire-thrower|Selection|troops
+ahorse_atka1.wav|horse-archer|Unknown|troops
+ahorse_atkh1.wav|horse-archer|Unknown|troops
+ahorse_atkm1.wav|horse-archer|AttackMelee|troops
+ahorse_atkm2.wav|horse-archer|AttackMelee|troops
+ahorse_atkm3.wav|horse-archer|AttackMelee|troops
+ahorse_atkm4.wav|horse-archer|AttackMelee|troops
+ahorse_disband1.wav|horse-archer|Disband|troops
+ahorse_m1.wav|horse-archer|Move|troops
+ahorse_m2.wav|horse-archer|Move|troops
+ahorse_m3.wav|horse-archer|Move|troops
+ahorse_m4.wav|horse-archer|MoveUnreachable|troops
+ahorse_m5.wav|horse-archer|MoveDistant|troops
+ahorse_moat1.wav|horse-archer|DigMoat|troops
+ahorse_s1.wav|horse-archer|Selection|troops
+ahorse_s2.wav|horse-archer|Selection|troops
+ahorse_s3.wav|horse-archer|Selection|troops
+ahorse_s4.wav|horse-archer|Selection|troops
+ahorse_s5.wav|horse-archer|Selection|troops
+ahorse_s6.wav|horse-archer|Selection|troops
+Ambusher_ATKM1.wav|ambusher|AttackMelee|troops
+Ambusher_ATKM2.wav|ambusher|AttackMelee|troops
+Ambusher_ATKM3.wav|ambusher|AttackMelee|troops
+Ambusher_ATKM4.wav|ambusher|AttackMelee|troops
+Ambusher_Disband1.wav|ambusher|Disband|troops
+Ambusher_M1.wav|ambusher|Move|troops
+Ambusher_M2.wav|ambusher|Move|troops
+Ambusher_M3.wav|ambusher|Move|troops
+Ambusher_M4.wav|ambusher|MoveUnreachable|troops
+Ambusher_M5.wav|ambusher|MoveDistant|troops
+Ambusher_Moat1.wav|ambusher|DigMoat|troops
+Ambusher_Moat2.wav|ambusher|DigMoat|troops
+Ambusher_Moat3.wav|ambusher|DigMoat|troops
+Ambusher_S1.wav|ambusher|Selection|troops
+Ambusher_S2.wav|ambusher|Selection|troops
+Ambusher_S3.wav|ambusher|Selection|troops
+Ambusher_S4.wav|ambusher|Selection|troops
+Ambusher_S5.wav|ambusher|Selection|troops
+Ambusher_S6.wav|ambusher|Selection|troops
+arch_atk_eqp1.wav|archer|Unknown|troops
+arch_atka1.wav|archer|Unknown|troops
+arch_atkh1.wav|archer|Unknown|troops
+arch_atkm1.wav|archer|AttackMelee|troops
+arch_atkm2.wav|archer|AttackMelee|troops
+arch_atkm3.wav|archer|AttackMelee|troops
+arch_atkm4.wav|archer|AttackMelee|troops
+arch_atknt.wav|archer|Unknown|troops
+arch_disband1.wav|archer|Disband|troops
+arch_light_pitch1.wav|archer|Unknown|troops
+arch_m1.wav|archer|Move|troops
+arch_m2.wav|archer|Move|troops
+arch_m3.wav|archer|Move|troops
+arch_m4.wav|archer|MoveUnreachable|troops
+arch_m5.wav|archer|MoveDistant|troops
+arch_moat1.wav|archer|DigMoat|troops
+arch_moat2.wav|archer|DigMoat|troops
+arch_moat3.wav|archer|DigMoat|troops
+arch_s1.wav|archer|Selection|troops
+arch_s2.wav|archer|Selection|troops
+arch_s3.wav|archer|Selection|troops
+arch_s4.wav|archer|Selection|troops
+arch_s5.wav|archer|Selection|troops
+arch_s6.wav|archer|Selection|troops
+aslave_atks1.wav|slave|AttackStrong|troops
+aslave_atks2.wav|slave|AttackStrong|troops
+aslave_disband1.wav|slave|Disband|troops
+aslave_m1.wav|slave|Move|troops
+aslave_m2.wav|slave|Move|troops
+aslave_m4.wav|slave|MoveUnreachable|troops
+aslave_moat1.wav|slave|DigMoat|troops
+aslave_moat2.wav|slave|DigMoat|troops
+aslave_moat3.wav|slave|DigMoat|troops
+aslave_moat4.wav|slave|DigMoat|troops
+aslave_moat5.wav|slave|DigMoat|troops
+aslave_s1.wav|slave|Selection|troops
+aslave_s2.wav|slave|Selection|troops
+asling_atka1.wav|slinger|Unknown|troops
+asling_atkh1.wav|slinger|Unknown|troops
+asling_atkm1.wav|slinger|AttackMelee|troops
+asling_atkm2.wav|slinger|AttackMelee|troops
+asling_atkm3.wav|slinger|AttackMelee|troops
+asling_atkm4.wav|slinger|AttackMelee|troops
+asling_atknt.wav|slinger|Unknown|troops
+asling_disband1.wav|slinger|Disband|troops
+asling_m1.wav|slinger|Move|troops
+asling_m2.wav|slinger|Move|troops
+asling_m3.wav|slinger|Move|troops
+asling_m4.wav|slinger|MoveUnreachable|troops
+asling_m5.wav|slinger|MoveDistant|troops
+asling_moat1.wav|slinger|DigMoat|troops
+asling_s1.wav|slinger|Selection|troops
+asling_s2.wav|slinger|Selection|troops
+asling_s3.wav|slinger|Selection|troops
+asling_s4.wav|slinger|Selection|troops
+asling_s5.wav|slinger|Selection|troops
+asling_s6.wav|slinger|Selection|troops
+asword_atkw1.wav|arabian-swordsman|AttackWeak|troops
+asword_atkw2.wav|arabian-swordsman|AttackWeak|troops
+asword_atkw3.wav|arabian-swordsman|AttackWeak|troops
+asword_atkw4.wav|arabian-swordsman|AttackWeak|troops
+asword_disband1.wav|arabian-swordsman|Disband|troops
+asword_m1.wav|arabian-swordsman|Move|troops
+asword_m2.wav|arabian-swordsman|Move|troops
+asword_m3.wav|arabian-swordsman|Move|troops
+asword_m4.wav|arabian-swordsman|MoveUnreachable|troops
+asword_m5.wav|arabian-swordsman|MoveDistant|troops
+asword_moat1.wav|arabian-swordsman|DigMoat|troops
+asword_moat2.wav|arabian-swordsman|DigMoat|troops
+asword_moat3.wav|arabian-swordsman|DigMoat|troops
+asword_s1.wav|arabian-swordsman|Selection|troops
+asword_s2.wav|arabian-swordsman|Selection|troops
+asword_s3.wav|arabian-swordsman|Selection|troops
+asword_s4.wav|arabian-swordsman|Selection|troops
+asword_s5.wav|arabian-swordsman|Selection|troops
+asword_s6.wav|arabian-swordsman|Selection|troops
+Bedouin_ATKS1.wav|bedouin-skirmisher|AttackStrong|troops
+Bedouin_ATKS2.wav|bedouin-skirmisher|AttackStrong|troops
+Bedouin_ATKS3.wav|bedouin-skirmisher|AttackStrong|troops
+Bedouin_ATKS4.wav|bedouin-skirmisher|AttackStrong|troops
+Bedouin_ATKW1.wav|bedouin-skirmisher|AttackWeak|troops
+Bedouin_ATKW2.wav|bedouin-skirmisher|AttackWeak|troops
+Bedouin_ATKW3.wav|bedouin-skirmisher|AttackWeak|troops
+Bedouin_ATKW4.wav|bedouin-skirmisher|AttackWeak|troops
+Bedouin_Disband1.wav|bedouin-skirmisher|Disband|troops
+Bedouin_M1.wav|bedouin-skirmisher|Move|troops
+Bedouin_M2.wav|bedouin-skirmisher|Move|troops
+Bedouin_M3.wav|bedouin-skirmisher|Move|troops
+Bedouin_M4.wav|bedouin-skirmisher|MoveUnreachable|troops
+Bedouin_M5.wav|bedouin-skirmisher|MoveDistant|troops
+Bedouin_Moat1.wav|bedouin-skirmisher|DigMoat|troops
+Bedouin_Moat2.wav|bedouin-skirmisher|DigMoat|troops
+Bedouin_Moat3.wav|bedouin-skirmisher|DigMoat|troops
+Bedouin_S1.wav|bedouin-skirmisher|Selection|troops
+Bedouin_S2.wav|bedouin-skirmisher|Selection|troops
+Bedouin_S3.wav|bedouin-skirmisher|Selection|troops
+Bedouin_S4.wav|bedouin-skirmisher|Selection|troops
+Bedouin_S5.wav|bedouin-skirmisher|Selection|troops
+Bedouin_S6.wav|bedouin-skirmisher|Selection|troops
+CamelLancer_ATKS1.wav|camel-lancer|AttackStrong|troops
+CamelLancer_ATKS2.wav|camel-lancer|AttackStrong|troops
+CamelLancer_ATKS3.wav|camel-lancer|AttackStrong|troops
+CamelLancer_ATKS4.wav|camel-lancer|AttackStrong|troops
+CamelLancer_ATKW1.wav|camel-lancer|AttackWeak|troops
+CamelLancer_ATKW2.wav|camel-lancer|AttackWeak|troops
+CamelLancer_ATKW3.wav|camel-lancer|AttackWeak|troops
+CamelLancer_ATKW4.wav|camel-lancer|AttackWeak|troops
+CamelLancer_Disband1.wav|camel-lancer|Disband|troops
+CamelLancer_M1.wav|camel-lancer|Move|troops
+CamelLancer_M2.wav|camel-lancer|Move|troops
+CamelLancer_M3.wav|camel-lancer|Move|troops
+CamelLancer_M4.wav|camel-lancer|MoveUnreachable|troops
+CamelLancer_M5.wav|camel-lancer|MoveDistant|troops
+CamelLancer_Moat1.wav|camel-lancer|DigMoat|troops
+CamelLancer_Moat2.wav|camel-lancer|DigMoat|troops
+CamelLancer_Moat3.wav|camel-lancer|DigMoat|troops
+CamelLancer_S1.wav|camel-lancer|Selection|troops
+CamelLancer_S2.wav|camel-lancer|Selection|troops
+CamelLancer_S3.wav|camel-lancer|Selection|troops
+CamelLancer_S4.wav|camel-lancer|Selection|troops
+CamelLancer_S5.wav|camel-lancer|Selection|troops
+CamelLancer_S6.wav|camel-lancer|Selection|troops
+cross_atka1.wav|crossbowman|Unknown|troops
+cross_atkh1.wav|crossbowman|Unknown|troops
+cross_atkm1.wav|crossbowman|AttackMelee|troops
+cross_atkm2.wav|crossbowman|AttackMelee|troops
+cross_atkm3.wav|crossbowman|AttackMelee|troops
+cross_atkm4.wav|crossbowman|AttackMelee|troops
+cross_atknt.wav|crossbowman|Unknown|troops
+cross_disband1.wav|crossbowman|Disband|troops
+cross_m1.wav|crossbowman|Move|troops
+cross_m2.wav|crossbowman|Move|troops
+cross_m3.wav|crossbowman|Move|troops
+cross_m4.wav|crossbowman|MoveUnreachable|troops
+cross_m5.wav|crossbowman|MoveDistant|troops
+cross_moat1.wav|crossbowman|DigMoat|troops
+cross_moat2.wav|crossbowman|DigMoat|troops
+cross_moat3.wav|crossbowman|DigMoat|troops
+cross_s1.wav|crossbowman|Selection|troops
+cross_s2.wav|crossbowman|Selection|troops
+cross_s3.wav|crossbowman|Selection|troops
+cross_s4.wav|crossbowman|Selection|troops
+cross_s5.wav|crossbowman|Selection|troops
+cross_s6.wav|crossbowman|Selection|troops
+Demolisher_ATKS1.wav|demolisher|AttackStrong|troops
+Demolisher_ATKS2.wav|demolisher|AttackStrong|troops
+Demolisher_ATKS3.wav|demolisher|AttackStrong|troops
+Demolisher_ATKS4.wav|demolisher|AttackStrong|troops
+Demolisher_Disband1.wav|demolisher|Disband|troops
+Demolisher_M1.wav|demolisher|Move|troops
+Demolisher_M2.wav|demolisher|Move|troops
+Demolisher_M3.wav|demolisher|Move|troops
+Demolisher_M4.wav|demolisher|MoveUnreachable|troops
+Demolisher_M5.wav|demolisher|MoveDistant|troops
+Demolisher_Moat1.wav|demolisher|DigMoat|troops
+Demolisher_Moat2.wav|demolisher|DigMoat|troops
+Demolisher_Moat3.wav|demolisher|DigMoat|troops
+Demolisher_S1.wav|demolisher|Selection|troops
+Demolisher_S2.wav|demolisher|Selection|troops
+Demolisher_S3.wav|demolisher|Selection|troops
+Demolisher_S4.wav|demolisher|Selection|troops
+Demolisher_S5.wav|demolisher|Selection|troops
+Demolisher_S6.wav|demolisher|Selection|troops
+Demolisher_Sap1.wav|demolisher|Sap|troops
+Demolisher_Sap2.wav|demolisher|Sap|troops
+Demolisher_Sap3.wav|demolisher|Sap|troops
+Demolisher_Sap4.wav|demolisher|Sap|troops
+engineer_atks1.wav|engineer|AttackStrong|troops
+engineer_atks2.wav|engineer|AttackStrong|troops
+engineer_atks3.wav|engineer|AttackStrong|troops
+engineer_atks4.wav|engineer|AttackStrong|troops
+engineer_atkw1.wav|engineer|AttackWeak|troops
+engineer_balis1.wav|engineer|EngineerAction|troops
+engineer_build1.wav|engineer|EngineerAction|troops
+engineer_catplt1.wav|engineer|EngineerAction|troops
+engineer_disband1.wav|engineer|Disband|troops
+engineer_equip1.wav|engineer|EngineerAction|troops
+engineer_equip2.wav|engineer|EngineerAction|troops
+engineer_equip3.wav|engineer|EngineerAction|troops
+engineer_equip4.wav|engineer|EngineerAction|troops
+engineer_exit1.wav|engineer|EngineerAction|troops
+engineer_launchcow1.wav|engineer|EngineerAction|troops
+engineer_launchcow2.wav|engineer|EngineerAction|troops
+engineer_launchcow3.wav|engineer|EngineerAction|troops
+engineer_launchcow4.wav|engineer|EngineerAction|troops
+engineer_launchcow5.wav|engineer|EngineerAction|troops
+engineer_launchcow6.wav|engineer|EngineerAction|troops
+engineer_m1.wav|engineer|Move|troops
+engineer_m2.wav|engineer|Move|troops
+engineer_m3.wav|engineer|Move|troops
+engineer_m4.wav|engineer|MoveUnreachable|troops
+engineer_m5.wav|engineer|MoveDistant|troops
+engineer_manequip1.wav|engineer|EngineerAction|troops
+engineer_mang1.wav|engineer|EngineerAction|troops
+engineer_manoil1.wav|engineer|EngineerAction|troops
+engineer_mansmelter1.wav|engineer|EngineerAction|troops
+engineer_mcatplt.wav|engineer|EngineerAction|troops
+engineer_moat1.wav|engineer|DigMoat|troops
+engineer_moat2.wav|engineer|DigMoat|troops
+engineer_moat3.wav|engineer|DigMoat|troops
+engineer_mram.wav|engineer|EngineerAction|troops
+engineer_mshield.wav|engineer|EngineerAction|troops
+engineer_mtower.wav|engineer|EngineerAction|troops
+engineer_pouroil1.wav|engineer|EngineerAction|troops
+engineer_pouroil2.wav|engineer|EngineerAction|troops
+engineer_pouroil3.wav|engineer|EngineerAction|troops
+engineer_pouroil4.wav|engineer|EngineerAction|troops
+engineer_pouroil5.wav|engineer|EngineerAction|troops
+engineer_pouroil6.wav|engineer|EngineerAction|troops
+engineer_pouroil7.wav|engineer|EngineerAction|troops
+engineer_pouroil8.wav|engineer|EngineerAction|troops
+engineer_pouroil9.wav|engineer|EngineerAction|troops
+engineer_ram1.wav|engineer|EngineerAction|troops
+engineer_s1.wav|engineer|Selection|troops
+engineer_s2.wav|engineer|Selection|troops
+engineer_s3.wav|engineer|Selection|troops
+engineer_s4.wav|engineer|Selection|troops
+engineer_s5.wav|engineer|Selection|troops
+engineer_s6.wav|engineer|Selection|troops
+engineer_sbalis.wav|engineer|EngineerAction|troops
+engineer_scatplt.wav|engineer|EngineerAction|troops
+engineer_sman.wav|engineer|EngineerAction|troops
+engineer_sram.wav|engineer|EngineerAction|troops
+engineer_sshield.wav|engineer|EngineerAction|troops
+engineer_stower.wav|engineer|EngineerAction|troops
+engineer_streb.wav|engineer|EngineerAction|troops
+engineer_treb1.wav|engineer|EngineerAction|troops
+Eunuch_ATKS1.wav|eunuch|AttackStrong|troops
+Eunuch_ATKS2.wav|eunuch|AttackStrong|troops
+Eunuch_ATKS3.wav|eunuch|AttackStrong|troops
+Eunuch_ATKS4.wav|eunuch|AttackStrong|troops
+Eunuch_ATKW1.wav|eunuch|AttackWeak|troops
+Eunuch_ATKW2.wav|eunuch|AttackWeak|troops
+Eunuch_ATKW3.wav|eunuch|AttackWeak|troops
+Eunuch_ATKW4.wav|eunuch|AttackWeak|troops
+Eunuch_Disband1.wav|eunuch|Disband|troops
+Eunuch_M1.wav|eunuch|Move|troops
+Eunuch_M2.wav|eunuch|Move|troops
+Eunuch_M3.wav|eunuch|Move|troops
+Eunuch_M4.wav|eunuch|MoveUnreachable|troops
+Eunuch_M5.wav|eunuch|MoveDistant|troops
+Eunuch_Moat1.wav|eunuch|DigMoat|troops
+Eunuch_Moat2.wav|eunuch|DigMoat|troops
+Eunuch_Moat3.wav|eunuch|DigMoat|troops
+Eunuch_S1.wav|eunuch|Selection|troops
+Eunuch_S2.wav|eunuch|Selection|troops
+Eunuch_S3.wav|eunuch|Selection|troops
+Eunuch_S4.wav|eunuch|Selection|troops
+Eunuch_S5.wav|eunuch|Selection|troops
+Eunuch_S6.wav|eunuch|Selection|troops
+Healer_ATKS1.wav|bedouin-healer|AttackStrong|troops
+Healer_ATKS2.wav|bedouin-healer|AttackStrong|troops
+Healer_ATKS3.wav|bedouin-healer|AttackStrong|troops
+Healer_ATKS4.wav|bedouin-healer|AttackStrong|troops
+Healer_Disband1.wav|bedouin-healer|Disband|troops
+Healer_Heal1.wav|bedouin-healer|Heal|troops
+Healer_Heal2.wav|bedouin-healer|Heal|troops
+Healer_Heal3.wav|bedouin-healer|Heal|troops
+Healer_Heal4.wav|bedouin-healer|Heal|troops
+Healer_M1.wav|bedouin-healer|Move|troops
+Healer_M2.wav|bedouin-healer|Move|troops
+Healer_M3.wav|bedouin-healer|Move|troops
+Healer_M4.wav|bedouin-healer|MoveUnreachable|troops
+Healer_M5.wav|bedouin-healer|MoveDistant|troops
+Healer_Moat1.wav|bedouin-healer|DigMoat|troops
+Healer_Moat2.wav|bedouin-healer|DigMoat|troops
+Healer_Moat3.wav|bedouin-healer|DigMoat|troops
+Healer_S1.wav|bedouin-healer|Selection|troops
+Healer_S2.wav|bedouin-healer|Selection|troops
+Healer_S3.wav|bedouin-healer|Selection|troops
+Healer_S4.wav|bedouin-healer|Selection|troops
+Healer_S5.wav|bedouin-healer|Selection|troops
+Healer_S6.wav|bedouin-healer|Selection|troops
+HeavyCamel_ATKM1.wav|heavy-camel|AttackMelee|troops
+HeavyCamel_ATKM2.wav|heavy-camel|AttackMelee|troops
+HeavyCamel_ATKM3.wav|heavy-camel|AttackMelee|troops
+HeavyCamel_ATKM4.wav|heavy-camel|AttackMelee|troops
+HeavyCamel_Disband1.wav|heavy-camel|Disband|troops
+HeavyCamel_M1.wav|heavy-camel|Move|troops
+HeavyCamel_M2.wav|heavy-camel|Move|troops
+HeavyCamel_M3.wav|heavy-camel|Move|troops
+HeavyCamel_M4.wav|heavy-camel|MoveUnreachable|troops
+HeavyCamel_M5.wav|heavy-camel|MoveDistant|troops
+HeavyCamel_Moat1.wav|heavy-camel|DigMoat|troops
+HeavyCamel_Moat2.wav|heavy-camel|DigMoat|troops
+HeavyCamel_Moat3.wav|heavy-camel|DigMoat|troops
+HeavyCamel_S1.wav|heavy-camel|Selection|troops
+HeavyCamel_S2.wav|heavy-camel|Selection|troops
+HeavyCamel_S3.wav|heavy-camel|Selection|troops
+HeavyCamel_S4.wav|heavy-camel|Selection|troops
+HeavyCamel_S5.wav|heavy-camel|Selection|troops
+HeavyCamel_S6.wav|heavy-camel|Selection|troops
+knight_atks1.wav|knight|AttackStrong|
+knight_atks2.wav|knight|AttackStrong|
+knight_atks3.wav|knight|AttackStrong|
+knight_atks4.wav|knight|AttackStrong|
+knight_atkw1.wav|knight|AttackWeak|troops
+knight_atkw2.wav|knight|AttackWeak|troops
+knight_atkw3.wav|knight|AttackWeak|troops
+knight_atkw4.wav|knight|AttackWeak|troops
+knight_disband1.wav|knight|Disband|troops
+knight_m1.wav|knight|Move|troops
+knight_m2.wav|knight|Move|troops
+knight_m3.wav|knight|Move|troops
+knight_m4.wav|knight|MoveUnreachable|troops
+knight_m5.wav|knight|MoveDistant|troops
+knight_moat1.wav|knight|DigMoat|troops
+knight_moat2.wav|knight|DigMoat|troops
+knight_moat3.wav|knight|DigMoat|troops
+knight_s1.wav|knight|Selection|troops
+knight_s2.wav|knight|Selection|troops
+knight_s3.wav|knight|Selection|troops
+knight_s4.wav|knight|Selection|troops
+knight_s5.wav|knight|Selection|troops
+knight_s6.wav|knight|Selection|troops
+ladder_atks1.wav|ladderman|AttackStrong|troops
+ladder_atks2.wav|ladderman|AttackStrong|troops
+ladder_atks3.wav|ladderman|AttackStrong|troops
+ladder_atks4.wav|ladderman|AttackStrong|troops
+ladder_atkw1.wav|ladderman|AttackWeak|
+ladder_atkw2.wav|ladderman|AttackWeak|
+ladder_atkw3.wav|ladderman|AttackWeak|
+ladder_atkw4.wav|ladderman|AttackWeak|
+ladder_disband1.wav|ladderman|Disband|troops
+ladder_m1.wav|ladderman|Move|troops
+ladder_m2.wav|ladderman|Move|troops
+ladder_m3.wav|ladderman|Move|troops
+ladder_m4.wav|ladderman|MoveUnreachable|troops
+ladder_m5.wav|ladderman|MoveDistant|troops
+ladder_moat1.wav|ladderman|DigMoat|troops
+ladder_moat2.wav|ladderman|DigMoat|troops
+ladder_moat3.wav|ladderman|DigMoat|troops
+ladder_placeladder1.wav|ladderman|Unknown|troops
+ladder_placeladder2.wav|ladderman|Unknown|troops
+ladder_placeladder3.wav|ladderman|Unknown|troops
+ladder_s1.wav|ladderman|Selection|troops
+ladder_s2.wav|ladderman|Selection|troops
+ladder_s3.wav|ladderman|Selection|troops
+ladder_s4.wav|ladderman|Selection|troops
+ladder_s5.wav|ladderman|Selection|troops
+ladder_s6.wav|ladderman|Selection|troops
+mace_atks1.wav|maceman|AttackStrong|troops
+mace_atks2.wav|maceman|AttackStrong|troops
+mace_atks3.wav|maceman|AttackStrong|troops
+mace_atks4.wav|maceman|AttackStrong|troops
+mace_atkw1.wav|maceman|AttackWeak|troops
+mace_atkw2.wav|maceman|AttackWeak|troops
+mace_atkw3.wav|maceman|AttackWeak|troops
+mace_atkw4.wav|maceman|AttackWeak|troops
+mace_disband1.wav|maceman|Disband|troops
+mace_m1.wav|maceman|Move|troops
+mace_m2.wav|maceman|Move|troops
+mace_m3.wav|maceman|Move|troops
+mace_m4.wav|maceman|MoveUnreachable|troops
+mace_m5.wav|maceman|MoveDistant|troops
+mace_moat1.wav|maceman|DigMoat|troops
+mace_moat2.wav|maceman|DigMoat|troops
+mace_moat3.wav|maceman|DigMoat|troops
+mace_s1.wav|maceman|Selection|troops
+mace_s2.wav|maceman|Selection|troops
+mace_s3.wav|maceman|Selection|troops
+mace_s4.wav|maceman|Selection|troops
+mace_s5.wav|maceman|Selection|troops
+mace_s6.wav|maceman|Selection|troops
+monk_atks1.wav|monk|AttackStrong|troops
+monk_atks2.wav|monk|AttackStrong|troops
+monk_atks3.wav|monk|AttackStrong|troops
+monk_atks4.wav|monk|AttackStrong|troops
+monk_atkw1.wav|monk|AttackWeak|troops
+monk_atkw2.wav|monk|AttackWeak|troops
+monk_atkw3.wav|monk|AttackWeak|troops
+monk_atkw4.wav|monk|AttackWeak|troops
+monk_disband1.wav|monk|Disband|troops
+monk_m1.wav|monk|Move|troops
+monk_m2.wav|monk|Move|troops
+monk_m3.wav|monk|Move|troops
+monk_m4.wav|monk|MoveUnreachable|troops
+monk_m5.wav|monk|MoveDistant|troops
+monk_moat1.wav|monk|DigMoat|troops
+monk_moat2.wav|monk|DigMoat|troops
+monk_moat3.wav|monk|DigMoat|troops
+monk_s1.wav|monk|Selection|troops
+monk_s2.wav|monk|Selection|troops
+monk_s3.wav|monk|Selection|troops
+monk_s4.wav|monk|Selection|troops
+monk_s5.wav|monk|Selection|troops
+monk_s6.wav|monk|Selection|troops
+Peasant_Female1.wav|civilian-female|CivilianComment|peasants
+Peasant_Female10.wav|civilian-female|CivilianComment|peasants
+Peasant_Female100.wav|civilian-female|CivilianComment|peasants
+Peasant_Female101.wav|civilian-female|CivilianComment|peasants
+Peasant_Female102.wav|civilian-female|CivilianComment|peasants
+Peasant_Female103.wav|civilian-female|CivilianComment|peasants
+Peasant_Female104.wav|civilian-female|CivilianComment|peasants
+Peasant_Female105.wav|civilian-female|CivilianComment|peasants
+Peasant_Female106.wav|civilian-female|CivilianComment|peasants
+Peasant_Female107.wav|civilian-female|CivilianComment|peasants
+Peasant_Female108.wav|civilian-female|CivilianComment|peasants
+Peasant_Female109.wav|civilian-female|CivilianComment|peasants
+Peasant_Female11.wav|civilian-female|CivilianComment|peasants
+Peasant_Female110.wav|civilian-female|CivilianComment|peasants
+Peasant_Female111.wav|civilian-female|CivilianComment|peasants
+Peasant_Female112.wav|civilian-female|CivilianComment|peasants
+Peasant_Female113.wav|civilian-female|CivilianComment|peasants
+Peasant_Female114.wav|civilian-female|CivilianComment|peasants
+Peasant_Female115.wav|civilian-female|CivilianComment|peasants
+Peasant_Female116.wav|civilian-female|CivilianComment|peasants
+Peasant_Female117.wav|civilian-female|CivilianComment|peasants
+Peasant_Female118.wav|civilian-female|CivilianComment|peasants
+Peasant_Female119.wav|civilian-female|CivilianComment|peasants
+Peasant_Female12.wav|civilian-female|CivilianComment|peasants
+Peasant_Female120.wav|civilian-female|CivilianComment|peasants
+Peasant_Female13.wav|civilian-female|CivilianComment|peasants
+Peasant_Female14.wav|civilian-female|CivilianComment|peasants
+Peasant_Female15.wav|civilian-female|CivilianComment|peasants
+Peasant_Female16.wav|civilian-female|CivilianComment|peasants
+Peasant_Female17.wav|civilian-female|CivilianComment|peasants
+Peasant_Female18.wav|civilian-female|CivilianComment|peasants
+Peasant_Female19.wav|civilian-female|CivilianComment|peasants
+Peasant_Female2.wav|civilian-female|CivilianComment|peasants
+Peasant_Female20.wav|civilian-female|CivilianComment|peasants
+Peasant_Female21.wav|civilian-female|CivilianComment|peasants
+Peasant_Female22.wav|civilian-female|CivilianComment|peasants
+Peasant_Female23.wav|civilian-female|CivilianComment|peasants
+Peasant_Female24.wav|civilian-female|CivilianComment|peasants
+Peasant_Female25.wav|civilian-female|CivilianComment|peasants
+Peasant_Female26.wav|civilian-female|CivilianComment|peasants
+Peasant_Female27.wav|civilian-female|CivilianComment|peasants
+Peasant_Female28.wav|civilian-female|CivilianComment|peasants
+Peasant_Female29.wav|civilian-female|CivilianComment|peasants
+Peasant_Female3.wav|civilian-female|CivilianComment|peasants
+Peasant_Female30.wav|civilian-female|CivilianComment|peasants
+Peasant_Female31.wav|civilian-female|CivilianComment|peasants
+Peasant_Female32.wav|civilian-female|CivilianComment|peasants
+Peasant_Female33.wav|civilian-female|CivilianComment|peasants
+Peasant_Female34.wav|civilian-female|CivilianComment|peasants
+Peasant_Female35.wav|civilian-female|CivilianComment|peasants
+Peasant_Female36.wav|civilian-female|CivilianComment|peasants
+Peasant_Female37.wav|civilian-female|CivilianComment|peasants
+Peasant_Female38.wav|civilian-female|CivilianComment|peasants
+Peasant_Female39.wav|civilian-female|CivilianComment|peasants
+Peasant_Female4.wav|civilian-female|CivilianComment|peasants
+Peasant_Female40.wav|civilian-female|CivilianComment|peasants
+Peasant_Female41.wav|civilian-female|CivilianComment|peasants
+Peasant_Female42.wav|civilian-female|CivilianComment|peasants
+Peasant_Female43.wav|civilian-female|CivilianComment|peasants
+Peasant_Female44.wav|civilian-female|CivilianComment|peasants
+Peasant_Female45.wav|civilian-female|CivilianComment|peasants
+Peasant_Female46.wav|civilian-female|CivilianComment|peasants
+Peasant_Female47.wav|civilian-female|CivilianComment|peasants
+Peasant_Female48.wav|civilian-female|CivilianComment|peasants
+Peasant_Female49.wav|civilian-female|CivilianComment|peasants
+Peasant_Female5.wav|civilian-female|CivilianComment|peasants
+Peasant_Female50.wav|civilian-female|CivilianComment|peasants
+Peasant_Female51.wav|civilian-female|CivilianComment|peasants
+Peasant_Female52.wav|civilian-female|CivilianComment|peasants
+Peasant_Female53.wav|civilian-female|CivilianComment|peasants
+Peasant_Female54.wav|civilian-female|CivilianComment|peasants
+Peasant_Female55.wav|civilian-female|CivilianComment|peasants
+Peasant_Female56.wav|civilian-female|CivilianComment|peasants
+Peasant_Female57.wav|civilian-female|CivilianComment|peasants
+Peasant_Female58.wav|civilian-female|CivilianComment|peasants
+Peasant_Female59.wav|civilian-female|CivilianComment|peasants
+Peasant_Female6.wav|civilian-female|CivilianComment|peasants
+Peasant_Female60.wav|civilian-female|CivilianComment|peasants
+Peasant_Female61.wav|civilian-female|CivilianComment|peasants
+Peasant_Female62.wav|civilian-female|CivilianComment|peasants
+Peasant_Female63.wav|civilian-female|CivilianComment|peasants
+Peasant_Female64.wav|civilian-female|CivilianComment|peasants
+Peasant_Female65.wav|civilian-female|CivilianComment|peasants
+Peasant_Female66.wav|civilian-female|CivilianComment|peasants
+Peasant_Female67.wav|civilian-female|CivilianComment|peasants
+Peasant_Female68.wav|civilian-female|CivilianComment|peasants
+Peasant_Female69.wav|civilian-female|CivilianComment|peasants
+Peasant_Female7.wav|civilian-female|CivilianComment|peasants
+Peasant_Female70.wav|civilian-female|CivilianComment|peasants
+Peasant_Female71.wav|civilian-female|CivilianComment|peasants
+Peasant_Female72.wav|civilian-female|CivilianComment|peasants
+Peasant_Female73.wav|civilian-female|CivilianComment|peasants
+Peasant_Female74.wav|civilian-female|CivilianComment|peasants
+Peasant_Female75.wav|civilian-female|CivilianComment|peasants
+Peasant_Female76.wav|civilian-female|CivilianComment|peasants
+Peasant_Female77.wav|civilian-female|CivilianComment|peasants
+Peasant_Female78.wav|civilian-female|CivilianComment|peasants
+Peasant_Female79.wav|civilian-female|CivilianComment|peasants
+Peasant_Female8.wav|civilian-female|CivilianComment|peasants
+Peasant_Female80.wav|civilian-female|CivilianComment|peasants
+Peasant_Female81.wav|civilian-female|CivilianComment|peasants
+Peasant_Female82.wav|civilian-female|CivilianComment|peasants
+Peasant_Female83.wav|civilian-female|CivilianComment|peasants
+Peasant_Female84.wav|civilian-female|CivilianComment|peasants
+Peasant_Female85.wav|civilian-female|CivilianComment|peasants
+Peasant_Female86.wav|civilian-female|CivilianComment|peasants
+Peasant_Female87.wav|civilian-female|CivilianComment|peasants
+Peasant_Female88.wav|civilian-female|CivilianComment|peasants
+Peasant_Female89.wav|civilian-female|CivilianComment|peasants
+Peasant_Female9.wav|civilian-female|CivilianComment|peasants
+Peasant_Female90.wav|civilian-female|CivilianComment|peasants
+Peasant_Female91.wav|civilian-female|CivilianComment|peasants
+Peasant_Female92.wav|civilian-female|CivilianComment|peasants
+Peasant_Female93.wav|civilian-female|CivilianComment|peasants
+Peasant_Female94.wav|civilian-female|CivilianComment|peasants
+Peasant_Female95.wav|civilian-female|CivilianComment|peasants
+Peasant_Female96.wav|civilian-female|CivilianComment|peasants
+Peasant_Female97.wav|civilian-female|CivilianComment|peasants
+Peasant_Female98.wav|civilian-female|CivilianComment|peasants
+Peasant_Female99.wav|civilian-female|CivilianComment|peasants
+Peasant_Male1.wav|civilian-male|CivilianComment|peasants
+Peasant_Male10.wav|civilian-male|CivilianComment|peasants
+Peasant_Male100.wav|civilian-male|CivilianComment|peasants
+Peasant_Male101.wav|civilian-male|CivilianComment|peasants
+Peasant_Male102.wav|civilian-male|CivilianComment|peasants
+Peasant_Male103.wav|civilian-male|CivilianComment|peasants
+Peasant_Male104.wav|civilian-male|CivilianComment|peasants
+Peasant_Male105.wav|civilian-male|CivilianComment|peasants
+Peasant_Male106.wav|civilian-male|CivilianComment|peasants
+Peasant_Male107.wav|civilian-male|CivilianComment|peasants
+Peasant_Male108.wav|civilian-male|CivilianComment|peasants
+Peasant_Male109.wav|civilian-male|CivilianComment|peasants
+Peasant_Male11.wav|civilian-male|CivilianComment|peasants
+Peasant_Male110.wav|civilian-male|CivilianComment|peasants
+Peasant_Male111.wav|civilian-male|CivilianComment|peasants
+Peasant_Male112.wav|civilian-male|CivilianComment|peasants
+Peasant_Male113.wav|civilian-male|CivilianComment|peasants
+Peasant_Male114.wav|civilian-male|CivilianComment|peasants
+Peasant_Male115.wav|civilian-male|CivilianComment|peasants
+Peasant_Male116.wav|civilian-male|CivilianComment|peasants
+Peasant_Male117.wav|civilian-male|CivilianComment|peasants
+Peasant_Male118.wav|civilian-male|CivilianComment|peasants
+Peasant_Male119.wav|civilian-male|CivilianComment|peasants
+Peasant_Male12.wav|civilian-male|CivilianComment|peasants
+Peasant_Male120.wav|civilian-male|CivilianComment|peasants
+Peasant_Male13.wav|civilian-male|CivilianComment|peasants
+Peasant_Male14.wav|civilian-male|CivilianComment|peasants
+Peasant_Male15.wav|civilian-male|CivilianComment|peasants
+Peasant_Male16.wav|civilian-male|CivilianComment|peasants
+Peasant_Male17.wav|civilian-male|CivilianComment|peasants
+Peasant_Male18.wav|civilian-male|CivilianComment|peasants
+Peasant_Male19.wav|civilian-male|CivilianComment|peasants
+Peasant_Male2.wav|civilian-male|CivilianComment|peasants
+Peasant_Male20.wav|civilian-male|CivilianComment|peasants
+Peasant_Male21.wav|civilian-male|CivilianComment|peasants
+Peasant_Male22.wav|civilian-male|CivilianComment|peasants
+Peasant_Male23.wav|civilian-male|CivilianComment|peasants
+Peasant_Male24.wav|civilian-male|CivilianComment|peasants
+Peasant_Male25.wav|civilian-male|CivilianComment|peasants
+Peasant_Male26.wav|civilian-male|CivilianComment|peasants
+Peasant_Male27.wav|civilian-male|CivilianComment|peasants
+Peasant_Male28.wav|civilian-male|CivilianComment|peasants
+Peasant_Male29.wav|civilian-male|CivilianComment|peasants
+Peasant_Male3.wav|civilian-male|CivilianComment|peasants
+Peasant_Male30.wav|civilian-male|CivilianComment|peasants
+Peasant_Male31.wav|civilian-male|CivilianComment|peasants
+Peasant_Male32.wav|civilian-male|CivilianComment|peasants
+Peasant_Male33.wav|civilian-male|CivilianComment|peasants
+Peasant_Male34.wav|civilian-male|CivilianComment|peasants
+Peasant_Male35.wav|civilian-male|CivilianComment|peasants
+Peasant_Male36.wav|civilian-male|CivilianComment|peasants
+Peasant_Male37.wav|civilian-male|CivilianComment|peasants
+Peasant_Male38.wav|civilian-male|CivilianComment|peasants
+Peasant_Male39.wav|civilian-male|CivilianComment|peasants
+Peasant_Male4.wav|civilian-male|CivilianComment|peasants
+Peasant_Male40.wav|civilian-male|CivilianComment|peasants
+Peasant_Male41.wav|civilian-male|CivilianComment|peasants
+Peasant_Male42.wav|civilian-male|CivilianComment|peasants
+Peasant_Male43.wav|civilian-male|CivilianComment|peasants
+Peasant_Male44.wav|civilian-male|CivilianComment|peasants
+Peasant_Male45.wav|civilian-male|CivilianComment|peasants
+Peasant_Male46.wav|civilian-male|CivilianComment|peasants
+Peasant_Male47.wav|civilian-male|CivilianComment|peasants
+Peasant_Male48.wav|civilian-male|CivilianComment|peasants
+Peasant_Male49.wav|civilian-male|CivilianComment|peasants
+Peasant_Male5.wav|civilian-male|CivilianComment|peasants
+Peasant_Male50.wav|civilian-male|CivilianComment|peasants
+Peasant_Male51.wav|civilian-male|CivilianComment|peasants
+Peasant_Male52.wav|civilian-male|CivilianComment|peasants
+Peasant_Male53.wav|civilian-male|CivilianComment|peasants
+Peasant_Male54.wav|civilian-male|CivilianComment|peasants
+Peasant_Male55.wav|civilian-male|CivilianComment|peasants
+Peasant_Male56.wav|civilian-male|CivilianComment|peasants
+Peasant_Male57.wav|civilian-male|CivilianComment|peasants
+Peasant_Male58.wav|civilian-male|CivilianComment|peasants
+Peasant_Male59.wav|civilian-male|CivilianComment|peasants
+Peasant_Male6.wav|civilian-male|CivilianComment|peasants
+Peasant_Male60.wav|civilian-male|CivilianComment|peasants
+Peasant_Male61.wav|civilian-male|CivilianComment|peasants
+Peasant_Male62.wav|civilian-male|CivilianComment|peasants
+Peasant_Male63.wav|civilian-male|CivilianComment|peasants
+Peasant_Male64.wav|civilian-male|CivilianComment|peasants
+Peasant_Male65.wav|civilian-male|CivilianComment|peasants
+Peasant_Male66.wav|civilian-male|CivilianComment|peasants
+Peasant_Male67.wav|civilian-male|CivilianComment|peasants
+Peasant_Male68.wav|civilian-male|CivilianComment|peasants
+Peasant_Male69.wav|civilian-male|CivilianComment|peasants
+Peasant_Male7.wav|civilian-male|CivilianComment|peasants
+Peasant_Male70.wav|civilian-male|CivilianComment|peasants
+Peasant_Male71.wav|civilian-male|CivilianComment|peasants
+Peasant_Male72.wav|civilian-male|CivilianComment|peasants
+Peasant_Male73.wav|civilian-male|CivilianComment|peasants
+Peasant_Male74.wav|civilian-male|CivilianComment|peasants
+Peasant_Male75.wav|civilian-male|CivilianComment|peasants
+Peasant_Male76.wav|civilian-male|CivilianComment|peasants
+Peasant_Male77.wav|civilian-male|CivilianComment|peasants
+Peasant_Male78.wav|civilian-male|CivilianComment|peasants
+Peasant_Male79.wav|civilian-male|CivilianComment|peasants
+Peasant_Male8.wav|civilian-male|CivilianComment|peasants
+Peasant_Male80.wav|civilian-male|CivilianComment|peasants
+Peasant_Male81.wav|civilian-male|CivilianComment|peasants
+Peasant_Male82.wav|civilian-male|CivilianComment|peasants
+Peasant_Male83.wav|civilian-male|CivilianComment|peasants
+Peasant_Male84.wav|civilian-male|CivilianComment|peasants
+Peasant_Male85.wav|civilian-male|CivilianComment|peasants
+Peasant_Male86.wav|civilian-male|CivilianComment|peasants
+Peasant_Male87.wav|civilian-male|CivilianComment|peasants
+Peasant_Male88.wav|civilian-male|CivilianComment|peasants
+Peasant_Male89.wav|civilian-male|CivilianComment|peasants
+Peasant_Male9.wav|civilian-male|CivilianComment|peasants
+Peasant_Male90.wav|civilian-male|CivilianComment|peasants
+Peasant_Male91.wav|civilian-male|CivilianComment|peasants
+Peasant_Male92.wav|civilian-male|CivilianComment|peasants
+Peasant_Male93.wav|civilian-male|CivilianComment|peasants
+Peasant_Male94.wav|civilian-male|CivilianComment|peasants
+Peasant_Male95.wav|civilian-male|CivilianComment|peasants
+Peasant_Male96.wav|civilian-male|CivilianComment|peasants
+Peasant_Male97.wav|civilian-male|CivilianComment|peasants
+Peasant_Male98.wav|civilian-male|CivilianComment|peasants
+Peasant_Male99.wav|civilian-male|CivilianComment|peasants
+pike_atks1.wav|pikeman|AttackStrong|troops
+pike_atks2.wav|pikeman|AttackStrong|troops
+pike_atks3.wav|pikeman|AttackStrong|troops
+pike_atks4.wav|pikeman|AttackStrong|troops
+pike_atkw1.wav|pikeman|AttackWeak|troops
+pike_atkw2.wav|pikeman|AttackWeak|troops
+pike_atkw3.wav|pikeman|AttackWeak|troops
+pike_atkw4.wav|pikeman|AttackWeak|troops
+pike_disband1.wav|pikeman|Disband|troops
+pike_m1.wav|pikeman|Move|troops
+pike_m2.wav|pikeman|Move|troops
+pike_m3.wav|pikeman|Move|troops
+pike_m4.wav|pikeman|MoveUnreachable|troops
+pike_m5.wav|pikeman|MoveDistant|troops
+pike_moat1.wav|pikeman|DigMoat|troops
+pike_moat2.wav|pikeman|DigMoat|troops
+pike_moat3.wav|pikeman|DigMoat|troops
+pike_s1.wav|pikeman|Selection|troops
+pike_s2.wav|pikeman|Selection|troops
+pike_s3.wav|pikeman|Selection|troops
+pike_s4.wav|pikeman|Selection|troops
+pike_s5.wav|pikeman|Selection|troops
+pike_s6.wav|pikeman|Selection|troops
+Sapper_ATKS1.wav|sapper|AttackStrong|troops
+Sapper_ATKS2.wav|sapper|AttackStrong|troops
+Sapper_ATKS3.wav|sapper|AttackStrong|troops
+Sapper_ATKS4.wav|sapper|AttackStrong|troops
+Sapper_Disband1.wav|sapper|Disband|troops
+Sapper_M1.wav|sapper|Move|troops
+Sapper_M2.wav|sapper|Move|troops
+Sapper_M3.wav|sapper|Move|troops
+Sapper_M4.wav|sapper|MoveUnreachable|troops
+Sapper_M5.wav|sapper|MoveDistant|troops
+Sapper_Moat1.wav|sapper|DigMoat|troops
+Sapper_Moat2.wav|sapper|DigMoat|troops
+Sapper_Moat3.wav|sapper|DigMoat|troops
+Sapper_S1.wav|sapper|Selection|troops
+Sapper_S2.wav|sapper|Selection|troops
+Sapper_S3.wav|sapper|Selection|troops
+Sapper_S4.wav|sapper|Selection|troops
+Sapper_S5.wav|sapper|Selection|troops
+Sapper_S6.wav|sapper|Selection|troops
+Sapper_Sap1.wav|sapper|Sap|troops
+Sapper_Sap2.wav|sapper|Sap|troops
+Sapper_Sap3.wav|sapper|Sap|troops
+Sapper_Sap4.wav|sapper|Sap|troops
+spear_atks1.wav|spearman|AttackStrong|troops
+spear_atks2.wav|spearman|AttackStrong|troops
+spear_atks3.wav|spearman|AttackStrong|troops
+spear_atks4.wav|spearman|AttackStrong|troops
+spear_atkw1.wav|spearman|AttackWeak|troops
+spear_atkw2.wav|spearman|AttackWeak|troops
+spear_atkw3.wav|spearman|AttackWeak|troops
+spear_atkw4.wav|spearman|AttackWeak|troops
+spear_disband1.wav|spearman|Disband|troops
+spear_ladder1.wav|spearman|Unknown|troops
+spear_ladder2.wav|spearman|Unknown|troops
+spear_ladder3.wav|spearman|Unknown|troops
+spear_m1.wav|spearman|Move|troops
+spear_m2.wav|spearman|Move|troops
+spear_m3.wav|spearman|Move|troops
+spear_m4.wav|spearman|MoveUnreachable|troops
+spear_m5.wav|spearman|MoveDistant|troops
+spear_moat1.wav|spearman|DigMoat|troops
+spear_moat2.wav|spearman|DigMoat|troops
+spear_moat3.wav|spearman|DigMoat|troops
+spear_moat4.wav|spearman|DigMoat|troops
+spear_moat5.wav|spearman|DigMoat|troops
+spear_s1.wav|spearman|Selection|troops
+spear_s2.wav|spearman|Selection|troops
+spear_s3.wav|spearman|Selection|troops
+spear_s4.wav|spearman|Selection|troops
+spear_s5.wav|spearman|Selection|troops
+spear_s6.wav|spearman|Selection|troops
+sword_atks1.wav|swordsman|AttackStrong|
+sword_atks2.wav|swordsman|AttackStrong|
+sword_atks3.wav|swordsman|AttackStrong|
+sword_atks4.wav|swordsman|AttackStrong|
+sword_atkw1.wav|swordsman|AttackWeak|troops
+sword_atkw2.wav|swordsman|AttackWeak|troops
+sword_atkw3.wav|swordsman|AttackWeak|troops
+sword_atkw4.wav|swordsman|AttackWeak|troops
+sword_disband1.wav|swordsman|Disband|troops
+sword_m1.wav|swordsman|Move|troops
+sword_m2.wav|swordsman|Move|troops
+sword_m3.wav|swordsman|Move|troops
+sword_m4.wav|swordsman|MoveUnreachable|troops
+sword_m5.wav|swordsman|MoveDistant|troops
+sword_moat1.wav|swordsman|DigMoat|troops
+sword_moat2.wav|swordsman|DigMoat|troops
+sword_moat3.wav|swordsman|DigMoat|troops
+sword_s1.wav|swordsman|Selection|troops
+sword_s2.wav|swordsman|Selection|troops
+sword_s3.wav|swordsman|Selection|troops
+sword_s4.wav|swordsman|Selection|troops
+sword_s5.wav|swordsman|Selection|troops
+sword_s6.wav|swordsman|Selection|troops
+TempleGuard_atks1.wav|temple-guard|AttackStrong|troops
+TempleGuard_atks2.wav|temple-guard|AttackStrong|troops
+TempleGuard_atks3.wav|temple-guard|AttackStrong|troops
+TempleGuard_atks4.wav|temple-guard|AttackStrong|troops
+TempleGuard_atkw1.wav|temple-guard|AttackWeak|troops
+TempleGuard_atkw2.wav|temple-guard|AttackWeak|troops
+TempleGuard_atkw3.wav|temple-guard|AttackWeak|troops
+TempleGuard_atkw4.wav|temple-guard|AttackWeak|troops
+TempleGuard_disband1.wav|temple-guard|Disband|troops
+TempleGuard_m1.wav|temple-guard|Move|troops
+TempleGuard_m2.wav|temple-guard|Move|troops
+TempleGuard_m3.wav|temple-guard|Move|troops
+TempleGuard_m4.wav|temple-guard|MoveUnreachable|troops
+TempleGuard_m5.wav|temple-guard|MoveDistant|troops
+TempleGuard_moat1.wav|temple-guard|DigMoat|troops
+TempleGuard_moat2.wav|temple-guard|DigMoat|troops
+TempleGuard_moat3.wav|temple-guard|DigMoat|troops
+TempleGuard_s1.wav|temple-guard|Selection|troops
+TempleGuard_s2.wav|temple-guard|Selection|troops
+TempleGuard_s3.wav|temple-guard|Selection|troops
+TempleGuard_s4.wav|temple-guard|Selection|troops
+TempleGuard_s5.wav|temple-guard|Selection|troops
+TempleGuard_s6.wav|temple-guard|Selection|troops
+tunnel_atks1.wav|tunneler|AttackStrong|troops
+tunnel_atks2.wav|tunneler|AttackStrong|troops
+tunnel_atks3.wav|tunneler|AttackStrong|troops
+tunnel_atks4.wav|tunneler|AttackStrong|troops
+tunnel_atkw1.wav|tunneler|AttackWeak|troops
+tunnel_atkw2.wav|tunneler|AttackWeak|troops
+tunnel_atkw3.wav|tunneler|AttackWeak|troops
+tunnel_atkw4.wav|tunneler|AttackWeak|troops
+tunnel_digtunnel1.wav|tunneler|Unknown|troops
+tunnel_digtunnel2.wav|tunneler|Unknown|troops
+tunnel_disband1.wav|tunneler|Disband|troops
+tunnel_m1.wav|tunneler|Move|troops
+tunnel_m2.wav|tunneler|Move|troops
+tunnel_m3.wav|tunneler|Move|troops
+tunnel_m4.wav|tunneler|MoveUnreachable|troops
+tunnel_m5.wav|tunneler|MoveDistant|troops
+tunnel_moat1.wav|tunneler|DigMoat|troops
+tunnel_moat2.wav|tunneler|DigMoat|troops
+tunnel_moat3.wav|tunneler|DigMoat|troops
+tunnel_s1.wav|tunneler|Selection|troops
+tunnel_s2.wav|tunneler|Selection|troops
+tunnel_s3.wav|tunneler|Selection|troops
+tunnel_s4.wav|tunneler|Selection|troops
+tunnel_s5.wav|tunneler|Selection|troops
+tunnel_s6.wav|tunneler|Selection|troops";
+    }
+}

@@ -15,6 +15,37 @@ namespace APIShared.ModSettings
     /// <summary>Reads and composes the existing MessagePack envelope; binary I/O belongs to LobbyPresetStorage.</summary>
     internal sealed partial class LobbyPresetController
     {
+        private bool initialSettingsLoaded;
+        // The disk file lags the working state (deferred single edit or failed write).
+        private bool personalStorageWritePending;
+
+        // Runs before UI binding, with writes disabled. External providers retain ownership
+        // of their startup configuration; APIShared must not replay a stale working file there.
+        internal void LoadInitialSettings()
+        {
+            if (initialSettingsLoaded) return;
+            if (persistedProperties.Length == 0 || dynamicProvider != null)
+            { initialSettingsLoaded = true; return; }
+            if (!storage.TryRead(out Dictionary<string, byte[]> initial))
+            { initialSettingsLoaded = true; return; }
+            initial = ModSettingsMigration.ApplyRenames(settingsType, initial);
+            if (owner.SettingsTarget is IModSettingsStoredSnapshotMigration)
+                initial = MigrateStoredSelection(initial.Where(entry => !IsPresetEnvelopeKey(entry.Key))
+                    .ToDictionary(entry => entry.Key, entry => entry.Value, StringComparer.Ordinal));
+            // A rejected converter remains retryable by Activate and must never turn a valid
+            // legacy file into a successful defaults-only rewrite after the registration catch.
+            initialSettingsLoaded = true;
+            bool previousApplying = applying;
+            applying = true;
+            try
+            {
+                foreach (PresetPropertyAccessor property in persistedProperties)
+                    if (property.CanWrite && initial.TryGetValue(property.Name, out byte[] bytes) && bytes != null)
+                        TryApplyProperty(property, bytes);
+            }
+            finally { applying = previousApplying; }
+        }
+
         public void Activate()
         {
             if (active)
@@ -27,15 +58,19 @@ namespace APIShared.ModSettings
                 return;
             }
 
+            LoadInitialSettings();
+            bool needsRelocation = storage.NeedsRelocation;
             Dictionary<string, byte[]> payload = null;
             bool fileExists = storage.Exists;
             if (fileExists && !storage.TryRead(out payload))
             {
                 storage.BackupCorruptFile();
+                // Do not turn a failed read into a successful defaults-only migration.
+                legacyMigrationPending = true;
                 payload = null;
             }
 
-            bool needsRewrite = false;
+            bool needsRewrite = needsRelocation;
             PublishedModSettingsPreset legacyPublishedToMaterialize = null;
             Dictionary<string, byte[]> legacyPreset1 = null;
             Dictionary<string, byte[]> legacyPreset2 = null;
@@ -73,11 +108,29 @@ namespace APIShared.ModSettings
                 }
                 catch (Exception exception)
                 {
-                    DebugLogHelper.LogError(
+                    NativeApiLog.Error(
                         log,
                         $"[{modName}] Preset metadata is invalid: {exception}");
                     storage.BackupCorruptFile();
+                    if (needsRelocation) legacyMigrationPending = true;
                     payload = null;
+                }
+            }
+
+            // Conversion errors are not corrupt metadata. Keep this outside the decoding catch,
+            // and before exporting old slots or filling missing properties with defaults.
+            if (payload != null && loadedSchemaVersion > 0)
+            {
+                if (loadedSchemaVersion == SchemaVersion)
+                {
+                    var migrated = MigrateStoredSelection(preset1);
+                    needsRewrite |= !StoredSelectionsEqual(preset1, migrated);
+                    preset1 = migrated;
+                }
+                else
+                {
+                    legacyPreset1 = MigrateStoredSelection(legacyPreset1);
+                    if (legacyPreset2 != null) legacyPreset2 = MigrateStoredSelection(legacyPreset2);
                 }
             }
 
@@ -104,19 +157,20 @@ namespace APIShared.ModSettings
                 catch (Exception exception)
                 {
                     legacyMigrationPending = true;
-                    DebugLogHelper.LogError(
+                    NativeApiLog.Error(
                         log,
-                        $"[{modName}] Could not publish legacy presets; the valid MessagePack data was retained for retry: {exception}");
+                        $"[{modName}] Could not publish legacy presets; the valid MessagePack data was retained for retry; " +
+                        DescribeMigrationFailure(exception));
                 }
             }
 
             if (payload == null || !payload.ContainsKey(SchemaVersionKey))
             {
-                // The compatibility load before registration restored a legacy file here.
+                // The APIShared load before registration restored a legacy file here.
                 // Capturing the ViewModel preserves those values and supplies defaults
                 // for settings introduced after that file was written.
                 preset1 = CaptureCurrentSettings();
-                if (fileExists)
+                if (fileExists && !legacyMigrationPending)
                 {
                     try
                     {
@@ -130,9 +184,10 @@ namespace APIShared.ModSettings
                     catch (Exception exception)
                     {
                         legacyMigrationPending = true;
-                        DebugLogHelper.LogError(
+                        NativeApiLog.Error(
                             log,
-                            $"[{modName}] Could not publish the legacy lobby-settings preset; the original file was retained for retry: {exception}");
+                            $"[{modName}] Could not publish the legacy lobby-settings preset; the original file was retained for retry; " +
+                            DescribeMigrationFailure(exception));
                     }
                 }
                 LogRoutine(
@@ -142,6 +197,15 @@ namespace APIShared.ModSettings
                             ? $"[{modName}] Deferred legacy lobby-settings migration after a publication failure."
                         : $"[{modName}] Initialized editable settings from code defaults.");
             }
+
+            // Materialize newly introduced/missing settings into the owned snapshot.
+            // Otherwise a later metadata recovery could revive an obsolete top-level value.
+            foreach (PresetPropertyAccessor property in persistedProperties)
+                if (!preset1.ContainsKey(property.Name) && defaults.TryGetValue(property.Name, out byte[] defaultValue))
+                {
+                    preset1[property.Name] = defaultValue == null ? null : (byte[])defaultValue.Clone();
+                    needsRewrite = true;
+                }
 
             if (!legacyMigrationPending && !legacyPresetImportCompleted)
             {
@@ -174,21 +238,61 @@ namespace APIShared.ModSettings
                 WriteCombinedPayload();
         }
 
+        private string DescribeMigrationFailure(Exception error) =>
+            $"stage=legacy-preset-publication, destinationDirectory={personalPresetDirectory}, " +
+            $"destinationDirectoryLength={personalPresetDirectory.Length}, {storage.DiagnosticPaths}, " +
+            $"errorType={error.GetType().FullName}, hresult=0x{error.HResult:X8}: {error}";
+
+        // Writes the complete current state, so it also completes any deferred single edit.
         private void WriteCombinedPayload()
         {
             if (persistedProperties.Length == 0 || legacyMigrationPending)
+            {
+                // These states never mirror the working state to disk.
+                personalStorageWritePending = false;
                 return;
+            }
 
-            Dictionary<string, byte[]> payload = ComposeSafeTopLevelSnapshot();
-            payload[SchemaVersionKey] = MessagePackSerializer.Serialize(SchemaVersion);
-            payload[CurrentSettingsKey] = MessagePackSerializer.Serialize(preset1 ?? Clone(defaults));
-            if (!string.IsNullOrEmpty(basedOnStableId))
-                payload[BasedOnPresetKey] = MessagePackSerializer.Serialize(basedOnStableId);
-            payload[PresetDirtyKey] = MessagePackSerializer.Serialize(presetDirty);
-            payload[LegacyPresetImportCompletedKey] = MessagePackSerializer.Serialize(legacyPresetImportCompleted);
+            personalStorageWritePending = true;
+            try
+            {
+                Dictionary<string, byte[]> payload = ComposeSafeTopLevelSnapshot();
+                payload[SchemaVersionKey] = MessagePackSerializer.Serialize(SchemaVersion);
+                payload[CurrentSettingsKey] = MessagePackSerializer.Serialize(preset1 ?? Clone(defaults));
+                if (!string.IsNullOrEmpty(basedOnStableId))
+                    payload[BasedOnPresetKey] = MessagePackSerializer.Serialize(basedOnStableId);
+                payload[PresetDirtyKey] = MessagePackSerializer.Serialize(presetDirty);
+                payload[LegacyPresetImportCompletedKey] = MessagePackSerializer.Serialize(legacyPresetImportCompleted);
 
-            storage.Write(payload);
+                personalStorageWritePending = !storage.Write(payload);
+            }
+            finally
+            {
+                // A failed write is retried at the next flush point.
+                if (personalStorageWritePending)
+                    PersonalSettingsWriteQueue.Track(this);
+            }
         }
+
+        // Single edits mirror the working state after a quiet period instead of on every change.
+        private void DeferPersonalStorageWrite()
+        {
+            personalStorageWritePending = true;
+            if (!PersonalSettingsWriteQueue.TryDefer(this))
+                WriteCombinedPayload();
+        }
+
+        /// <summary>Writes a pending personal settings mirror now. Call on the Unity thread; a failure stays pending.</summary>
+        internal void FlushPersonalStorage()
+        {
+            // A snapshot application completes synchronously; its owner writes or defers afterwards.
+            if (personalStorageWritePending && !applying)
+                WriteCombinedPayload();
+        }
+
+#if API_SHARED_PRESET_TESTS
+        internal bool HasPendingPersonalStorageWrite => personalStorageWritePending;
+#endif
 
         private Dictionary<string, byte[]> ComposeSafeTopLevelSnapshot()
         {
@@ -198,16 +302,8 @@ namespace APIShared.ModSettings
 
             foreach (PresetPropertyAccessor property in persistedProperties)
             {
-                bool mayCaptureLive = !owner.IsMissionPresetSelected &&
-                    (IsClientProperty(property) || owner.IsLocalHost);
-                if (mayCaptureLive)
-                {
-                    StoreProperty(snapshot, property);
-                    continue;
-                }
-
-                // Preserve the user's own host preset instead of serializing a
-                // remote host value or an externally owned Trail value.
+                // The controller updates its owned snapshot at each accepted edit.
+                // Live getters can still contain a retiring mission or remote host.
                 if (ownedPreset.TryGetValue(property.Name, out byte[] bytes))
                     snapshot[property.Name] = bytes == null ? null : (byte[])bytes.Clone();
                 else if (defaults.TryGetValue(property.Name, out bytes))
@@ -224,7 +320,35 @@ namespace APIShared.ModSettings
             if (!payload.TryGetValue(key, out byte[] bytes))
                 return null;
 
-            return MessagePackSerializer.Deserialize<Dictionary<string, byte[]>>(bytes);
+            // Stored snapshots keep the property names of the mod version that wrote them.
+            return ModSettingsMigration.ApplyRenames(settingsType,
+                MessagePackSerializer.Deserialize<Dictionary<string, byte[]>>(bytes));
+        }
+
+        private static bool IsPresetEnvelopeKey(string key) => key == SchemaVersionKey || key == ActivePresetKey ||
+            key == Preset1Key || key == Preset2Key || key == PublishedPresetKey || key == CurrentSettingsKey ||
+            key == BasedOnPresetKey || key == PresetDirtyKey || key == LegacyPresetImportCompletedKey;
+
+        private static bool StoredSelectionsEqual(Dictionary<string, byte[]> left, Dictionary<string, byte[]> right) =>
+            left.Count == right.Count && left.All(entry => right.TryGetValue(entry.Key, out var bytes) &&
+                (entry.Value == null ? bytes == null : bytes != null && entry.Value.SequenceEqual(bytes)));
+
+        // Shared by partial working/published selections and raw personal storage. Validate
+        // the expanded selection before its first setter; existing unknown/retired keys survive.
+        private Dictionary<string, byte[]> MigrateStoredSelection(Dictionary<string, byte[]> selected)
+        {
+            if (!(owner.SettingsTarget is IModSettingsStoredSnapshotMigration)) return selected;
+            var migrated = ModSettingsMigration.MigrateRawStoredSnapshot(owner.SettingsTarget, selected);
+            foreach (var entry in migrated)
+            {
+                if (!persistedPropertiesByName.TryGetValue(entry.Key, out var property))
+                {
+                    if (!selected.ContainsKey(entry.Key)) throw new InvalidDataException("Migration added an unknown setting: " + entry.Key);
+                    continue;
+                }
+                if (entry.Value != null) MessagePackSerializer.Deserialize(property.PropertyType, entry.Value);
+            }
+            return migrated;
         }
 
     }

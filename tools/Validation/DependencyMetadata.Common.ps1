@@ -1,19 +1,17 @@
 function Get-PluginDependencyDeclarations([string]$SourceText) {
-    $constants = @{}
-    foreach ($constant in [regex]::Matches($SourceText, '\bconst\s+string\s+(\w+)\s*=\s*"([^"\r\n]+)"')) {
-        $constants[$constant.Groups[1].Value] = $constant.Groups[2].Value
-    }
-    foreach ($attribute in [regex]::Matches($SourceText, '\[BepInDependency\(\s*("[^"\r\n]+"|\w+)\s*(?:,\s*("[^"\r\n]+"|[^)]+))?\)\]')) {
-        $guidToken = $attribute.Groups[1].Value
-        $guid = if ($guidToken.StartsWith('"')) { $guidToken.Trim('"') } else { $constants[$guidToken] }
-        if (-not $guid) { throw "Unresolved dependency GUID: $guidToken" }
-        $argument = $attribute.Groups[2].Value.Trim()
-        if ($argument -match '\bSoftDependency\b') { continue }
-        $minimum = if ($argument.StartsWith('"')) { $argument.Trim('"') } elseif ($constants.ContainsKey($argument)) { $constants[$argument] } else { '' }
-        [pscustomobject]@{ GUID = $guid; MinimumVersion = $minimum }
-    }
+    $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
+    $defines = @(& dotnet msbuild (Join-Path $root 'APIShared.csproj') -nologo '-getProperty:DefineConstants' '-p:Configuration=Release') -join ''
+    if ($LASTEXITCODE -ne 0) { throw 'Could not evaluate dependency configuration symbols.' }
+    # The parser evaluates constants in their declaration scope and ignores
+    # comments/trivia. PowerShell streams the text; no temporary source is needed.
+    $previousEncoding = $OutputEncoding
+    try {
+        $OutputEncoding = [Text.UTF8Encoding]::new($false)
+        $output = @($SourceText | & dotnet run --project (Join-Path $root 'tools/SourceContracts/SourceContracts.csproj') --configuration Release --verbosity quiet -- $root dependencies $defines)
+    } finally { $OutputEncoding = $previousEncoding }
+    if ($LASTEXITCODE -ne 0) { throw 'Could not parse dependency declarations.' }
+    foreach ($declaration in (($output -join "`n") | ConvertFrom-Json)) { $declaration }
 }
-
 function Assert-PluginDependencyMetadata([string]$SourceText, [object]$Manifest, [string]$Name) {
     $declared = @(Get-PluginDependencyDeclarations $SourceText)
     $metadata = @($Manifest.Dependencies | Where-Object { $null -ne $_ })

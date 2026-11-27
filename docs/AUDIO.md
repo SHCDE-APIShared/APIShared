@@ -4,6 +4,10 @@ This guide is for mod authors using shared sound rules and contributors maintain
 Audio. Consumer settings remain outside APIShared.
 
 - [Public contracts](#public-audio-contracts): registration, context and custom clips.
+- [Native source events](#native-source-events): exact-unit attribution and sound replacement before the native record.
+- [Source selections](#source-selections): limit a registration to the catalog sources it needs.
+- [Unit voices](#unit-voices): attributed troop/civilian speech, replacement resources and request gain.
+- [Lord messages](LORD_MESSAGES.md): a separate presentation API for message audio, video and subtitles.
 - [Integration](#situational-sound-rules): initialization and live controls.
 - [Consumer policies](#consumer-filters-repeat-limits-and-other-sound-policies): filters, repeat limits and examples.
 - [Internal implementation](#internal-implementation): permanent hooks and clip lifetime.
@@ -11,7 +15,7 @@ Audio. Consumer settings remain outside APIShared.
 
 ## Public audio contracts
 
-Requires APIShared **0.8.0** or newer; declare this minimum version in both plugin
+Requires APIShared 0.8.0 or later; declare this minimum version in both plugin
 and manifest dependencies when using these audio contracts.
 
 `APIShared.Audio.SoundEvents.TryRegister(ownerGuid, registrationId, pre, post,
@@ -59,7 +63,8 @@ imply in-game confirmation.
 `ArabianIdleContextAvailable`/`ContextDiagnostic` independently report native
 context support. Missing native context leaves generic sound rules usable.
 Unsupported binaries, occupied entries and changed IL fail closed. Only the
-current audited managed/native/backend identities are supported. Callback
+current audited native identity is supported; managed playback is gated by its IL
+contract and the RedBird backend by a minimum version plus the validated hook. Callback
 failures are counted and logged at bounded intervals. Settings and consumer
 policies remain with consumers; no global sound defaults change.
 
@@ -112,11 +117,305 @@ callbacks isolate errors so the Extender cannot repeat Vanilla on an exception.
 Map-lifetime failure closes map clips only and is exposed by MapDiagnostic;
 process clips and generic events remain independent.
 
+### Native source events
+
+Not in packages up to 0.9.1; check the package you require.
+`APIShared.Audio.SoundSourceEvents.TryRegister(ownerGuid, registrationId, pre,
+out SoundRegistration handle, out string reason, int order = 0)` registers a
+process-owned observer `void SoundSourceHandler(ref SoundSourceArgs args)` on the
+positional wrappers Audio already owns. Registration works from any thread and
+before the native context is ready; calls begin once it is. Callbacks run
+synchronously on the thread executing the native game tick, inside the wrapper
+and before its original, ordered by order, ordinal owner GUID, then ID, without
+replay. Do not call Unity APIs or block there. `SetEnabled` affects subsequent
+calls. Sound calls made from inside a callback are not published again. A throwing
+callback's replacement is rolled back and counted in `CallbackFailures`; later
+callbacks still run.
+
+Only validated sources are published; every other wrapper call passes unchanged.
+
+| Sources | Acting unit (`UnitId`, `UnitGlobalId`, `UnitType`) | `TargetUnitId` / `TargetGlobalId` | Validation | Evidence |
+| --- | --- | --- | --- | --- |
+| The 91 soldier catalog entries (`UnitNN.SourceNN`) | Native current unit | null | Unit type, tile and (0x1700D2) state, as for playback context | Per source, as in the catalog |
+| `MeleeKill.Source01`..`04`, situation `MeleeKill` | Attacker argument of the melee damage routine | Victim argument | Attacker type selects this cue in the routine's jump tables; victim health 0; sound at the victim tile (Source04: attacker tile) | `NativeAudited`; needs in-game confirmation |
+
+`SoundSourceArgs` is a value type passed by reference; dispatch allocates nothing.
+It exposes `OriginalSoundId`, the current `SoundId`, `TileX`/`TileY`, `Kind`,
+`Situation`, `SituationEvidence`, `SituationConfirmed`, `SourceKey` and the identity
+members above. Game IDs are one-based UnitAccess IDs and global IDs are
+`GameUnit.r_GlobalId`, read at the call: immediate values, not lifetime guarantees.
+No player ownership is inferred. `TryReplaceSound(effectId)` selects a Vanilla
+effect-table ID in 0..`MaxEffectId` (10000) and returns false otherwise; the last
+successful replacement wins. Vanilla checks the table downstream (`playSound`
+ignores IDs outside it). Never pass an Extender clip/play-list ID.
+
+The replacement is written into the native record, so Vanilla plays it and
+`SoundEvents` sees it with Unknown context: the replaced effect is no longer the
+audited source. `MeleeKill` is reported only here; Unity playback records of kill
+cues stay Unknown and `SoundContext` still carries no unit ID. `Available` and
+`Diagnostic` report the native context; `MeleeKillAvailable` and
+`MeleeKillDiagnostic` report kill attribution, which fails independently.
+
+Kill cues per attacker type, from the jump tables at 0x199652 and 0x1992E2:
+
+| Attacker types | Victim-tile cue (Source01; Source02/03 for swords) | After a victim cry | Special victim (Source04, attacker tile) |
+| --- | --- | --- | --- |
+| 3, 84 | 240 | 242 | 242 |
+| 55 | 240 or 241 | 242 | 242 |
+| 22, 24, 70, 72, 74, 76, 82 | 118 or 153 | 187 | 187 (not 22) |
+| 25, 78 | 240 or 241 | 186 | 186 |
+| 26, 85 | 116 or 151 | 185 | 185 |
+| 27, 28, 73, 75, 80, 81, 83 | 119 (Source02) or 154 (Source03) | 188 | 188 |
+
+The variant follows bit 0 of the victim's word at GameUnit+0x380. A victim cry is a
+cue the routine already played for victim types 17, 21, 55, 56, 57, 63 or
+(conditionally) 64. A special victim has the native byte at GameUnit+0x328 set and
+gets only the attacker-tile cue; its meaning is not audited. Other attacker types
+and every death voice reaching the same CALLs stay unpublished. Hurt and order cues
+are not attributed: their native call paths were not audited for this catalog.
+
 `ContextRejections` counts known sources whose unit lookup/type/coordinate/state
 checks did not match. The first rejection logs bounded native diagnostics; that
 record remains Unknown without disabling other catalog entries. Custom clip
 playback passes force=false; Vanilla-specific forced effect channels remain part
 of the effect path, while global gains/channel selection remain shared.
+
+### Source selections
+
+Not in packages up to 0.9.2; check the package you require.
+`SoundSourceSelection.TryCreate(sourceKeys, situations, out selection, out reason)`
+builds an immutable set of catalog sources: the union of the listed `SourceKey`
+values (ordinal) and every source that can report one of the listed situations.
+`SoundSituation.MeleeKill` selects the four kill cues. Unknown or unattributable
+keys (for example `Unit55.Source05`, which never has a named situation),
+`SoundSituation.Unknown`, situations no catalog source reports and an empty union
+return false with a reason. `SelectableSourceKeys` lists the accepted keys in
+catalog order; `SoundSourceSelection.All` is every one of them.
+
+Pass the selection to the additional overloads
+`SoundEvents.TryRegister(ownerGuid, registrationId, pre, post, sources, out handle, out reason, order)`
+and `SoundSourceEvents.TryRegister(ownerGuid, registrationId, pre, sources, out handle, out reason, order)`.
+The existing overloads equal `SoundSourceSelection.All` and keep their behavior.
+`SoundRegistration.Sources` reports the selection; it is fixed for the handle's
+lifetime, while `SetEnabled` adds or removes its demand. Order, thread, replay,
+failure isolation and the Pre/Post contracts are unchanged.
+
+- `SoundSourceEvents`: the callback receives only calls whose `SourceKey` is selected.
+- `SoundEvents`: callbacks still receive every covered playback call, including
+  Unknown ones. Named context (`Situation`, `SourceKey`, `UnitType`, evidence) is
+  guaranteed only for selected sources; an unselected source arrives as Unknown, or
+  named when another enabled registration selects it. Do not rely on either. Kill
+  cues never reach playback, so a selection without soldier sources is rejected.
+
+While no enabled registration selects a source, its wrapper calls stay native:
+no managed transition, no unit lookup and no record marking. Select as narrowly as
+your rule allows; a mod that needs only the Arabian draw selects
+`ArabianIdleSwordDraw` (`Unit75.Source04`).
+
+## Unit voices
+
+Use `UnitVoiceEvents` for unit speech. For actual Lord dialogue, use
+[`LordMessageEvents`](LORD_MESSAGES.md), which coordinates audio, video and text
+as one message presentation. Both APIs share the managed speech-record site;
+a recognised Lord message is handled by its message broker rather than unit-voice
+rules. Neither API changes the existing combat/effect SFX contract.
+
+`APIShared.Audio.UnitVoiceEvents` is the separate broker for **unit speech**.
+The SFX APIs above do not intercept these voices. Unit voices require APIShared
+0.47.0 or newer; declare that minimum version consistently in the plugin and
+manifest. A previous package's SFX support does not imply unit-voice support.
+
+### Registration and playback rules
+
+`UnitVoiceEvents.TryRegister(ownerGuid, registrationId, pre, post, out registration,
+out reason, order: 0)` accepts registration on any thread,
+including before runtime initialization. At least one callback is required.
+Check `Available` and `Diagnostic` for actual runtime readiness; successful
+registration alone does not mean native attribution or playback is available.
+Source families fail independently: `IsSourceAvailable(key)` and
+`GetSourceDiagnostic(key)` report the status of each `UnitVoiceCatalog.SourceKeys`
+entry. A ready shared pipeline does not imply every generator family is ready.
+The additional overload takes `selection` as the third argument, before Pre/Post;
+the unrestricted overload selects `UnitVoiceSelection.All`.
+Registration and executable hooks persist until process exit. `SetEnabled` changes
+logical activation, including from another thread, without removing hooks.
+
+Pre and Post execute synchronously on Unity, outside registry locks, ordered by
+numeric order, ordinal owner GUID and registration ID, without replay. One
+invocation freezes its eligible observers, so disabling a rule in Pre does not
+remove its matching Post. Recursive playback from Pre/Post bypasses this broker.
+Do not perform I/O, decode resources, block or start gameplay from callbacks.
+
+Pre initially selects `Target.Kind == Original` and `VolumeFactor == 1`:
+
+- `TryReplaceVanillaCue(cue)` selects a `UnitVoiceCatalog` cue with a known Vanilla
+  speech route. Catalogued native intents which have no managed route are not
+  accepted as replacement targets.
+- `TryReplaceResource(handle)` selects ready, prepared samples. Null, unavailable
+  or overflowing selections return false without changing the current target.
+- `UseOriginal()` deliberately resets a preceding replacement to the original
+  request, preserving the current gain, sticky suppression and private State.
+- `MultiplyVolume(factor)` composes finite nonnegative gain. Zero still submits
+  a silent request; values above one are allowed. Negative, nonfinite or
+  overflowing products throw.
+- `SkipOriginalFunction = true` suppresses only this presentation call; a
+  successful veto is sticky across later callbacks.
+- `State` is private to this registration's matching Post.
+
+Last valid ordered target wins. A throwing Pre rolls back that callback's target,
+gain, veto and private State; other registrations continue. Arguments freeze
+after Pre. Callback failures are isolated and counted by `CallbackFailures`.
+Exceptions from the playback implementation propagate and have no Post.
+
+Post exposes the final target and gain, `WasSuppressed`, `WasSubmitted`, and any
+`FallbackReason`/`Diagnostic`. Submission means the playback pipeline accepted
+the request, not decoder success or audible hardware output. A resource that
+cannot be used before submission returns to the original path; the Post target
+reflects that fallback.
+
+Some native intents have no route in the game's speech lists, so Vanilla plays
+nothing for them (for example several Arabian engineer siege lines).
+`UnitVoiceContext.OriginalIsSilent` reports this. Without a replacement they stay
+silent. A Vanilla or resource replacement is played; a resource then uses the
+speech folder of the original's voice bank. A rule that replaces a whole bank
+therefore also gives these intents a voice; check `OriginalIsSilent` to keep
+Vanilla's silence.
+
+### Source context and selections
+
+`UnitVoiceContext.Source` is an immutable **emission-time** snapshot:
+
+| Field | Meaning |
+| --- | --- |
+| `SourceKey` | Audited generator family, independent of its selected file. |
+| `RequestingPlayerId` | One-based native requesting/view player only where established. |
+| `OwnerPlayerId` | One-based actual owner only where independently established; civilian owners can differ from the view player. |
+| `RequestedUnitType` | Original SHCDESE `eChimps` value when known, otherwise null. A siege device using Engineer speech is still a device request. |
+| `VoiceBankKey` / `OriginalCueKey` | Bank and file actually selected by Vanilla. |
+| `Situation` / `Evidence` | Source-specific action interpretation and its confidence. |
+| `SessionId` | Process-local originating mission generation. |
+
+The spearman column and the pikeman column of the troop table both point to
+`spear_ladder1-3.wav` for pushing an enemy ladder off a wall. Only the spearman
+handler requests that situation, so these files always belong to the spearman
+bank; Vanilla has no pikeman ladder speech to replace.
+
+No unit ID or native pointer is promised. Unknown facts remain nullable; do not
+reconstruct them from a basename, late selection or current player. A cue's own
+`Situation` classifies a file, whereas the source describes its use: recruitment,
+for example, may reuse an ordinary selection file. `NativeAudited` does not mean
+`InGameConfirmed`.
+
+`UnitVoiceContext` also retains original path, channel, volume and muting/pause
+arguments. `UiLocale`, `SpeechAssetBranch` and typed `MissionContext` describe
+**playback time**, independently of the source generation. The speech branch is
+`EnglishSpeech` or `LocalizedSpeech`; neither the UI locale nor a resource path
+proves the language actually spoken. A live consumer query in Pre, such as
+`LordSkins.TryGetForPlayer`, likewise observes playback time.
+
+Use `UnitVoiceCatalog.Sources` for immutable source descriptions/evidence and
+`VoiceBanks` for immutable groups with complete cue collections. `SourceKeys`,
+`Cues` and `TryGetCue` remain available for direct key discovery. The
+catalog contains observed native intents, including files with no original
+managed playback route; a catalog entry is not an audibility guarantee.
+
+`UnitVoiceSelection.TryCreate(out selection, out reason, sourceKeys: ...,
+cueKeys: ..., voiceBankKeys: ..., situations: ..., requestingPlayerIds: ...,
+ownerPlayerIds: ..., requestedUnitTypes: ...)` copies the supplied collections.
+Different dimensions are **ANDed**; values within one dimension are **ORed**.
+Null dimensions are unrestricted, explicitly empty dimensions are rejected, and
+an unknown nullable source value cannot match a restricted dimension. Keys use
+ordinal matching. Omitting every dimension returns `UnitVoiceSelection.All`.
+This differs from the union semantics of SFX `SoundSourceSelection`.
+
+Each registration's selection filters its own Pre/Post invocation. Another mod
+selecting a source does not cause an unmatched registration to receive it.
+The registration's `Sources` and the selection's `SourceKeys` are immutable.
+Native capture uses aggregate enabled demand; it executes no mod predicate.
+
+### Prepared replacement resources
+
+Prepare outside callbacks, after APIShared initialization and after the relevant
+Extender resource index is ready:
+
+```csharp
+UnitVoiceResources.TryPrepareModResource(ownerGuid, "voice", "Voices/voice.wav",
+    completed, out handle, out reason, baseVolume: 1f);
+UnitVoiceResources.TryPrepareMapResource(ownerGuid, "map-voice", "Voices/voice.ogg",
+    completed, out mapHandle, out reason, baseVolume: 1f);
+```
+
+These methods are callable from any thread; preparation and completion are
+deferred on Unity. Success means queued, not decoded. Inspect `IsReady` and
+`Diagnostic`, or the completion callback. WAV must match the Extender decoder's
+PCM16, 44100 Hz mono/stereo format; OGG uses Vorbis. Private mod resources are
+owner-qualified; map resources read the current archive without mod fallback.
+Stable handles are distinct from SFX IDs, play-list IDs and Unity `AudioClip`s.
+
+A failed preparation does not block its owner and ID: prepare it again once the
+file is fixed. Pending and ready registrations of the same owner and ID are
+rejected. Map resources can be prepared from the consumer's own mission-start
+observer; the lifecycle marks the mission as started before any Start observer
+runs.
+
+Mod handles retain immutable decoded samples until process exit. Map handles
+invalidate immediately on end/initialization boundaries and never retarget to
+a later map. Prepare them after the desired mission has started; a later
+generation may register the same owner/ID and receives a new handle. Completion
+callback exceptions are isolated through `UnitVoiceResources.CallbackFailures`.
+
+Playback creates a fresh clip from the prepared samples and multiplies the
+request factor by `BaseVolume`. It performs no file access or decoding in
+Pre/Post. Every target retains the speech channel and pause/muting arguments.
+Original requests and Vanilla donors pass through the existing SFXManager;
+the selected file determines the speech category and its game-volume control.
+Prepared resource replacements preserve the original request's unit/civilian
+category. Game and master volume controls remain downstream in every case.
+The factor scales each OneShot rather than the shared AudioSource volume, so
+later slider changes continue to affect playing audio. Own fresh clips follow
+the existing Speech release paths; foreign clips are not additionally destroyed.
+
+The [compiled consumer example](../examples/ThirdPartyMod/UnitVoiceExample.cs)
+shows player/situation filtering, gain, a Vanilla donor, private mod preparation,
+map preparation and logical activation. It applies no unit-specific policy and
+does not register itself automatically.
+
+### Coverage, implementation and acceptance limits
+
+The attributed sources cover ordinary troop selection/orders, Engineer and siege
+special actions, successful recruitment, Bedouin heal/sap actions, and selected
+civilian comments. Unattributed speech, adviser and Genie warnings, Lord
+dialogue, music and combat SFX remain outside this broker. Lords and units with
+no Vanilla speech call do not gain synthetic events.
+
+Vanilla chooses variants and suppresses repeated/busy requests before capture.
+Its shared speech buffer keeps only the last filename for one `PlayState`;
+every speech record in that state still uses that file and attribution snapshot.
+APIShared does not reconstruct or play discarded earlier filenames. A private
+token carries the snapshot to the exact copied `PlayState`, where the original
+filename is restored. Unrelated native writers cannot inherit a stale sidecar,
+and disabling a rule does not invalidate already transported tokens.
+
+Native capture performs only audited, lock-guarded source reads and transport;
+public rules execute later on Unity. Permanent copy/record/request adapters
+cooperate with Lord-message presentation at the shared speech site. Request-local
+ExecutionContext frames carry gain across the actual async Speech loader;
+ordinary and nested requests establish neutral child frames and cannot inherit
+another request's factor. Unsupported source hooks disable only the affected
+generator families. Failure of a mandatory native-output, managed IL or async-flow
+contract leaves unit-voice interception unavailable, with Vanilla continuing unchanged.
+
+Focused CLI tests exercise filtering, rollback, gain validation, recursion,
+resource generations, transport/coalescing and copied IL behavior. Their current
+execution status belongs to the build/test report; source presence alone is not
+passing evidence. These checks do not establish real Mono/game acceptance,
+audibility, live slider behavior, editor/save-load behavior or actual host/client
+coexistence. Keep those acceptance results separate from compiled contract tests.
+
+See [contracts](../src/Audio/UnitVoices/UnitVoiceContracts.cs),
+[rules](../src/Audio/UnitVoices/UnitVoiceEvents.cs),
+[source filters](../src/Audio/UnitVoices/UnitVoiceSelection.cs) and
+[resources](../src/Audio/UnitVoices/UnitVoiceResources.cs).
 
 ## Situational sound rules
 
@@ -125,6 +424,8 @@ APIShared managed startup. Keep the returned `SoundRegistration` rooted and
 change `SetEnabled` when your setting changes. Filter `args.Context` before
 mutating it; use `MultiplyVolume(0.25f)` for a quarter of the spatially computed
 gain. `SoundSituation.Unknown` is an explicit absence of audited attribution.
+When the rule depends on named situations, register with a
+[source selection](#source-selections) for exactly those situations.
 Do not install competing native sound or GameMap hooks.
 
 See the [audio contract](#public-audio-contracts) and
@@ -134,6 +435,17 @@ in the mod's private resource root (for example `Sounds/chime.wav`); loading is
 deferred and requires the Extender's resource index. Never pass an Extender clip
 ID to `ReplaceSound`. A map handle can be rebound on a later map; load it only
 after the desired archive is available.
+
+### Exact-unit cue replacement
+
+To change a cue for specific units, register `SoundSourceEvents` once at startup,
+keep the handle rooted and match `Situation`, `UnitType` and your own identity set
+(for example `UnitGlobalId`, plus `TargetGlobalId` for kill cues), then call
+`TryReplaceSound`. Keep the callback short and thread-safe; it runs on the native
+game-tick thread. Do not detour the wrappers 0x2960/0x2990 yourself: Audio owns
+them exclusively and a second detour makes one of the two refuse to install. See
+the [contract](#native-source-events) and the `OnSource` part of the
+[example](../examples/ThirdPartyMod/SoundExample.cs).
 
 A named situation may be provisional. Filter `Context.SituationEvidence` or
 `SituationConfirmed` if your rule requires accepted gameplay evidence. Use
@@ -151,6 +463,7 @@ Local presentation preferences do not require synchronized gameplay messages.
 | Policy | Inputs and action | Boundary |
 | --- | --- | --- |
 | Unit-type-specific sounds | Filter nullable `Context.UnitType` together with `Situation`; then change gain, target, pan or suppression. | A type is not a live unit ID or player owner. Reject missing types for a specific-type rule. |
+| Exact-unit cues | Register `SoundSourceEvents`; match `Situation`, `UnitType` and a consumer-owned `UnitGlobalId` set; `TryReplaceSound`. | Native thread, attributed sources only; effect IDs, not clips. The Unity-stage context of a replaced call is Unknown. |
 | One exact animation/source | Match `SourceKey`, `UnitType`, original effect ID and, if needed, evidence. | The same situation name can describe several sources with different evidence. |
 | Confirmed-only rules | Require `SituationConfirmed`, or select an explicit evidence threshold. | An inferred action name does not prove its gameplay meaning; confidence applies to the individual source/type. |
 | Repeat/burst reduction | Use a monotonic consumer clock and a shared or keyed interval; veto too-frequent requests with `SkipOriginalFunction`. | Original native creation/RNG remain unchanged. Admission is not audible output. |
@@ -178,7 +491,8 @@ matching request is admitted, subsequent requests within the interval are
 suppressed, and suppressed requests do not extend the window. A per-type or
 per-source window can preserve more variation, but requires bounded consumer
 storage. Do not call a tile/source key a per-unit limiter: the context exposes
-no durable unit ID. If an earlier contributor has already vetoed a request,
+no durable unit ID (native source events expose identity only for their attributed
+sources, before the record exists). If an earlier contributor has already vetoed a request,
 leave its veto and avoid consuming your window. A later contributor can still
 veto an admitted request. Pre admission therefore measures attempts, not sound
 actually heard. Post-based accounting may be used for submitted requests; even
@@ -205,7 +519,8 @@ handle Unknown requests intercepted by the audited GameMap playback path.
 ## Internal implementation
 
 Audio owns one permanent GameMap IL hook, two NativeX64/Absolute wrapper
-intermediaries (15 bytes each) and one spatial-emitter detour (14 bytes).
+intermediaries (15 bytes each) and one spatial-emitter detour (14 bytes) with its
+own intermediary. Every intermediary first tests a native demand byte.
 Original native return addresses
 select a hash-bound 91-entry soldier catalog; a negative marker carries only
 source/effect provenance through the 21-short records and existing buffers.
@@ -215,6 +530,37 @@ changes before a call do not defeat source attribution. Unrelated sources stay
 Unknown. Evidence is per source/type; generic playback remains available when
 native attribution fails. Hooks, bridges, delegates and publishers are permanent
 roots with logical activation only.
+
+Native source events reuse the wrapper path: attribution runs before the original,
+callbacks see a stack-only `SoundSourceArgs`, and the final sound ID is forwarded.
+The scope ThreadStatics are written only around a matched soldier source with
+playback demand; every other call leaves them untouched (the emitter is a leaf of the
+wrapper, so the scope is null outside that window). A replaced call is never marked.
+
+### Melee kill attribution
+
+Kill cues are CALLs to wrapper 0x2960 at return addresses 0x199957, 0x199823,
+0x199837 and 0x199319 inside the melee damage routine 0x199110 (rcx unit base,
+edx attacker, r8d victim, r9d damage). They are reached only after the victim's
+health was written as zero (0x19925C, branch 0x19931E). The current-unit global is
+not used: instant-kill callers (0x1AD64, 0x1ADD4, 0x198F84) pass units that need
+not be the one whose update runs. Instead the bridge passes the entry RSP and spills
+the caller's RBP at entry RSP-0x10: the routine writes RBP only by `movsxd rbp,r8d`
+(0x199124), so RBP is the victim, and the attacker offset `attacker*0x490` sits in
+the caller-home slot [RSP+0x70] written only at 0x1991D5, which is [entry RSP+0x78]
+at the wrapper.
+Script Extender 2.14.1 patches this routine twice: an Indirect entry detour for its
+melee-damage event (0x199110..0x199115; the trampoline replays `mov [rsp+18h],rbx;
+push rbp` and resumes at 0x199116) and a 14-byte context hook for its melee-kill
+event (0x199444..0x199455) whose stub saves and restores every register. Both keep
+RBP, RSP and [rsp+0x70], which the routine itself reads again when it picks the cue
+(0x19964D, 0x199742). Live validation therefore pins only what attribution reads:
+the frame setup 0x199124..0x1991D9 (hash) and the four kill CALLs. The file hash pins
+the rest, and the tests prove on the file that nothing else writes RBP or the spill
+slot or moves RSP before the epilogue. A changed pinned byte, or an entry patch longer
+than the 20-byte prologue, disables kill attribution and leaves the soldier catalog
+running. Attacker and victim are then validated through UnitAccess, the attacker type
+against the effect's jump-table group, the victim's zero health and the sound tile.
 
 SoundClips queues owner-private resources, map archives and borrowed Extender
 clip captures on the permanent Extender dispatcher. API handles are independent
@@ -229,11 +575,17 @@ destruction. Mod clips persist and imported clips remain foreign-owned.
 Audio source capture owns wrapper ranges 0x2960..0x296F and
 0x2990..0x299F plus emitter 0x1A41E0..0x1A41EE. Absolute patch validation
 checks displaced bytes, target, entry and trampoline continuation before and
-after publication. A permanently rooted Win64 bridge captures [entry RSP] as
-argument five, reserves 0x38 aligned stack bytes, and retains the four original
-arguments. Copied-code tests execute the bridge and original displaced prologue;
-production functions/random choices still run exactly once. Catalog sites verify
-CALL rel32 targets.
+after publication. Each permanently rooted Win64 bridge starts with
+`mov rax,demand; cmp byte [rax],0; jne active; mov rax,trampoline; jmp rax`, so a
+zero byte reaches the original with untouched argument registers, RSP and return
+address (RAX is scratch: neither displaced prologue reads it first). The wrapper's
+active path reserves 0x38 aligned stack bytes, passes the entry RSP as argument
+five ([entry RSP] is the original return address) and spills the caller's RBP into
+its own frame at entry RSP-0x10, a slot a five-argument callee never owns; the
+emitter's active path tail-jumps into its rooted managed thunk. Validation decodes
+both bridges. Copied-code tests execute the bridges and original displaced
+prologues with the byte at zero and one; production functions/random choices still
+run exactly once. Catalog and kill sites verify CALL rel32 targets.
 
 The concrete hashes, addresses, resolution policy and binary-update checklist
 remain in [UpdateToNewDLL](../UpdateToNewDLL.md). General ownership and update
@@ -242,7 +594,8 @@ rules are in [native compatibility](NATIVE_COMPATIBILITY.md).
 ## Audio demand and dispatch cost
 
 Audio alone supplies a cached demand provider to the shared interception broker.
-Successful registration attaches its handle to SoundDemand. Rare activation and
+Successful registration attaches its handle to a SoundDemand: one for playback
+(`SoundEvents`) and one for native source events. Rare activation and
 attachment writes acquire handle -> demand locks in a fixed order. Enabling
 publishes the count before the enabled flag; disabling clears the flag before
 reducing the count. Readers use a volatile count and never enumerate handles.
@@ -261,10 +614,55 @@ when a Pre has a matching Accepted/Post receiver. Static factories receive
 explicit context rather than capturing invocation objects. Public args and
 results are not pooled and can still be retained by observers.
 
-Permanent native bridges and their managed transitions remain installed without
-audio demand. Their wrapper skips attribution/UnitAccess when demand is zero;
-the emitter checks missing/consumed scope before demand. One-time confirmation
-markers first read their state and only the first contender needs an atomic write.
+Permanent native bridges remain installed without audio demand; a dormant call does
+not enter managed code. SoundNativeDemand keeps two bytes in process-lifetime
+unmanaged memory: the wrapper byte is native context ready AND (playback OR source
+demand); the emitter byte is ready AND playback demand. Every transition that can
+change them is owned and republishes both under one lock: a count change in either
+SoundDemand (registration attach, `SetEnabled`) and `SoundContextPolicy.SetReady`.
+Enabling raises the byte before the handle's enabled flag; disabling clears the flag
+first, so no enabled handle meets a zero byte. Behind the guard the managed
+callbacks still check demand before touching ThreadStatic scope state. One-time
+confirmation markers first read their state and only the first contender needs an
+atomic write.
+
+With demand, the wrapper bridges additionally test the native return address
+against a process-lifetime bitmap of the attributable origins (the 91 soldier
+source call sites and the melee kill sites, `SoundReturnFilter`). Every other
+positional sound of the map (workers, animals, buildings) jumps straight to the
+trampoline: OnWrapper would only have forwarded it unchanged, so no observable
+behavior changes. The filter uses R10 as scratch, which is volatile in Win64 and
+validated not to be read by either displaced wrapper prologue. The emitter bridge
+tests an "armed" counter, not the playback demand byte, that OnWrapper
+raises only around a matched soldier source with playback demand; all other emitter
+calls stay native. The emitter demand byte remains as the documented upper bound
+(armed implies context ready and playback demand). The table below was measured without both filters. Same harness with the filters
+(minimum of 31 samples, 0 bytes per call in every mode): unhooked 2.65 ns, dormant
+4.08 ns, source demand with unattributed origin 4.03 ns, playback demand with
+unattributed origin 3.58 ns (without filters 164.29 ns), playback demand with catalog
+origin and rejected attribution 84.64 ns (without filters 226.77 ns; the emitter does
+not enter managed code). Desktop CLR, not Unity Mono.
+
+The filter bitmap holds only the union of currently selected sources
+([source selections](#source-selections)). SoundNativeDemand keeps one count of
+enabled handles per catalog index and channel (playback counts soldier sources
+only; source events count soldier sources and kill cues); a bit is set while
+either count is nonzero. The bridges embed the bitmap's address, base and length,
+which never change: a transition recomputes every touched bitmap byte from the
+counts and writes each byte once under the same lock that republishes the demand
+bytes, so no bridge is repatched. Native readers see each bit old or new; bits of
+sources whose demand did not change are equal in both. Enabling raises counts and
+bits before the handle's enabled flag and the wrapper byte; disabling clears the
+flag first, so no enabled handle meets a cleared bit. Behind the filter, OnWrapper
+re-checks the per-source counts, so a bit set for one channel never runs the other
+channel's work, and source dispatch skips registrations that did not select the
+source. Same harness, two runs (minimum of 31 samples, 0 bytes per call): playback
+demand with catalog origin and rejected attribution 47.1 ns; the same origin while
+the only playback registration selects another source 4.1 to 4.7 ns, equal to the
+dormant 3.6 to 3.8 ns plus the filter test. `SoundSourceSelectionTests` executes
+the production bridges on two copied wrappers whose origins are the Arabian draw
+and swing sites, and checks admission per selection, concurrent transitions without
+a cleared bit for an enabled handle, and byte-identical bridge code afterwards.
 
 ### Audio dispatch measurements
 
@@ -294,3 +692,44 @@ and 16 disabled handles allocate 0 bytes per call after warm-up (about 39/44 ns
 in this run). The production guard has no allocation opcode before its original
 return; the outer IL callback has none either. Unity/Mono rendering, real native
 transition cost, asset decoding and hardware output are outside these measurements.
+
+### Native bridge measurements
+
+Production hooks (`SoundRuntime.CreateHooks`: real bridges, demand bytes,
+OnWrapper/OnEmit, RedBird trampolines) on private executable copies of the real
+wrapper 0x2960 and emitter 0x1A41E0, with the manager LEA and emitter CALL
+relocated. A native loop calls the copied wrapper 20000 times per sample, one
+managed transition per sample; each call appends exactly one record. 31 samples per
+mode at raised process priority, modes alternated within a run, four runs
+alternated with the develop baseline 49e60dc (same harness with a test-only
+hook-construction seam). The value is the minimum over all samples; in every run
+pair the branch was faster in every hooked mode. Both sides allocate 0 bytes per
+call in every mode. 64-bit .NET Framework 4.8.1, not Unity Mono.
+
+| Wrapper call (wrapper + emitter) | develop ns | branch ns |
+| --- | ---: | ---: |
+| Unhooked copy (reference) | 3.05 | 3.00 |
+| No active registration | 147.11 | 4.53 |
+| Source events only, unattributed origin | n/a | 111.89 |
+| Playback events, unattributed origin | 231.12 | 164.29 |
+| Playback events, catalog origin, attribution rejected | 270.62 | 226.77 |
+
+Dormant cost drops from two managed transitions per call to one byte test and two
+jumps (+1.5 ns over the unhooked copy). With playback demand the branch saves the
+ThreadStatic save/reset/restore that develop performed on every wrapper call; only a
+matched soldier source still writes the scope. The catalog-origin row runs the
+rejected attribution (current unit 0), i.e. the catalog path without UnitAccess
+work. Bridge layouts alone, with a trivial managed callback, differ by less than
+2 ns (develop wrapper bridge 26.8 to 28.2 ns, branch 26.2 to 29.0 ns; emitter
+RedBird default 27.4 to 28.6 ns, branch guard 28.2 to 30.5 ns). Source dispatch,
+measured separately with stack-only args and a replacing callback, is 0 bytes and
+about 67 ns for one and 177 ns for 16 registrations. A successful attribution needs
+live units and is not measured off-game; per call it does the work of develop's
+matched path minus one ThreadStatic write and three demand-delegate calls, plus one
+source-demand read, one extra call frame and the emitter guard. Mono's transition and
+ThreadStatic costs are not measured.
+
+RedBird's thread-suspending patch destabilises the desktop CLR test host (a later
+GC fails with an internal runtime error, reproduced with one private detour), so
+private-copy tests pass `suspendThreads: false` to `NativeContract.Backend`. No
+other thread can execute those copies. Production hooks keep the default.

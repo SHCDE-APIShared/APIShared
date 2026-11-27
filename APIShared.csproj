@@ -13,9 +13,12 @@
     <LangVersion>latest</LangVersion>
     <DefineConstants>$(DefineConstants);API_SHARED_LOBBY_OBSERVER;API_SHARED_INTERNAL_JSON;API_SHARED_INTERNAL_TOOLTIP</DefineConstants>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <OutputPath>BepInEx\plugins\APIShared_Serp\</OutputPath>
+    <OutputPath Condition="'$(APISharedArtifactsRoot)' == ''">BepInEx\plugins\APIShared_Serp\</OutputPath>
+    <OutputPath Condition="'$(APISharedArtifactsRoot)' != ''">$(BaseOutputPath)$(Configuration)\$(TargetFrameworkVersion)\</OutputPath>
+    <IntermediateOutputPath Condition="'$(APISharedArtifactsRoot)' != ''">$(BaseIntermediateOutputPath)$(Configuration)\$(TargetFrameworkVersion)\</IntermediateOutputPath>
     <DebugSymbols>true</DebugSymbols>
     <DebugType>portable</DebugType>
+    <Optimize Condition="'$(Configuration)' == 'Release'">true</Optimize>
     <WarningLevel>4</WarningLevel>
     <DocumentationFile>$(OutputPath)APIShared.xml</DocumentationFile>
     <WarningsAsErrors>1591;2002</WarningsAsErrors>
@@ -23,6 +26,7 @@
   <ItemGroup>
     <Reference Include="System" />
     <Reference Include="System.Core" />
+    <Reference Include="APIShared.Content"><HintPath Condition="'$(APISharedArtifactsRoot)' == ''">Content\bin\$(Configuration)\netstandard2.0\APIShared.Content.dll</HintPath><HintPath Condition="'$(APISharedArtifactsRoot)' != ''">$(_APISharedArtifactsRoot)bin\APIShared.Content\$(Configuration)\netstandard2.0\APIShared.Content.dll</HintPath><Private>true</Private></Reference>
     <Reference Include="ICSharpCode.SharpZipLib"><HintPath>$(ExtenderDir)\ICSharpCode.SharpZipLib.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="System.Numerics" />
     <Reference Include="UnityEngine.InputLegacyModule"><HintPath>$(GameDir)\Stronghold Crusader Definitive Edition_Data\Managed\UnityEngine.InputLegacyModule.dll</HintPath><Private>false</Private></Reference>
@@ -58,9 +62,22 @@
   <ItemGroup>
     <Content Include="Patches\**\*.xaml"><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory></Content>
     <Content Include="info.json"><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory></Content>
+    <Content Include="Locales\*.txt"><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory></Content>
+    <EmbeddedResource Include="src\ModSettings\UI\LobbyPresetOffers.xaml"><LogicalName>APIShared.LobbyPresetOffers.xaml</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="Locales\en-US.txt"><LogicalName>APIShared.Locales.en-US.txt</LogicalName></EmbeddedResource>
     <Content Include="Workshop\**\*"><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory></Content>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+  <!-- The legacy Framework MSBuild cannot resolve current SDK-style projects. Build
+       this independent library through dotnet, then consume its normal assembly output.
+       Let the SDK own incremental checks, including nested/removed sources and imports. -->
+  <Target Name="BuildContentLibrary" BeforeTargets="ResolveAssemblyReferences"
+          Condition="'$(DesignTimeBuild)' != 'true'">
+    <!-- Environment forwarding avoids shell quoting of roots containing spaces or
+         a trailing separator. These defaults affect this child process only. -->
+    <Exec Command="dotnet build &quot;$(MSBuildThisFileDirectory)Content\APIShared.Content.csproj&quot; --configuration &quot;$(Configuration)&quot; --nologo"
+          EnvironmentVariables="DOTNET_ADD_GLOBAL_TOOLS_TO_PATH=false;DOTNET_GENERATE_ASPNET_CERTIFICATE=false;APISharedArtifactsRoot=$(_APISharedArtifactsRoot)" />
+  </Target>
   <Target Name="ValidateReferences" BeforeTargets="BeforeBuild">
     <Error Condition="!Exists('$(ExtenderDir)\SHCDESE.dll')" Text="SHCDESE.dll was not found: $(ExtenderDir)" />
     <Error Condition="!Exists('$(ExtenderDir)\R3.dll')" Text="R3.dll was not found beside SHCDESE.dll: $(ExtenderDir)" />

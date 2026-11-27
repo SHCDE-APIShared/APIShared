@@ -11,48 +11,97 @@ namespace APIShared.ModSettings
     internal sealed class LobbyPresetStorage
     {
         private readonly string filePath;
+        private readonly string legacyFilePath;
+        private readonly string validationRoot;
         private readonly ManualLogSource log;
         private readonly string modName;
+        internal string FilePath => filePath;
+        internal long SuccessfulWrites { get; private set; }
+        internal long FailedWrites { get; private set; }
+        internal string LastWriteResult { get; private set; } = "not-attempted";
 
-        internal LobbyPresetStorage(string filePath, ManualLogSource log, string modName)
+        internal LobbyPresetStorage(string filePath, ManualLogSource log, string modName,
+            string legacyFilePath = null, string validationRoot = null)
         {
             this.filePath = filePath;
+            this.legacyFilePath = legacyFilePath;
+            this.validationRoot = validationRoot;
             this.log = log;
             this.modName = modName;
         }
 
-        internal bool Exists => File.Exists(filePath);
+        // A corrupt or inaccessible new file must never revive stale installation settings.
+        private string ReadPath => ExistsAt(filePath) ? filePath : legacyFilePath ?? filePath;
+        internal bool Exists => ExistsAt(ReadPath);
+        internal bool NeedsRelocation => !ExistsAt(filePath) && legacyFilePath != null && ExistsAt(legacyFilePath);
+        internal string DiagnosticPaths => $"workingSettingsPath={filePath}, legacySettingsPath={legacyFilePath ?? "none"}";
+
+        private static bool ExistsAt(string path)
+        {
+            try
+            {
+                if ((File.GetAttributes(path) & FileAttributes.Directory) != 0)
+                    throw new IOException("Settings file path is a directory: " + path);
+                return true;
+            }
+            catch (FileNotFoundException) { return false; }
+            catch (DirectoryNotFoundException) { return false; }
+        }
 #if API_SHARED_PRESET_TESTS
         internal int TestWriteCount { get; private set; }
 #endif
 
-        internal void Write(Dictionary<string, byte[]> payload)
+        /// <summary>Atomically replaces the file; failures are logged and counted. Returns whether the payload was published.</summary>
+        internal bool Write(Dictionary<string, byte[]> payload)
         {
             string directory = Path.GetDirectoryName(filePath);
-            string temporaryPath = filePath + ".tmp-" + Guid.NewGuid().ToString("N");
+            string temporaryPath = Path.Combine(directory, Guid.NewGuid().ToString("N") + ".tmp");
+            bool ownsTemporaryFile = false;
             int publishAttempts = 0;
             try
             {
+                ValidateWritePath();
                 Directory.CreateDirectory(directory);
-                File.WriteAllBytes(temporaryPath, MessagePackSerializer.Serialize(payload));
+                ValidateWritePath();
+                byte[] bytes = MessagePackSerializer.Serialize(payload);
+                using (var stream = new FileStream(temporaryPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                {
+                    ownsTemporaryFile = true;
+                    stream.Write(bytes, 0, bytes.Length);
+                }
                 PresetAtomicPublishResult result =
                     PresetAtomicFilePublisher.Publish(temporaryPath, filePath);
                 publishAttempts = result.Attempts;
                 if (!result.Succeeded)
                 {
-                    DebugLogHelper.LogError(
+                    FailedWrites++;
+                    LastWriteResult = "atomic-publish-failed";
+                    NativeApiLog.Error(
                         log,
                         $"[{modName}] Could not atomically publish lobby-settings presets to [{filePath}] " +
                         $"after {result.Attempts} attempts; hresult=0x{result.Error.HResult:X8}: {result.Error}");
                 }
-#if API_SHARED_PRESET_TESTS
                 else
+                {
+                    bool report = SuccessfulWrites == 0 || LastWriteResult != "published";
+                    SuccessfulWrites++;
+                    LastWriteResult = "published";
+                    if (report)
+                        NativeApiLog.Info(log,
+                            $"SETTINGS_STORAGE: mod={modName}, result=published, path={filePath}, " +
+                            $"bytes={bytes.Length}, attempts={result.Attempts}, successfulWrites={SuccessfulWrites}, " +
+                            $"failedWrites={FailedWrites}; scope=personal. Subsequent successes are counted in the mission settings snapshot.");
+#if API_SHARED_PRESET_TESTS
                     TestWriteCount++;
 #endif
+                    return true;
+                }
             }
             catch (Exception exception)
             {
-                DebugLogHelper.LogError(
+                FailedWrites++;
+                LastWriteResult = "write-failed:" + exception.GetType().FullName;
+                NativeApiLog.Error(
                     log,
                     $"[{modName}] Could not save lobby-settings presets to [{filePath}]; " +
                     $"publishAttempts={publishAttempts}, hresult=0x{exception.HResult:X8}: {exception}");
@@ -61,56 +110,68 @@ namespace APIShared.ModSettings
             {
                 try
                 {
-                    if (File.Exists(temporaryPath))
+                    if (ownsTemporaryFile && File.Exists(temporaryPath))
                         File.Delete(temporaryPath);
                 }
                 catch (Exception exception)
                 {
-                    DebugLogHelper.LogWarning(
+                    NativeApiLog.Warning(
                         log,
                         $"[{modName}] Could not remove temporary preset file [{temporaryPath}]: {exception.Message}");
                 }
             }
+            return false;
+        }
+
+        private void ValidateWritePath()
+        {
+            if (validationRoot != null)
+                ModSettingsPresetCatalog.ValidatePersonalWritePath(validationRoot, Path.GetDirectoryName(filePath), filePath);
         }
 
         internal bool TryRead(out Dictionary<string, byte[]> payload)
         {
+            string readPath = ReadPath;
             payload = null;
-            if (!File.Exists(filePath))
+            if (!ExistsAt(readPath))
                 return false;
 
             try
             {
                 payload = MessagePackSerializer.Deserialize<Dictionary<string, byte[]>>(
-                    File.ReadAllBytes(filePath));
+                    File.ReadAllBytes(readPath));
                 return payload != null;
             }
             catch (Exception exception)
             {
-                DebugLogHelper.LogError(
+                NativeApiLog.Error(
                     log,
-                    $"[{modName}] Could not read lobby-settings presets from [{filePath}]: {exception}");
+                    $"[{modName}] Could not read lobby-settings presets from [{readPath}]: {exception}");
                 return false;
             }
         }
 
         internal void BackupCorruptFile()
         {
-            if (!File.Exists(filePath))
+            string readPath = ReadPath;
+            if (!ExistsAt(readPath))
                 return;
 
             string backupPath = filePath + ".corrupt-" +
                 DateTime.Now.ToString("yyyyMMdd-HHmmssfff");
             try
             {
-                File.Copy(filePath, backupPath, false);
-                DebugLogHelper.LogWarning(
+                ValidateWritePath();
+                Directory.CreateDirectory(Path.GetDirectoryName(filePath));
+                ValidateWritePath();
+                File.Copy(readPath, backupPath, false);
+                NativeApiLog.Warning(
                     log,
                     $"[{modName}] Preserved invalid preset data at [{backupPath}].");
             }
             catch (Exception exception)
             {
-                DebugLogHelper.LogError(
+                NativeApiLog.Error(
                     log,
                     $"[{modName}] Could not preserve invalid preset data: {exception}");
             }

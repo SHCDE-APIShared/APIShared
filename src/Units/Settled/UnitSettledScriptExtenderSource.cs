@@ -1,4 +1,5 @@
 using System;
+using BepInEx.Logging;
 using R3;
 using SHCDESE.API;
 using SHCDESE.EventAPI;
@@ -26,6 +27,8 @@ namespace APIShared.Units
         internal static readonly IUnitSettleReader Reader = new ScriptExtenderUnitReader();
         private static bool tickSubscribed;
         private static IDisposable created, transitions, unloadMap, loadMap, loadSave;
+        // Set by UnitSettledEvents.Initialize; null in offline fixtures, which then stay silent.
+        internal static ManualLogSource Log;
 
         internal static bool IsActive => tickSubscribed;
 
@@ -43,19 +46,19 @@ namespace APIShared.Units
         private static void OnTick(int simulationTick)
         {
             try { UnitSettledEvents.Tracker.Tick(simulationTick); }
-            catch { }
+            catch (Exception ex) { Report("tick", ex); }
         }
 
         private static void OnUnitCreate(UnitCreateEventArgs args)
         {
             try { Forward(args, UnitSettledEvents.Tracker); }
-            catch { }
+            catch (Exception ex) { Report("unit-create", ex); }
         }
 
         private static void OnUnitTransition(UnitTransitionEventArgs args)
         {
             try { Forward(args, UnitSettledEvents.Tracker); }
-            catch { }
+            catch (Exception ex) { Report("unit-transition", ex); }
         }
 
         private static void OnUnloadMap(MapUnloadEventArgs args) => Discard(args);
@@ -65,6 +68,13 @@ namespace APIShared.Units
         private static void Discard(EventHookBase args)
         {
             try { if (args != null && args.Phase == EventHookPhase.Pre) UnitSettledEvents.Tracker.Discard(); }
+            catch (Exception ex) { Report("discard", ex); }
+        }
+
+        // Failure path only; RuntimeHealth throttles identical repeats. Never throws into SE.
+        internal static void Report(string handler, Exception ex)
+        {
+            try { Internal.RuntimeHealth.Failure(Log, "unit-settled:" + handler, true, "Unit-settled source handler failed; event skipped: " + ex); }
             catch { }
         }
 

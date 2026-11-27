@@ -3,6 +3,19 @@ using System.Diagnostics;
 
 namespace APIShared
 {
+    /// <summary>One single-unit route output frame opened by <see cref="AssassinPathAPI.BeginRouteOutput"/>.</summary>
+    public sealed class AssassinRouteOutputFrame
+    {
+        private readonly AssassinRouteHandoff frame;
+        internal AssassinRouteOutputFrame(AssassinRouteHandoff frame) { this.frame = frame; }
+        /// <summary>Publishes a staged route after re-validating identity and route, otherwise returns
+        /// <paramref name="originalResult"/> unchanged. Call once with the original builder result while this
+        /// frame is current; a frame without a staged route always returns the original result.</summary>
+        public int Complete(int originalResult) => frame.Complete(originalResult);
+        /// <summary>Closes this frame and restores the outer one. Throws when this frame is not current.</summary>
+        public void Leave() => frame.Leave();
+    }
+
     // A synchronous F4930 frame, never a command-global or cross-unit route cache.
     internal sealed class AssassinRouteHandoff
     {
@@ -84,6 +97,16 @@ namespace APIShared
             frame.completion = completion;
             Report("staged");
             return true;
+        }
+
+        // A weighted builder call that threw is answered by Vanilla alone (AssassinPathAPI.BuilderFailed), so a
+        // route it staged for this request is dropped before this frame can publish it.
+        internal static void DiscardStaged(IntPtr context)
+        {
+            AssassinRouteHandoff frame = current;
+            if (frame == null || frame.context != context || frame.bytes == null) return;
+            frame.bytes = null; frame.routeValid = null; frame.completion = null;
+            Report("discarded-builder-failure");
         }
 
         internal int Complete(int originalResult)

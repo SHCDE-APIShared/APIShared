@@ -34,28 +34,46 @@ namespace APIShared.Workshop
                 throw new InvalidDataException("Expected a three- or four-part numeric version: " + text);
             return new Version(version.Major, version.Minor, version.Build, Math.Max(0, version.Revision));
         }
-        internal static IReadOnlyList<WorkshopFile> Files(Dictionary<string, object> row)
+        // Path and hash validation are pure functions of their text. A manifest repeats most paths and
+        // hashes in every legacy release (startup reads it while the game waits), so one Read validates
+        // each distinct value once. Only successful results are remembered; failures throw as before.
+        internal sealed class ValidationMemo
+        {
+            internal readonly HashSet<string> Paths = new HashSet<string>(StringComparer.Ordinal);
+            internal readonly Dictionary<string, string> Hashes = new Dictionary<string, string>(StringComparer.Ordinal);
+        }
+        internal static IReadOnlyList<WorkshopFile> Files(Dictionary<string, object> row, ValidationMemo memo = null)
         {
             var files = new List<WorkshopFile>();
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var entry in Rows(row, "Files"))
             {
-                string path = WorkshopPaths.DeliveredPath(Text(entry, "Path"));
+                string raw = Text(entry, "Path");
+                // DeliveredPath returns its input unchanged or throws, so a remembered path is a validated raw path.
+                string path =memo != null && memo.Paths.Contains(raw) ? raw : WorkshopPaths.DeliveredPath(raw);
+                memo?.Paths.Add(path);
                 if (!seen.Add(path)) throw new InvalidDataException("Duplicate file: " + path);
                 if (!entry.TryGetValue("Size", out object size) || !(size is int || size is long) || Convert.ToInt64(size, CultureInfo.InvariantCulture) < 0)
                     throw new InvalidDataException("Invalid file size: " + path);
-                files.Add(new WorkshopFile(path, Convert.ToInt64(size, CultureInfo.InvariantCulture), WorkshopInventory.CheckHash(Text(entry, "Sha256"))));
+                string rawHash = Text(entry, "Sha256");
+                if (memo == null || !memo.Hashes.TryGetValue(rawHash, out string hash))
+                {
+                    hash = WorkshopInventory.CheckHash(rawHash);
+                    memo?.Hashes.Add(rawHash, hash);
+                }
+                files.Add(new WorkshopFile(path, Convert.ToInt64(size, CultureInfo.InvariantCulture), hash));
             }
             return files.OrderBy(f => f.Path, StringComparer.Ordinal).ToList().AsReadOnly();
         }
         internal static WorkshopPackage Read(string json)
         {
             var row = Object(DependencyFreeJson.Parse(json)); Schema(row);
+            var memo = new ValidationMemo();
             var package = new WorkshopPackage {
                 PackageId = Text(row, "PackageId"), Version = Text(row, "Version"),
                 MinimumAPISharedVersion = Text(row, "MinimumAPISharedVersion"),
                 MinimumScriptExtenderVersion = Text(row, "MinimumScriptExtenderVersion", true),
-                MaximumScriptExtenderVersion = Text(row, "MaximumScriptExtenderVersion", true), Files = Files(row)
+                MaximumScriptExtenderVersion = Text(row, "MaximumScriptExtenderVersion", true), Files = Files(row, memo)
             };
             WorkshopInventory.CheckGuid(package.PackageId); Version(package.Version); Version(package.MinimumAPISharedVersion);
             if (package.MinimumScriptExtenderVersion.Length > 0) Version(package.MinimumScriptExtenderVersion);
@@ -87,11 +105,12 @@ namespace APIShared.Workshop
             foreach (var release in Rows(row, "LegacyReleases", true))
             {
                 string version = Text(release, "Version"); Version(version);
-                legacy.Add(new WorkshopLegacyRelease { Version = version, Files = Files(release) });
+                legacy.Add(new WorkshopLegacyRelease { Version = version, Files = Files(release, memo) });
             }
             package.LegacyReleases = legacy.AsReadOnly();
+            string[] rootPrefixes = folders.Select(root => root + "/").ToArray();
             foreach (WorkshopFile file in package.Files.Concat(legacy.SelectMany(x => x.Files)))
-                if (!folders.Any(root => file.Path.StartsWith(root + "/", StringComparison.OrdinalIgnoreCase))) throw new InvalidDataException("File outside declared roots: " + file.Path);
+                if (!rootPrefixes.Any(prefix => file.Path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))) throw new InvalidDataException("File outside declared roots: " + file.Path);
             if (package.Files.Count == 0) throw new InvalidDataException("Empty package.");
             foreach (string root in folders)
                 if (!package.Files.Any(f => f.Path.Equals(root + "/info.json", StringComparison.OrdinalIgnoreCase))) throw new InvalidDataException("Root lacks info.json: " + root);

@@ -105,9 +105,23 @@ namespace APIShared
                     if (reportIndex > 0 && reportIndex < main.AllTroops.Count && reportIndex - 1 < state.troop_counts.Length)
                         desiredCounts[reportIndex] = state.troop_counts[reportIndex - 1];
                 }
-                foreach (int unitId in APIShared.UnitAccess.GetAllReallyAliveUnits())
+                // Runs every frame while an army report is visible. One direct pass over the unit
+                // array in the same ascending game-ID order as UnitAccess.GetAllReallyAliveUnits;
+                // each slot is read in place instead of being queried and then looked up again.
+                // Owner and base type are tested before a snapshot is allocated, because Classify
+                // can only match a unit whose type has an army-report category. Category matchers
+                // are dynamic consumer predicates, so the result is deliberately not cached.
+                bool[] categoryTypes = ArmyCategoryTypes(CategoryCopy());
+                Span<GameUnit> units = GameUnitManagerAPI.Instance.GetUnitsAsSpan();
+                for (int spanIndex = 0; spanIndex < units.Length; spanIndex++)
                 {
-                    if (!TryCapture(unitId, out UnitHudUnitSnapshot unit) || unit.OwnerPlayerId != local) continue;
+                    ref GameUnit native = ref units[spanIndex];
+                    if (!APIShared.UnitAccess.IsReallyAlive(in native) || native.r_GlobalId == 0 ||
+                        native.r_ControllableForPlayerId != local) continue;
+                    int nativeType = (int)native.r_UnitChimp;
+                    if ((uint)nativeType >= (uint)categoryTypes.Length || !categoryTypes[nativeType]) continue;
+                    int unitId = spanIndex + 1;
+                    var unit = new UnitHudUnitSnapshot(unitId, native.r_GlobalId, nativeType, native.r_ControllableForPlayerId, true);
                     CategoryRegistration category = Classify(unit, UnitHudSurface.ArmyReport);
                     if (category == null) continue;
                     custom[category.Key] = custom.TryGetValue(category.Key, out int categoryCount) ? categoryCount + 1 : 1;
@@ -128,8 +142,26 @@ namespace APIShared
             }
             finally { buffers.Counts.Clear(); buffers.Reductions.Clear(); buffers.Desired.Clear(); armyBufferPool.Push(buffers); }
         }
-        private sealed class ArmyWorkBuffers
+        private CategoryRegistration[] armyTypeView;
+        private bool[] armyCategoryTypes = Array.Empty<bool>();
+
+        private bool[] ArmyCategoryTypes(CategoryRegistration[] view)
         {
+            if (ReferenceEquals(armyTypeView, view)) return armyCategoryTypes;
+            int size = 0;
+            foreach (CategoryRegistration category in view)
+                if (HasSurface(category, UnitHudSurface.ArmyReport) && category.Definition.BaseUnitType >= size)
+                    size = category.Definition.BaseUnitType + 1;
+            var types = new bool[size];
+            foreach (CategoryRegistration category in view)
+                if (HasSurface(category, UnitHudSurface.ArmyReport) && category.Definition.BaseUnitType >= 0)
+                    types[category.Definition.BaseUnitType] = true;
+            armyCategoryTypes = types;
+            armyTypeView = view;
+            return types;
+        }
+
+        private sealed class ArmyWorkBuffers        {
             internal readonly Dictionary<string, int> Counts = new Dictionary<string, int>(StringComparer.Ordinal);
             internal readonly Dictionary<int, int> Reductions = new Dictionary<int, int>();
             internal readonly Dictionary<int, int> Desired = new Dictionary<int, int>();

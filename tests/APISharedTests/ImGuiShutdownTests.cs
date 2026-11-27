@@ -2,12 +2,15 @@ using APIShared.ScriptExtenderFixes;
 using BepInEx.Configuration;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using MonoMod.Cil;
+using MonoMod.RuntimeDetour;
 using MonoMod.Utils;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -19,6 +22,13 @@ namespace APISharedTests
     public unsafe class ImGuiShutdownTests
     {
         private static readonly List<ILContext> generatedContexts = new List<ILContext>();
+        [TestInitialize]
+        public void ResetNativeObservations()
+        {
+            while (Fixture.PresentArguments.TryDequeue(out _)) { }
+            while (Fixture.ResizeArguments.TryDequeue(out _)) { }
+            Fixture.NativeCalls = Fixture.ResizeNativeCalls = 0;
+        }
         [TestCleanup]
         public void ReleaseGeneratedTestReferences()
         {
@@ -40,13 +50,82 @@ namespace APISharedTests
         }
 
         [TestMethod]
-        public void UnknownOrPartiallyMatchingBinariesAreRejected()
+        [DataRow(4)]
+        [DataRow(131089)] // Includes two 64 KiB blocks and a partial tail with the mismatch.
+        public void LoadedNativeMustBeTheBundledPartnerWithoutAFixedFingerprint(int length)
         {
-            Assert.IsTrue(ScriptExtenderFixesRuntime.Supports(ScriptExtenderFixesRuntime.ManagedHash, ScriptExtenderFixesRuntime.NativeHash));
-            Assert.IsFalse(ScriptExtenderFixesRuntime.Supports("unknown", ScriptExtenderFixesRuntime.NativeHash));
-            Assert.IsFalse(ScriptExtenderFixesRuntime.Supports(ScriptExtenderFixesRuntime.ManagedHash, "unknown"));
-            Assert.IsFalse(ScriptExtenderFixesRuntime.Supports(null, null));
+            string directory = Path.Combine(Path.GetTempPath(), "APIShared-ImGuiPair-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(directory);
+            try
+            {
+                string bundled = Path.Combine(directory, "bundled.dll"), same = Path.Combine(directory, "same.dll"),
+                    changed = Path.Combine(directory, "changed.dll"), shorter = Path.Combine(directory, "shorter.dll");
+                var content = new byte[length];
+                content[0] = 1;
+                content[length - 1] = 4;
+                File.WriteAllBytes(bundled, content);
+                File.WriteAllBytes(same, content);
+                content[length - 1] = 5;
+                File.WriteAllBytes(changed, content);
+                Array.Resize(ref content, length - 1);
+                File.WriteAllBytes(shorter, content);
+                Assert.IsTrue(ScriptExtenderFixesRuntime.SameContent(bundled, same));
+                Assert.IsFalse(ScriptExtenderFixesRuntime.SameContent(bundled, changed));
+                Assert.IsFalse(ScriptExtenderFixesRuntime.SameContent(bundled, shorter));
+                Assert.IsFalse(ScriptExtenderFixesRuntime.SameContent(bundled, Path.Combine(directory, "missing.dll")));
+                Assert.IsFalse(ScriptExtenderFixesRuntime.SameContent(null, null));
+            }
+            finally { Directory.Delete(directory, true); }
         }
+
+        // Replaces the former MonoMod file fingerprints: the installed MonoMod must route the
+        // edited ILHook body and Detour's original backup through the scoped compiler and
+        // preserve every argument of a thiscall calli. Each case needs its own probe method
+        // because Detour caches one original backup per method and process.
+        [TestMethod]
+        public void MonoModProbeRequiresRoutedBodiesAndBackupsAndPreservedNativeArguments()
+        {
+            var probe = typeof(ImGuiShutdownTests).GetMethod(nameof(RoutedProbe), BindingFlags.Public | BindingFlags.Static);
+            var compiler = new ImGuiShutdownCompiler(new[] { probe });
+            var candidates = new List<ILHook>();
+            compiler.Hook.Apply();
+            try
+            {
+                ImGuiShutdownProbe.Verify(compiler, probe, candidates);
+                Assert.AreEqual(1, candidates.Count);
+                Assert.IsTrue(candidates[0].IsApplied);
+                Assert.IsTrue(compiler.RoutedCount(probe) >= 2, "edited body and original backup");
+            }
+            finally
+            {
+                foreach (var candidate in candidates) candidate.Dispose();
+                compiler.Hook.Dispose();
+            }
+        }
+
+        [TestMethod]
+        public void MonoModProbeRejectsGenerationThatBypassesTheScopedCompiler()
+        {
+            var probe = typeof(ImGuiShutdownTests).GetMethod(nameof(UnroutedProbe), BindingFlags.Public | BindingFlags.Static);
+            // Compiler hook deliberately not applied: MonoMod generates without routing.
+            var compiler = new ImGuiShutdownCompiler(new[] { probe });
+            var candidates = new List<ILHook>();
+            try
+            {
+                Assert.ThrowsExactly<InvalidOperationException>(() => ImGuiShutdownProbe.Verify(compiler, probe, candidates));
+                Assert.AreEqual(1, candidates.Count, "the failed probe remains a rollback candidate");
+            }
+            finally
+            {
+                foreach (var candidate in candidates) candidate.Dispose();
+                compiler.Hook.Dispose();
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        public static int RoutedProbe(IntPtr self, uint first, uint second) => -1;
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        public static int UnroutedProbe(IntPtr self, uint first, uint second) => -1;
 
         [TestMethod]
         public void DisabledConfigurationDoesNotResolveOrPatchDependencies()
@@ -87,11 +166,15 @@ namespace APISharedTests
                     Assert.AreEqual(new IntPtr(77), wnd(IntPtr.Zero, 16, IntPtr.Zero, IntPtr.Zero));
                     Assert.AreEqual(new IntPtr(77), wnd(IntPtr.Zero, 256, IntPtr.Zero, IntPtr.Zero));
                     // A new Present uses the native-only path and never waits on the render callback.
-                    Assert.AreEqual(14, present(new IntPtr(9), 2, 3));
+                    Assert.AreEqual(35, present(new IntPtr(17), 7, 11));
                 } finally { release.Set(); }
                 Assert.IsTrue(running.Wait(5000));
                 Assert.AreEqual(14, running.Result);
                 Assert.AreEqual(2, Fixture.NativeCalls);
+                var received = Fixture.PresentArguments.ToArray();
+                Assert.AreEqual(2, received.Length);
+                CollectionAssert.AreEqual(new long[] { 17, 7, 11 }, received[0]);
+                CollectionAssert.AreEqual(new long[] { 9, 2, 3 }, received[1]);
             }
             Assert.AreEqual(0, destructiveWindows);
             Assert.AreEqual(3, originalWindows);
@@ -104,6 +187,26 @@ namespace APISharedTests
             var resize = Generate<Func<IntPtr, uint, uint, uint, uint, uint, int>>(nameof(Fixture.Resize),
                 il => ImGuiShutdownIl.GuardRender(il, () => true, "idxgiswapchain_resizebuffers_trampoline_fp", 6));
             Assert.AreEqual(21, resize(new IntPtr(1), 2, 3, 4, 5, 6));
+            Assert.AreEqual(1, Fixture.ResizeNativeCalls);
+            CollectionAssert.AreEqual(new long[] { 1, 2, 3, 4, 5, 6 }, Fixture.ResizeArguments.Single());
+        }
+
+        [TestMethod]
+        public void UnmodifiedRenderCopiesPreserveAllNativeArguments()
+        {
+            int renders = 0;
+            Fixture.Render = () => renders++;
+            // Even an unedited Debug fixture loses its first native argument with the
+            // desktop default DMD generator. Exercise the production compiler without a guard.
+            var present = Generate<Func<IntPtr, uint, uint, int>>(nameof(Fixture.Present), _ => { });
+            var resize = Generate<Func<IntPtr, uint, uint, uint, uint, uint, int>>(nameof(Fixture.Resize), _ => { });
+            Assert.AreEqual(14, present(new IntPtr(9), 2, 3));
+            Assert.AreEqual(21, resize(new IntPtr(1), 2, 3, 4, 5, 6));
+            Assert.AreEqual(2, renders);
+            Assert.AreEqual(1, Fixture.NativeCalls);
+            Assert.AreEqual(1, Fixture.ResizeNativeCalls);
+            CollectionAssert.AreEqual(new long[] { 9, 2, 3 }, Fixture.PresentArguments.Single());
+            CollectionAssert.AreEqual(new long[] { 1, 2, 3, 4, 5, 6 }, Fixture.ResizeArguments.Single());
         }
 
         [TestMethod]
@@ -218,7 +321,9 @@ namespace APISharedTests
                 var context = new ILContext(definition.Definition) { ReferenceBag = RuntimeILReferenceBag.Instance };
                 generatedContexts.Add(context);
                 context.Invoke(edit);
-                return (T)definition.Generate().CreateDelegate(typeof(T));
+                // Match the runtime's scoped MethodBuilder compiler; the default desktop
+                // DMD backend miscompiles these Debug calli fixtures (issue #35).
+                return (T)ImGuiShutdownCompiler.GenerateAudited(definition, method).CreateDelegate(typeof(T));
             }
         }
 
@@ -246,8 +351,18 @@ namespace APISharedTests
             public delegate int PresentNative(IntPtr h, uint a, uint b);
             [UnmanagedFunctionPointer(CallingConvention.ThisCall)]
             public delegate int ResizeNative(IntPtr h, uint a, uint b, uint c, uint d, uint e);
-            private static readonly PresentNative presentNative = (h, a, b) => { Interlocked.Increment(ref NativeCalls); return (int)h + (int)a + (int)b; };
-            private static readonly ResizeNative resizeNative = (h, a, b, c, d, e) => (int)h + (int)a + (int)b + (int)c + (int)d + (int)e;
+            public static readonly ConcurrentQueue<long[]> PresentArguments = new ConcurrentQueue<long[]>();
+            public static readonly ConcurrentQueue<long[]> ResizeArguments = new ConcurrentQueue<long[]>();
+            private static readonly PresentNative presentNative = (h, a, b) => {
+                PresentArguments.Enqueue(new long[] { h.ToInt64(), a, b });
+                Interlocked.Increment(ref NativeCalls);
+                return (int)h + (int)a + (int)b;
+            };
+            private static readonly ResizeNative resizeNative = (h, a, b, c, d, e) => {
+                ResizeArguments.Enqueue(new long[] { h.ToInt64(), a, b, c, d, e });
+                Interlocked.Increment(ref ResizeNativeCalls);
+                return (int)h + (int)a + (int)b + (int)c + (int)d + (int)e;
+            };
             public static delegate* unmanaged[Thiscall]<IntPtr, uint, uint, int> idxgiswapchain_present_trampoline_fp =
                 (delegate* unmanaged[Thiscall]<IntPtr, uint, uint, int>)(void*)Marshal.GetFunctionPointerForDelegate(presentNative);
             public static delegate* unmanaged[Thiscall]<IntPtr, uint, uint, uint, uint, uint, int> idxgiswapchain_resizebuffers_trampoline_fp =
@@ -255,7 +370,7 @@ namespace APISharedTests
             public static Action Render, NativeCleanup, DestructiveWindow;
             public static readonly Fixture Global = new Fixture();
             public Context currentContext;
-            public static int NativeCalls;
+            public static int NativeCalls, ResizeNativeCalls;
             public IntPtr Previous { get; set; }
             public static int Present(IntPtr h, uint a, uint b) { try { Render(); } catch { throw; } return idxgiswapchain_present_trampoline_fp(h, a, b); }
             public static int Resize(IntPtr h, uint a, uint b, uint c, uint d, uint e) { Render(); return idxgiswapchain_resizebuffers_trampoline_fp(h, a, b, c, d, e); }

@@ -3,6 +3,8 @@ using System;
 using System.Threading;
 namespace APIShared
 {
+    // API_SHARED_DIAGNOSTICS: Register is explicit consumer opt-in; the owner can
+    // pause observation through SetObservationEnabled without removing a published hook.
     /// <summary>Read-only TEMP_GATE_ROUTE_ACCEPTANCE observer; callbacks must never alter native decisions.</summary>
     public interface ITemporaryGateRouteAcceptanceObserver
     {

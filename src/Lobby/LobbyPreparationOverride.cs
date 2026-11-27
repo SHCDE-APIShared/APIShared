@@ -14,8 +14,6 @@ namespace APIShared
         private static bool prepared;
         private static bool applyAttempted;
         private static bool active;
-        private static readonly FieldInfo selectedMapField = typeof(FRONT_Multiplayer).GetField(
-            "selectedMPHeader", BindingFlags.Instance | BindingFlags.NonPublic);
         private static readonly FieldInfo mapListField = typeof(FRONT_Multiplayer).GetField(
             "RefFileLists", BindingFlags.Instance | BindingFlags.NonPublic);
 
@@ -92,9 +90,9 @@ namespace APIShared
                 return;
             try
             {
-                if (selectedMapField == null || mapListField == null)
+                if (mapListField == null)
                     throw new MissingFieldException("FRONT_Multiplayer lobby map fields are unavailable.");
-                if (selectedMapField.GetValue(lobby) == null ||
+                if (LobbySelectedMapHeader.Read(lobby) == null ||
                     (mapListField.GetValue(lobby) as Noesis.ListView)?.ItemsSource == null)
                     return;
                 // Applying a map can synchronously invoke other lobby hooks.

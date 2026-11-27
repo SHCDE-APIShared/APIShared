@@ -1,35 +1,49 @@
 # APIShared
 
-Shared services for Stronghold Crusader Definitive Edition mods: events, command
-and HUD interception, unit/building helpers, settings, networking and situational
-audio. Mods share one BepInEx plugin instead of installing competing hooks.
-
-**Plugin GUID:** `APIShared_Serp` · **Assembly:** `APIShared.dll` ·
-**Runtime:** .NET Framework 4.8.1 · **License:** MIT
+APIShared is a shared requirement for Stronghold Crusader Definitive Edition mods.
+It provides common mod settings, compatible interfaces and support for multiplayer,
+saved games and Workshop updates. Install it once for all mods that require it.
 
 ## Install
 
-Install [Script Extender](https://gitlab.com/rawra-stronghold-crusader/shcde-script-extender)
-and one central APIShared copy under `BepInEx/plugins/APIShared_Serp`.
-The recommended installation is through the
-[Steam Workshop](https://steamcommunity.com/workshop/filedetails/?id=3818609220).
-Downloads are also available from [releases](https://github.com/SHCDE-APIShared/APIShared/releases).
-If your mod pack already includes APIShared, use that copy. SerpsModsHost is not required.
+Install the [Script Extender](https://gitlab.com/rawra-stronghold-crusader/shcde-script-extender)
+first. The recommended APIShared installation is its separate
+[Steam Workshop subscription](https://steamcommunity.com/workshop/filedetails/?id=3818609220).
+APIShared works independently of the Serps Mods pack.
 
-## Use
+For manual installation, download a package from the
+[official releases](https://github.com/SHCDE-APIShared/APIShared/releases), close the
+game and extract the complete package into the game directory. Update its files in
+both `BepInEx/plugins` and `BepInEx/patchers` together. Use one central APIShared
+installation; do not add extra copies for individual mods.
 
-Reference APIShared with `Private=false` and declare the minimum APIShared and
-Script Extender versions your mod needs. Consumer mods must not bundle the DLL.
-Documentation describes this source checkout. Confirm that the installed release
-contains each API you use; source-checkout features can precede a published package.
-See the [mod author guide](docs/THIRD_PARTY_GUIDE.md) for registration, lifetime,
-settings and packaging contracts.
+On Linux/Proton, see [Linux paths and first-install repair](docs/WORKSHOP.md#linux-paths-and-first-install-repair)
+for path settings and the separate manual patcher when it is needed.
 
-## Documentation
+## Mod settings and saved games
 
-- [API catalog](docs/API_CATALOG.md): available services, events and limitations.
-- [Mod author guide](docs/THIRD_PARTY_GUIDE.md): integration and usage recipes, including sound policies.
-- [Compilable examples](examples/ThirdPartyMod): practical consumer implementations.
-- [Architecture](ARCHITECTURE.md): runtime responsibilities and shared hook ownership.
-- [Contributing](CONTRIBUTING.md): development setup and tests.
-- [Changelog](info.json): release history in `SerpChangelog`.
+Supported mods share presets and a searchable settings interface. Gameplay options
+follow the host's permissions; personal options remain yours.
+
+APIShared adds **Use current mod settings** to the Load Game dialog independently
+of ExtendedData. The choice is remembered between games and is initially off.
+Saved mission restrictions and fixed creator rules remain in force. See
+[loading saved games](docs/MOD_SETTINGS.md#loadsave-requester-integration) for details.
+
+## Help and documentation
+
+- [Workshop installation and updates](docs/WORKSHOP.md).
+- [Mod settings](docs/MOD_SETTINGS.md).
+- [Release history](info.json).
+- [Documentation for mod authors](docs/THIRD_PARTY_GUIDE.md), [API catalog](docs/API_CATALOG.md)
+  and [contributing](CONTRIBUTING.md).
+- [Shared worker-production rules](docs/WORKER_PRODUCTION_BONUS.md) for mod authors
+  cover base output, fixed bonuses and how each fear level affects worker output.
+- [Weapon workshop recipes](docs/WEAPON_PRODUCTION.md) for mod authors.
+- [Audio interfaces](docs/AUDIO.md) for mod authors cover sound effects and
+  [unit voices](docs/AUDIO.md#unit-voices), including custom recordings and
+  coordinated replacement, suppression and volume rules.
+- [Lord message presentation](docs/LORD_MESSAGES.md) lets mod authors replace
+  a message's voice, video and subtitles independently of unit-voice rules.
+
+License: MIT.

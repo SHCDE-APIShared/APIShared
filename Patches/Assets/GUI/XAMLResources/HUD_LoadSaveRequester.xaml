@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Patch xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:apiSharedSaveUi="clr-namespace:APIShared.ModSettings;assembly=APIShared">
+  <Operation Type="AddNamespace" AttributeName="apiSharedSaveUi" Value="clr-namespace:APIShared.ModSettings;assembly=APIShared" />
+  <Operation Type="SetAttribute" XPath="//n:CheckBox[@x:Name='HideQuicksaveCheck']" AttributeName="Margin" Value="45,386,67,0" />
+  <Operation Type="SetAttribute" XPath="//n:Button[@Name='ButtonOpenFolder']" AttributeName="Margin" Value="45,420,0,0" />
+  <Operation Type="SetAttribute" XPath="//n:Button[@Name='ButtonAction']" AttributeName="Margin" Value="45,504,0,0" />
+  <Operation Type="Add" XPath="//n:Grid[n:Button[@Name='ButtonAction'] and n:Button[@Name='ButtonCancel']]">
+    <Content>
+      <Grid x:Name="APISharedSavegameLoadOptionsHost" Width="300" Height="23" Margin="45,360,0,0" HorizontalAlignment="Left" VerticalAlignment="Top" Visibility="{Binding LoadOptionVisibility, FallbackValue=Collapsed}" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+        <Grid.Resources>
+          <Style x:Key="ModSettingsToolTipStyle" TargetType="{x:Type ToolTip}">
+            <Setter Property="Background" Value="#FF1D1710"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="BorderBrush" Value="#FFF2D48A"/>
+            <Setter Property="FontSize" Value="{x:Static apiSharedSaveUi:ToolTipPresentation.AutomaticFontSize}"/>
+            <Setter Property="MaxWidth" Value="{x:Static apiSharedSaveUi:ToolTipPresentation.AutomaticMaximumWidth}"/>
+            <Setter Property="Padding" Value="24,18"/>
+            <Setter Property="BorderThickness" Value="4.5"/>
+            <Setter Property="Template">
+              <Setter.Value>
+                <ControlTemplate TargetType="{x:Type ToolTip}">
+                  <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                          BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="2"
+                          Padding="{TemplateBinding Padding}" MaxWidth="{TemplateBinding MaxWidth}">
+                    <TextBlock Text="{TemplateBinding Content}" Foreground="{TemplateBinding Foreground}"
+                               FontSize="{TemplateBinding FontSize}" TextWrapping="Wrap"/>
+                  </Border>
+                </ControlTemplate>
+              </Setter.Value>
+            </Setter>
+          </Style>
+        </Grid.Resources>
+        <CheckBox x:Name="APISharedUseCurrentModSettings" HorizontalAlignment="Left" VerticalAlignment="Center" Foreground="Black" Content="{Binding UseCurrentSavegameSettingsText}" IsEnabled="{Binding CanUseCurrentSavegameSettings}" IsChecked="{Binding UseCurrentSavegameSettings, Mode=TwoWay}" ToolTipService.ShowDuration="60000">
+          <CheckBox.ToolTip>
+            <ToolTip Style="{StaticResource ModSettingsToolTipStyle}" apiSharedSaveUi:SharedToolTipSizing.Enabled="True"
+                     Content="{Binding UseCurrentSavegameSettingsHelp}"/>
+          </CheckBox.ToolTip>
+        </CheckBox>
+      </Grid>
+    </Content>
+  </Operation>
+</Patch>

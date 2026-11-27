@@ -11,6 +11,7 @@ namespace APIShared.ModSettings
             public IDynamicPresetSettingsProvider DynamicSettingsProvider => model.DynamicSettingsProvider;
             public IModSettingsApplicationBackend SettingsApplicationBackend => model.SettingsApplicationBackend;
             public bool IsLocalHost => model.isLocalHost;
+            public bool CanRestorePersonalHostSettings => model.CanRestorePersonalHostSettings;
             public bool HasMissionContext => model.missionPresetContext;
             public bool MissionPresetEditable => model.missionPresetEditable;
             public bool IsMissionPresetSelected => model.IsMissionPresetSelected;
@@ -18,6 +19,8 @@ namespace APIShared.ModSettings
             public bool IsRetiredPresetProperty(string propertyName) => model.IsRetiredPresetProperty(propertyName);
             public void SetSelectedPresetCore(int value) => model.SetSelectedPresetCore(value);
             public void OnSettingsSnapshotApplied() => model.OnSettingsSnapshotApplied();
+            public void PublishSettingsSnapshot(System.Collections.Generic.IReadOnlyList<string> properties) =>
+                model.PublishSettingsSnapshot(properties);
         }
     }
 }

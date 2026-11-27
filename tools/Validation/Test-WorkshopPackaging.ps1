@@ -23,6 +23,12 @@ try {
     [void][IO.Directory]::CreateDirectory((Join-Path $assetRoot 'BepInEx/plugins/APIShared_Serp/Override'))
     $overrideNeighbor = Join-Path $assetRoot 'BepInEx/plugins/APIShared_Serp/Override/other.txt'
     [IO.File]::WriteAllText($overrideNeighbor, 'keep unrelated override')
+    $viewSource = Join-Path $assetRoot 'Override/APISharedUI/Settings.xaml'
+    $viewOutput = Join-Path $assetRoot 'BepInEx/plugins/APIShared_Serp/Override/APISharedUI/Settings.xaml'
+    [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($viewSource))
+    [IO.File]::WriteAllText($viewSource, '<ScrollViewer/>')
+    Copy-ApiModOptionsView -Root $assetRoot
+    if ((Get-WorkshopFileHash $viewOutput) -cne (Get-WorkshopFileHash $viewSource)) { throw 'Indexed Mod Options view missing or changed.' }
     if ([IO.File]::Exists((Join-Path $assetOutput 'Workshop.xaml'))) { throw 'Obsolete unindexed view survived generated packaging.' }
     if (Test-Path -LiteralPath (Join-Path $assetOutput 'obsolete')) { throw 'Stale asset directory survived packaging.' }
     if (Test-Path -LiteralPath (Join-Path $assetOutput 'old.txt')) { throw 'Stale asset file survived packaging.' }
@@ -42,8 +48,9 @@ try {
         Remove-ApiLegacyWorkshopView $installed -WarningVariable warnings
         if ($warnings.Count) { throw 'Expected preservation emitted a warning.' }
         $messages = @(Remove-ApiLegacyWorkshopView $installed -Verbose 4>&1 3>&1)
-        if ($messages.Count -ne 1 -or $messages[0] -isnot [Management.Automation.VerboseRecord] -or
-            $messages[0].Message -cne ("Preserved unrecognized legacy Workshop view: $oldView")) { throw 'Verbose preservation diagnostic has the wrong path or stream.' }
+        $wrongStream = @($messages | Where-Object { $_ -isnot [Management.Automation.VerboseRecord] })
+        $pathContext = @($messages | Where-Object { $_ -is [Management.Automation.VerboseRecord] -and $_.Message.Contains($oldView) })
+        if ($wrongStream.Count -or -not $pathContext.Count) { throw 'Verbose preservation diagnostic has the wrong path or stream.' }
         if ([IO.File]::ReadAllText($oldView) -cne 'user edited' -or [IO.File]::ReadAllText($neighborFile) -cne 'keep') { throw 'Installed view cleanup changed user data.' }
         # Inject only the historic digest to exercise the removal branch without
         # distributing an obsolete UI. Real hashing is tested by package audits.

@@ -1,0 +1,30 @@
+APIShared Proton Workshop Fix (manual, independent Script Extender repair)
+
+Close the game. Copy BepInEx/patchers/APIShared.ProtonWorkshopFix.dll from this
+archive into the same path inside your SHCDE game directory. Keep exactly one copy.
+Keep APIShared subscribed in Steam Workshop, start the game, and accept the normal
+Script Extender installation prompt. An existing failed-attempt lock receives
+one additional confirmed attempt. A failed retry does not repeat automatically.
+
+This DLL contains no APIShared runtime. APIShared is installed separately by the
+Workshop. The fix does nothing on native Windows. It requires Linux/Proton, Bash,
+flock and GNU coreutils. No game or Script Extender files are overwritten by
+installing this DLL. Close the game before replacing or removing the DLL.
+
+Automatic path translation normally needs no configuration. If needed, copy
+APIShared.ProtonPaths.cfg.example to BepInEx/config/APIShared.ProtonPaths.cfg,
+enter the exact Linux game directory and/or Wine path to Bash, then restart.
+The same optional configuration is understood by APIShared's own Workshop updater.
+Never extract another complete APIShared package inside plugins or patchers.
+
+Diagnostics: BepInEx/LogOutput.log and the fix's own updater work directory.
+Further installation contracts and current platform-test limits:
+https://github.com/SHCDE-APIShared/APIShared/blob/main/docs/WORKSHOP.md
+
+Deutsch:
+Spiel schliessen und die DLL nach BepInEx/patchers im Spielordner kopieren.
+APIShared abonniert lassen, Spiel starten und der normalen Installation zustimmen.
+Der Patcher funktioniert ohne APIShared und enthaelt keine zweite APIShared-Kopie.
+Eine vorhandene Versuchssperre erhaelt genau einen weiteren bestaetigten Versuch.
+Unter nativem Windows bleibt die Korrektur inaktiv. Konfiguration ist normalerweise
+nicht erforderlich; die optionale Beispieldatei nennt beide Ausweichangaben.

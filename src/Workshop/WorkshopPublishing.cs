@@ -63,7 +63,7 @@ namespace APIShared.Workshop
         internal static string Fingerprint(string root)
         {
             string rows = string.Join("\n", WorkshopPaths.Enumerate(root).OrderBy(x => x, StringComparer.Ordinal).Select(f => f.Substring(root.Length + 1).Replace('\\', '/') + ":" + WorkshopInventory.Hash(f)));
-            using (var sha = System.Security.Cryptography.SHA256.Create()) return BitConverter.ToString(sha.ComputeHash(Encoding.UTF8.GetBytes(rows))).Replace("-", "").ToLowerInvariant();
+            return Sha256Hex.Of(Encoding.UTF8.GetBytes(rows)).ToLowerInvariant();
         }
         internal static string HistoryPath(string state, string packageId)
         {
@@ -79,7 +79,13 @@ namespace APIShared.Workshop
             if (!completed) row["CreatedByPublisher"] = true;
             if (completed) { row["Version"] = plan.Version; row["Fingerprint"] = plan.Fingerprint; }
             string temporary = path + ".tmp"; File.WriteAllText(temporary, WorkshopPackageCodec.Write(row), new UTF8Encoding(false));
-            AtomicFileReplacement.Replace(temporary, path);
+            // The publisher on Windows and Proton retains the write-through move.
+            if (Environment.OSVersion.Platform == PlatformID.Win32NT)
+                AtomicFileReplacement.Replace(temporary, path);
+            else if (File.Exists(path))
+                File.Replace(temporary, path, null);
+            else
+                File.Move(temporary, path);
         }
     }
 }

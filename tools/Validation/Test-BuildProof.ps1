@@ -1,5 +1,27 @@
+[CmdletBinding()]
+param([switch]$ReuseOnly)
 $ErrorActionPreference='Stop'
-$temp=Join-Path ([IO.Path]::GetTempPath()) ('ApiSharedProof-'+[Guid]::NewGuid().ToString('N'))
+if($ReuseOnly){
+    . (Join-Path $PSScriptRoot '../BuildProof.ps1')
+    $script:valid=$true;$script:builds=0
+    # The integrity assertion is the external boundary here; its actual hash/package
+    # rejection cases remain covered below. This exercises the production reuse decision.
+    function Assert-ApiBuildProof {param($Root,[switch]$Release) if(-not$script:valid){throw 'stale full-build evidence'};return @{TestMode='full';Commit='fixture'}}
+    $null=Invoke-ApiValidatedReleaseBuild 'fixture' {$script:builds++;throw 'valid proof must not rebuild'}
+    if($script:builds-ne0){throw 'Matching tested package was rebuilt'}
+    $script:valid=$false
+    $null=Invoke-ApiValidatedReleaseBuild 'fixture' {$script:builds++;$script:valid=$true}
+    if($script:builds-ne1){throw 'Stale proof did not rebuild exactly once'}
+    $script:valid=$false;$rejected=$false
+    try{$null=Invoke-ApiValidatedReleaseBuild 'fixture' {}}catch{$rejected=$true}
+    if(-not$rejected){throw 'Build without valid final evidence was accepted'}
+    Write-Host 'PASS: matching full-build evidence reused; stale evidence rebuilds; final evidence remains mandatory.'
+    exit 0
+}
+$tempBase=[IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\','/')
+$tempName='ApiSharedProof-'+[Guid]::NewGuid().ToString('N')
+$temp=Join-Path $tempBase $tempName
+if([IO.Directory]::Exists($temp)){throw 'Build proof fixture already exists.'}
 [IO.Directory]::CreateDirectory($temp) | Out-Null
 function Check([bool]$value,[string]$message) { if(-not$value){throw $message} }
 function Write-Fixture([string]$Path,[string]$Text) { [IO.Directory]::CreateDirectory((Split-Path -Parent $Path)) | Out-Null; [IO.File]::WriteAllText($Path,$Text,[Text.UTF8Encoding]::new($false)) }
@@ -9,14 +31,17 @@ function Commit-Fixture([string]$Directory,[string]$Message) {
 }
 try {
     $proofRoot=Join-Path $temp 'proof'
-    foreach($dir in @('src','Properties','Patches','Workshop','Override/Workshop','tools')){[IO.Directory]::CreateDirectory((Join-Path $proofRoot $dir)) | Out-Null}
+    foreach($dir in @('src','Properties','Patches','Workshop','Override/Workshop','tools','bootstrap','Locales')){[IO.Directory]::CreateDirectory((Join-Path $proofRoot $dir)) | Out-Null}
+    Write-Fixture (Join-Path $proofRoot 'Locales/en-US.txt') 'Title=Fixture'
     Write-Fixture (Join-Path $proofRoot 'src/example.cs') 'actual input'
+    Write-Fixture (Join-Path $proofRoot 'Content/Document.cs') 'content input'
     Write-Fixture (Join-Path $proofRoot 'APIShared.csproj') '<Project />'
+    Write-Fixture (Join-Path $proofRoot 'build.bat') 'build entry fixture'
     Write-Fixture (Join-Path $proofRoot 'info.json') '{}'
     Write-Fixture (Join-Path $proofRoot '.gitignore') ".local/`n"
     Write-Fixture (Join-Path $proofRoot 'tools/Build.ps1') 'build fixture'
     foreach($name in @('WorkshopPackage.ps1','Prepare-WorkshopPackage.ps1','New-WorkshopBootstrap.ps1','PublisherPackage.ps1')) { Write-Fixture (Join-Path $proofRoot ('tools/' + $name)) 'packaging fixture' }
-    Write-Fixture (Join-Path $proofRoot 'Workshop/workshop-updater.ps1') 'updater fixture'
+    Write-Fixture (Join-Path $proofRoot 'Workshop/Bootstrap/Plugin.cs.template') 'bootstrap template fixture'
     $viewSource=Join-Path $proofRoot 'tools/WorkshopUploader/UploadMod-linux.sh'
     $viewTarget=Join-Path $proofRoot 'BepInEx/tools/APISharedWorkshopPublisher/UploadMod-linux.sh'
     Write-Fixture $viewSource '<Grid />'
@@ -24,6 +49,16 @@ try {
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot '../BuildProof.ps1') -Destination (Join-Path $proofRoot 'tools/BuildProof.ps1')
     $compiler=Join-Path $temp 'compiler'; Write-Fixture $compiler 'external compiler boundary'
     $dll=Join-Path $proofRoot 'BepInEx/plugins/APIShared_Serp/APIShared.dll'; Write-Fixture $dll 'external binary boundary'
+    foreach($name in @('WorkshopPackage.ps1','DependencyBootstrapPackage.ps1','Remove-DependencyBootstrap.ps1')) {
+        Copy-Item -LiteralPath (Join-Path $PSScriptRoot ('../'+$name)) -Destination (Join-Path $proofRoot ('tools/'+$name)) -Force
+    }
+    Write-Fixture (Join-Path $proofRoot 'bootstrap/APIShared.DependencyBootstrap.csproj') '<Project />'
+    Write-Fixture (Join-Path $proofRoot 'bootstrap/src/Package/PairContract.cs') 'bootstrap input'
+    Write-Fixture (Join-Path $proofRoot 'BepInEx/patchers/APIShared.DependencyBootstrap.dll') 'bootstrap fixture'
+    Write-Fixture (Join-Path $proofRoot 'BepInEx/plugins/APIShared_Serp/info.json') '{"GUID":"APIShared_Serp","Version":"1.2.3"}'
+    . (Join-Path $proofRoot 'tools/WorkshopPackage.ps1')
+    . (Join-Path $proofRoot 'tools/DependencyBootstrapPackage.ps1')
+    New-ApiBootstrapPair $proofRoot
     & git init --initial-branch=main $proofRoot | Out-Null; Commit-Fixture $proofRoot inputs
     . (Join-Path $proofRoot 'tools/BuildProof.ps1')
     $failed=$false; try{$null=Assert-ApiBuildProof $proofRoot}catch{$failed=$true}; Check $failed 'Missing evidence accepted'
@@ -31,11 +66,45 @@ try {
     Write-ApiBuildProof $proofRoot '' '' $compiler $state
     $null=Assert-ApiBuildProof $proofRoot
     $null=Assert-ApiBuildProof $proofRoot -Release
+    foreach ($mode in @('quick','none')) {
+        Write-ApiBuildProof $proofRoot '' '' $compiler $state -TestMode $mode
+        foreach ($releaseCheck in @($false,$true)) {
+            $failed=$false
+            try { $null=Assert-ApiBuildProof $proofRoot -Release:$releaseCheck } catch { $failed=$_.Exception.Message -match '/tests:full' }
+            Check $failed 'Reduced checks were accepted as a fully tested SDK or release'
+        }
+        $reduced=[IO.File]::ReadAllText((Join-Path $proofRoot '.local/build-proof.json'))|ConvertFrom-Json
+        Check ($reduced.TestMode -ceq $mode) 'Reduced build mode was not recorded'
+    }
+    Write-ApiBuildProof $proofRoot '' '' $compiler $state
+    $null=Assert-ApiBuildProof $proofRoot
+    Write-Fixture (Join-Path $proofRoot 'Content/Document.cs') 'changed content input'
+    $failed=$false;try{$null=Assert-ApiBuildProof $proofRoot}catch{$failed=$true};Check $failed 'Changed Content source accepted'
+    Write-Fixture (Join-Path $proofRoot 'Content/Document.cs') 'content input'
+    Write-Fixture (Join-Path $proofRoot 'build.bat') 'changed build entry'
+    $failed=$false;try{$null=Assert-ApiBuildProof $proofRoot}catch{$failed=$true};Check $failed 'Changed build entry accepted'
+    Write-Fixture (Join-Path $proofRoot 'build.bat') 'build entry fixture'
+    $bootstrapSource=Join-Path $proofRoot 'bootstrap/src/Package/PairContract.cs'
+    Write-Fixture $bootstrapSource 'changed nested bootstrap input'
+    $failed=$false;try{$null=Assert-ApiBuildProof $proofRoot}catch{$failed=$true};Check $failed 'Changed nested bootstrap source accepted'
+    Write-Fixture $bootstrapSource 'bootstrap input'
+    $bootstrapPath=Join-Path $proofRoot 'BepInEx/patchers/APIShared.DependencyBootstrap.dll'
+    Write-Fixture $bootstrapPath 'changed bootstrap'
+    $failed=$false;try{$null=Assert-ApiBuildProof $proofRoot}catch{$failed=$true};Check $failed 'Changed bootstrap accepted'
+    Write-Fixture $bootstrapPath 'bootstrap fixture'
     $recordedCommit=([IO.File]::ReadAllText((Join-Path $proofRoot '.local/build-proof.json'))|ConvertFrom-Json).Commit
-    Write-Fixture (Join-Path $proofRoot 'tests/internal-notes.txt') 'test-only change'
-    Commit-Fixture $proofRoot 'test-only commit after build'
+    Write-Fixture (Join-Path $proofRoot 'tests/internal-notes.md') 'documentation-only change'
+    Commit-Fixture $proofRoot 'documentation-only commit after build'
     $accepted=Assert-ApiBuildProof $proofRoot -Release
     Check ($accepted.Commit -ceq $recordedCommit) 'Content-identical commit changed original build provenance'
+    $validationInput = Join-Path $proofRoot 'tests/renamed/Contract.cs'
+    Write-Fixture $validationInput 'new test source'
+    $failed=$false; try{$null=Assert-ApiBuildProof $proofRoot}catch{$failed=$true}; Check $failed 'Changed test coverage accepted with old evidence'
+    [IO.File]::Delete($validationInput)
+    $validationInput = Join-Path $proofRoot 'tools/Validation/arbitrary-name.ps1'
+    Write-Fixture $validationInput 'new validation source'
+    $failed=$false; try{$null=Assert-ApiBuildProof $proofRoot}catch{$failed=$true}; Check $failed 'Changed validation tooling accepted with old evidence'
+    [IO.File]::Delete($validationInput)
     Write-Fixture (Join-Path $proofRoot 'src/example.cs') 'changed input'
     $failed=$false; try{$null=Assert-ApiBuildProof $proofRoot}catch{$failed=$true}; Check $failed 'Stale package accepted'
     Commit-Fixture $proofRoot 'runtime change after build'
@@ -72,6 +141,12 @@ try {
         Check ($env:SHCDE_GAME_DIR -ceq $game -and $env:SHCDESE_EXTENDER_DIR -ceq $extender -and $env:SHCDE_MSBUILD -ceq $compiler) 'Local paths were not restored for child builds'
         $childOutput=& powershell.exe -NoProfile -Command '[Console]::Write($env:SHCDE_GAME_DIR)'
         Check (($childOutput -join '') -ceq $game) 'Child process did not inherit game path'
+        foreach ($mode in @('quick','none')) {
+            Write-Fixture $path (@{SchemaVersion=2;TestMode=$mode;GameDir=$game;ExtenderDir=$extender;MSBuild=$compiler}|ConvertTo-Json)
+            $env:SHCDE_GAME_DIR='';$env:SHCDESE_EXTENDER_DIR='';$env:SHCDE_MSBUILD=''
+            Initialize-ApiBuildEnvironment $localRoot
+            Check ($env:SHCDE_GAME_DIR -ceq $game -and $env:SHCDESE_EXTENDER_DIR -ceq $extender -and $env:SHCDE_MSBUILD -ceq $compiler) 'Reduced build lost reusable machine paths'
+        }
         Write-Fixture $path 'invalid json'
         Initialize-ApiBuildEnvironment $localRoot
         Check ($env:SHCDE_GAME_DIR -ceq $game) 'Explicit environment must take precedence over unreadable evidence'
@@ -91,4 +166,21 @@ try {
         $env:SHCDE_GAME_DIR=$previousGame;$env:SHCDESE_EXTENDER_DIR=$previousExtender;$env:SHCDE_MSBUILD=$previousCompiler
     }
     Write-Host 'PASS: content-identical commits, retained provenance, changed runtime rejection, package tampering, dirty release rejection, cross-shell fingerprint, local path recovery and child inheritance.'
-} finally { Write-Host ("Build proof fixtures: " + $temp) }
+} finally {
+    # This test owns only its freshly allocated fixture; never follow links into user data.
+    $full=[IO.Path]::GetFullPath($temp).TrimEnd('\','/')
+    if($full -cne (Join-Path $tempBase $tempName) -or $tempName -cnotmatch '^ApiSharedProof-[0-9a-f]{32}$'){throw 'Unsafe build proof cleanup path.'}
+    for($part=$full;$part;$part=[IO.Path]::GetDirectoryName($part)){
+        if([IO.Directory]::Exists($part) -and ([IO.File]::GetAttributes($part) -band [IO.FileAttributes]::ReparsePoint)){throw 'Linked build proof fixture root.'}
+    }
+    function Remove-ProofFixture([IO.DirectoryInfo]$Directory){
+        foreach($entry in $Directory.GetFileSystemInfos()){
+            if($entry.Attributes -band [IO.FileAttributes]::ReparsePoint){
+                if($entry -is [IO.DirectoryInfo]){[IO.Directory]::Delete($entry.FullName,$false)}else{[IO.File]::Delete($entry.FullName)}
+            }elseif($entry -is [IO.DirectoryInfo]){Remove-ProofFixture $entry}
+            else{$entry.IsReadOnly=$false;$entry.Delete()}
+        }
+        $Directory.Delete()
+    }
+    if([IO.Directory]::Exists($full)){Remove-ProofFixture ([IO.DirectoryInfo]::new($full))}
+}

@@ -9,6 +9,7 @@ namespace APIShared.Workshop
     internal static class WorkshopInstallation
     {
         internal static string StateRoot(string game) => WorkshopPaths.Inside(game, "_APIShared/Workshop");
+
         internal static string ReceiptPath(string game, ulong id) => WorkshopPaths.Inside(StateRoot(game), "Receipts/" + id.ToString(CultureInfo.InvariantCulture) + ".json");
         internal static string CurrentHash(string path) => File.Exists(path) ? WorkshopInventory.Hash(path) : "missing";
         internal static WorkshopReceipt ReadReceipt(string game, ulong id)
@@ -40,7 +41,7 @@ namespace APIShared.Workshop
             var warnings = new List<string>();
             WorkshopReceipt previous = null;
             try { previous = ReadReceipt(game, id); }
-            catch (InvalidDataException) { if (action == WorkshopAction.Remove || action == WorkshopAction.Update) throw; warnings.Add("Invalid receipt: explicit installation will preserve unknown old files."); }
+            catch (InvalidDataException) { if (action == WorkshopAction.Remove || action == WorkshopAction.Update) throw; warnings.Add("Invalid receipt: the installation replaces the package folders completely; files not kept by the package are removed."); }
             WorkshopPackage package = null; string hash = null;
             if (action != WorkshopAction.Remove)
             {
@@ -55,8 +56,7 @@ namespace APIShared.Workshop
                         throw new InvalidOperationException("Use Update for a newer release, Reinstall for an explicit replacement, or Downgrade for an older release.");
                 }
                 else if (action == WorkshopAction.Update || action == WorkshopAction.Downgrade) throw new InvalidOperationException("No valid installation receipt.");
-                foreach (string root in package.Roots)
-                    if (Directory.Exists(WorkshopPaths.Inside(game, root))) warnings.Add("Existing installation will be backed up: " + root);
+
                 AssertOwnership(game, id, package);
             }
             else if (previous == null) throw new InvalidOperationException("No valid receipt to remove.");
@@ -67,9 +67,7 @@ namespace APIShared.Workshop
                 Version = package?.Version ?? previous.Version, Diagnostics = warnings.AsReadOnly()
             };
             plan.Files = package?.Files ?? new WorkshopFile[0];
-            var targets = plan.Files.ToDictionary(file => file.Path, file => CurrentHash(WorkshopPaths.Inside(game, file.Path)), StringComparer.OrdinalIgnoreCase);
-            plan.RemovedFiles = Obsolete(plan, warnings.Add, targets).ToList().AsReadOnly();
-            plan.TargetHashes = new System.Collections.ObjectModel.ReadOnlyDictionary<string,string>(targets);
+            plan.RemovedFiles = Removed(plan).ToList().AsReadOnly();
             return plan;
         }
         internal static void AssertOwnership(string game, ulong id, WorkshopPackage package)
@@ -81,28 +79,28 @@ namespace APIShared.Workshop
                     throw WorkshopDiagnostics.Blocked("Another installed Workshop item owns this package or plugin folder.");
             }
         }
-        internal static IEnumerable<string> Obsolete(WorkshopInstallPlan plan, Action<string> warn, IDictionary<string, string> targets = null)
+        // Preview of what an applied plan removes: the swap replaces whole plugin folders, so
+        // every file in the affected roots that the new package neither delivers nor keeps
+        // (apishared-keep.txt) disappears; a removal deletes the roots completely, and so does an
+        // update for roots the new version no longer ships.
+        internal static IEnumerable<string> Removed(WorkshopInstallPlan plan)
         {
-            var candidates = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
-            if (plan.Previous != null)
-                foreach (var file in plan.Previous.Files) candidates[file.Path] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { file.Sha256 };
-            // Historical hashes are declarations, never permission for recursive folder deletion.
-            if (plan.Package != null)
-                foreach (var file in plan.Package.LegacyReleases.SelectMany(x => x.Files))
-                {
-                    if (!candidates.TryGetValue(file.Path, out var hashes)) candidates.Add(file.Path, hashes = new HashSet<string>(StringComparer.OrdinalIgnoreCase));
-                    hashes.Add(file.Sha256);
-                }
+            var roots = plan.Package == null
+                ? plan.Previous.Files.Select(file => WorkshopStaging.PluginRoot(file.Path)).Distinct(StringComparer.OrdinalIgnoreCase).ToList()
+                : plan.Package.Roots.Concat(WorkshopStaging.DroppedRoots(plan)).ToList();
             var delivered = new HashSet<string>(plan.Package?.Files.Select(x => x.Path) ?? Enumerable.Empty<string>(), StringComparer.OrdinalIgnoreCase);
-            foreach (var pair in candidates.OrderBy(x => x.Key, StringComparer.Ordinal))
+            foreach (string root in roots.OrderBy(x => x, StringComparer.Ordinal))
             {
-                if (delivered.Contains(pair.Key)) continue;
-                string target = WorkshopPaths.Inside(plan.GameRoot, pair.Key);
-                if (!File.Exists(target)) continue;
-                string observed = CurrentHash(target);
-                if (!pair.Value.Contains(observed)) { warn("Preserved modified obsolete file: " + pair.Key); continue; }
-                targets?.Add(pair.Key, observed);
-                yield return pair.Key;
+                string target = WorkshopPaths.Inside(plan.GameRoot, root);
+                if (!Directory.Exists(target)) continue;
+                var keep = plan.Package == null ? new List<Install.InstallKeep.Entry>()
+                    : Install.InstallKeep.Read(WorkshopPaths.Inside(WorkshopPaths.Inside(plan.Source, "Payload"), root));
+                foreach (string relative in Install.InstallTree.Files(target))
+                {
+                    string path = root + "/" + relative;
+                    if (delivered.Contains(path) || Install.InstallKeep.Covers(keep, relative)) continue;
+                    yield return path;
+                }
             }
         }
     }

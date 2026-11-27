@@ -17,6 +17,7 @@ namespace APIShared.Internal
         private static SynchronizationContext unityContext;
         private static int unityThreadId;
         private static int dispatchScheduled;
+        private static long callbackFailures;
 
         public static bool IsInitialized =>
             Volatile.Read(ref unityContext) != null && Volatile.Read(ref unityThreadId) != 0;
@@ -83,6 +84,8 @@ namespace APIShared.Internal
                 return false;
             if (Interlocked.CompareExchange(ref dispatchScheduled, 1, 0) != 0)
                 return true;
+            // UnitySynchronizationContext.Post only enqueues and does not throw in practice; the
+            // catch below is a guard, not a known path that drops queued work.
             try
             {
                 context.Post(_ => Drain(), null);
@@ -117,10 +120,12 @@ namespace APIShared.Internal
                     {
                         action();
                     }
-                    catch
+                    catch (Exception error)
                     {
                         // A dispatched callback must not escape through Unity's
                         // SynchronizationContext and prevent later queued work.
+                        if (FailureThrottle.ShouldReport(ref callbackFailures))
+                            Events.InterceptionDiagnostics.Report("main-thread dispatch", error);
                     }
                 }
             }

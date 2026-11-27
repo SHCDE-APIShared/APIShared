@@ -18,7 +18,7 @@ namespace APIShared.Networking
     public static class ChoreTransport
     {
         /// <summary>Extender cap including its two-byte packet ID, excluding the native record framing.</summary>
-        public const int MaximumPayloadBytes = 1200;
+        public const int MaximumPayloadBytes = ChoreSendPolicy.MaximumPayloadBytes;
 
         /// <summary>Classifies a dedicated Chore packet receive by phase and absence of a Steam sender; this is not authenticated player identity.</summary>
         /// <remarks>Use only for packet types whose protocol expressly reserves this path for Chores. Never classify an arbitrary unknown-origin message as synchronized gameplay.</remarks>

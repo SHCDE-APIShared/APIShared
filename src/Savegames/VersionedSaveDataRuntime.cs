@@ -1,10 +1,13 @@
 using BepInEx.Logging;
 using R3;
 using SHCDESE.API;
+using SHCDESE.API.Components.Archive;
 using SHCDESE.EventAPI;
 using SHCDESE.EventAPI.MapLoader;
+using SHCDESE.IO;
 using System;
 using System.Collections.Generic;
+using System.IO;
 
 namespace APIShared.Savegames
 {
@@ -30,8 +33,10 @@ namespace APIShared.Savegames
         /// settings are applied before the native load and therefore before these callbacks; the mission
         /// start notification follows them. Save capture order across mods is the Extender's handler
         /// order and is unspecified; captures must not depend on each other.</para>
-        /// <para>Multiplayer: every peer reads its own save copy. Records are not compared across peers;
-        /// the multiplayer save readiness agreement covers settings only.</para>
+        /// <para>Multiplayer: every peer reads its own save copy. Before a multiplayer save is loaded, the
+        /// save readiness agreement compares the stored bytes of records declared
+        /// <see cref="VersionedSaveDataRegistration.SimulationRelevant"/> in every peer's copy and blocks
+        /// the load on a difference; other records are not compared. Nothing is synchronized.</para>
         /// <para>Failures: every callback exception is isolated, logged and counted in
         /// <see cref="CallbackFailures"/>; nothing is thrown into the game or the Extender. A throwing
         /// load callback for a restored record makes later saves of that mission keep the loaded bytes.</para>
@@ -50,6 +55,9 @@ namespace APIShared.Savegames
 
         /// <summary>Isolated exceptions from capture, load, legacy reader and migration callbacks.</summary>
         public static long CallbackFailures => VersionedSaveDataRuntime.CallbackFailures;
+        /// <summary>Whether the process-owned protected writer and checked atomic transaction are ready.
+        /// Required-record registration must occur after native initialization; this is not a dispatcher.</summary>
+        public static bool IsAtomicWriteAvailable => Economy.WorkerProductionCriticalSaveRuntime.IsAvailable;
     }
 
     // Binds the pure registry to Script Extender 2.14.1: ModSaveDataAPI handlers per identifier
@@ -65,6 +73,19 @@ namespace APIShared.Savegames
         private static ManualLogSource log;
         private static VersionedSaveDataRegistry registry;
         private static List<IDisposable> subscriptions;
+        private static object loadAttempt;
+
+        internal static bool RequiresAtomicWrite(bool map)
+        {
+            VersionedSaveDataRegistry current; lock (Sync) current = registry;
+            return current != null && current.RequiresAtomicWrite(new VersionedSaveContext(!map, map, ""));
+        }
+        internal static VersionedSaveDataRegistry.AtomicSnapshot BeginAtomicSave(bool map, string path)
+        {
+            VersionedSaveDataRegistry current; lock (Sync) current = registry;
+            return current?.BeginAtomicSave(new VersionedSaveContext(!map, map, path));
+        }
+        internal static void EndAtomicSave(VersionedSaveDataRegistry.AtomicSnapshot frozen) => frozen?.Owner.EndAtomicSave(frozen);
 
         internal static long CallbackFailures
         {
@@ -74,6 +95,11 @@ namespace APIShared.Savegames
         internal static bool TryRegister(VersionedSaveDataRegistration registration,
             out VersionedSaveDataHandle handle, out string reason)
         {
+            if (registration != null && registration.RequireAtomicWrite && !VersionedSaveData.IsAtomicWriteAvailable)
+            {
+                handle = null; reason = "The protected atomic save writer is unavailable; register after native initialization.";
+                return false;
+            }
             VersionedSaveDataRegistry current;
             lock (Sync)
             {
@@ -91,6 +117,37 @@ namespace APIShared.Savegames
                 current = registry;
             }
             return current.TryRegister(registration, out handle, out reason);
+        }
+
+        // Digests of the declared simulation-relevant records as stored in one save file, for the save
+        // readiness agreement. Reads the file's appended archive once, like SavegameModSettings.ReadRecord;
+        // with no declared record nothing is read. Entry names follow ModSaveDataAPI.cs:67, :272-275.
+        // A save without an archive has every record absent; a damaged archive makes every record
+        // unreadable, which blocks a multiplayer load rather than letting it start unverified.
+        internal static IReadOnlyList<SavegameRecordDigest> CaptureSimulationDigests(string savePath)
+        {
+            VersionedSaveDataRegistry current;
+            lock (Sync) current = registry;
+            List<KeyValuePair<string, string>> declared = current?.SimulationRecords;
+            return CaptureDigests(savePath, declared);
+        }
+        internal static IReadOnlyList<SavegameRecordDigest> CaptureMapSimulationDigests(string mapPath)
+        {
+            VersionedSaveDataRegistry current;
+            lock (Sync) current = registry;
+            return CaptureDigests(mapPath, current?.MapSimulationRecords);
+        }
+        private static IReadOnlyList<SavegameRecordDigest> CaptureDigests(string savePath, List<KeyValuePair<string, string>> declared)
+        {
+            if (declared == null || declared.Count == 0) return Array.Empty<SavegameRecordDigest>();
+            if (!MapArchive.TryLoad(savePath, out MapArchive archive))
+            {
+                bool noArchive = ZipUtil.FindEocdHeaderIndex(savePath) < 0 && ZipUtil.FindFirstZipHeaderIndex(savePath) < 0;
+                return SavegameRecordDigest.Capture(declared,
+                    _ => noArchive ? (byte[])null : throw new InvalidDataException("The save's mod data archive is damaged."));
+            }
+            using (archive)
+                return SavegameRecordDigest.Capture(declared, id => archive.TryReadBinaryFile("_SE_ModData_" + id + ".msgpack", true));
         }
 
         private static bool RegisterWithExtender(string identifier, Func<VersionedSaveContext, byte[]> save, Action<byte[]> load) =>
@@ -128,9 +185,8 @@ namespace APIShared.Savegames
             {
                 if (args == null) return;
                 if (args.Phase == EventHookPhase.Pre)
-                    registry?.BeginLoad(args.LoadingEditorMap ? VersionedSaveLoadSource.EditorMap : VersionedSaveLoadSource.SaveGame,
-                        args.FileName);
-                else if (args.Phase == EventHookPhase.Post) registry?.EndLoad();
+                    BeginArchive(args);
+                else if (args.Phase == EventHookPhase.Post) { registry?.EndLoad(); loadAttempt = null; }
             }
             catch (Exception ex) { Report(ex); }
         }
@@ -144,9 +200,8 @@ namespace APIShared.Savegames
             {
                 if (args == null) return;
                 if (args.Phase == EventHookPhase.Pre)
-                    registry?.BeginLoad(args.bMultiplayerSave != 0 || SavegameLoadCoordinator.IsLoadingMultiplayerSave
-                        ? VersionedSaveLoadSource.MultiplayerSave : VersionedSaveLoadSource.MapToPlay, args.FileName);
-                else if (args.Phase == EventHookPhase.Post) registry?.EndLoad();
+                    BeginArchive(args);
+                else if (args.Phase == EventHookPhase.Post) { registry?.EndLoad(); loadAttempt = null; }
             }
             catch (Exception ex) { Report(ex); }
         }
@@ -154,6 +209,41 @@ namespace APIShared.Savegames
         internal static void OnUnloadMap(MapUnloadEventArgs args)
         {
             try { registry?.Unload(); }
+            catch (Exception ex) { Report(ex); }
+        }
+
+        // The corrected SE archive handler invokes these around its own Pre-phase LoadMapArchive.
+        // The ordinary R3 Pre may run before or after that handler: the same EventArgs is the token,
+        // so it never erases data that was already delivered/prepared for that exact invocation.
+        internal static void BeginArchive(LoadSaveGameEventArgs args)
+        {
+            try
+            {
+                if (args == null || args.Phase != EventHookPhase.Pre || ReferenceEquals(loadAttempt, args)) return;
+                loadAttempt = args;
+                registry?.BeginLoad(args.LoadingEditorMap ? VersionedSaveLoadSource.EditorMap : VersionedSaveLoadSource.SaveGame, args.FileName);
+            }
+            catch (Exception ex) { Report(ex); }
+        }
+        internal static void BeginArchive(MapLoadEventArgs args)
+        {
+            try
+            {
+                if (args == null || args.Phase != EventHookPhase.Pre || ReferenceEquals(loadAttempt, args)) return;
+                loadAttempt = args;
+                registry?.BeginLoad(args.bMultiplayerSave != 0 || SavegameLoadCoordinator.IsLoadingMultiplayerSave
+                    ? VersionedSaveLoadSource.MultiplayerSave : VersionedSaveLoadSource.MapToPlay, args.FileName);
+            }
+            catch (Exception ex) { Report(ex); }
+        }
+        internal static void CompleteArchive(LoadSaveGameEventArgs args)
+        {
+            try { if (args?.Phase == EventHookPhase.Pre && ReferenceEquals(loadAttempt, args)) registry?.PrepareLoad(); }
+            catch (Exception ex) { Report(ex); }
+        }
+        internal static void CompleteArchive(MapLoadEventArgs args)
+        {
+            try { if (args?.Phase == EventHookPhase.Pre && ReferenceEquals(loadAttempt, args)) registry?.PrepareLoad(); }
             catch (Exception ex) { Report(ex); }
         }
 

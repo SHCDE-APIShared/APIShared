@@ -7,22 +7,23 @@ using System.Windows.Input;
 namespace Noesis
 {
     public enum Visibility { Visible, Hidden, Collapsed }
-    public enum HorizontalAlignment { Left, Center }
-    public enum VerticalAlignment { Bottom, Center }
+    public enum HorizontalAlignment { Left, Center, Stretch, Right }
+    public enum VerticalAlignment { Bottom, Center, Top, Stretch }
     public struct Thickness
     {
-        public double Bottom;
-        public Thickness(double all) { Bottom = all; }
-        public Thickness(double left, double top, double right, double bottom) { Bottom = bottom; }
+        public double Left, Top, Right, Bottom;
+        public Thickness(double all) { Left = Top = Right = Bottom = all; }
+        public Thickness(double left, double top, double right, double bottom) { Left = left; Top = top; Right = right; Bottom = bottom; }
     }
     public class Style { }
-    public class FrameworkElement
+    public partial class FrameworkElement
     {
-        public FrameworkElement? Parent { get; internal set; }
+        private FrameworkElement? parent;
+        public int ParentChanges;
+        public FrameworkElement? Parent { get => parent; internal set { if (!ReferenceEquals(parent, value)) ParentChanges++; parent = value; } }
         public double Width, Height; public Thickness Margin;
         public Visibility Visibility = Visibility.Visible;
-        private bool enabled = true;
-        public bool IsEnabled { get => enabled && (Parent?.IsEnabled ?? true); set => enabled = value; }
+        public bool IsEnabled { get => (bool)GetValue(UIElement.IsEnabledProperty) && (Parent?.IsEnabled ?? true); set => SetValue(UIElement.IsEnabledProperty, value); }
         public bool IsVisible => Visibility == Visibility.Visible && (Parent?.IsVisible ?? true);
         public bool IsHitTestVisible = true;
         public bool IsLoaded { get; internal set; }
@@ -31,10 +32,10 @@ namespace Noesis
         public readonly Dictionary<string, object> Resources = new();
         public object? TryFindResource(object key) => Resources.TryGetValue((string)key, out var value) ? value : Parent?.TryFindResource(key);
     }
-    public class Grid : FrameworkElement
+    public class Panel : FrameworkElement
     {
         public ElementCollection Children;
-        public Grid() { Children = new ElementCollection(this); }
+        public Panel() { Children = new ElementCollection(this); }
     }
     public sealed class ElementCollection : Collection<FrameworkElement>
     {
@@ -44,16 +45,20 @@ namespace Noesis
         protected override void RemoveItem(int index) { this[index].Parent = null; base.RemoveItem(index); }
         protected override void ClearItems() { foreach (var item in this) item.Parent = null; base.ClearItems(); }
     }
-    public class Button : FrameworkElement
+    public class Control : FrameworkElement
     {
-        public object? Content, CommandParameter, ToolTip; public ICommand? Command;
-        public int Duration; public bool ToolTipEnabled = true;
+        public object? ToolTip; public int Duration; public bool ToolTipEnabled = true;
+        public float FontSize = 16;
+    }
+    public partial class Button : Control
+    {
+        public object? Content, CommandParameter; public ICommand? Command;
         public event EventHandler? Click;
         public void Invoke() { Command?.Execute(CommandParameter); Click?.Invoke(this, EventArgs.Empty); }
     }
-    public class TextBlock : FrameworkElement { public string? Text; public float FontSize; }
-    public class ToolTip : FrameworkElement { public object? Content, Template; }
-    public static class ToolTipService
+    public partial class TextBlock : FrameworkElement { public string? Text; public float FontSize; }
+    public partial class ToolTip : FrameworkElement { public object? Content, Template; }
+    public static partial class ToolTipService
     {
         public static void SetIsEnabled(Button button, bool value) { button.ToolTipEnabled = value; }
         public static void SetToolTip(Button button, object? tip) { button.ToolTip = tip; }
@@ -62,7 +67,7 @@ namespace Noesis
 }
 namespace CrusaderDE
 {
-    public class MainViewModel
+    public partial class MainViewModel
     {
         public static bool viewModelLoaded;
         public static MainViewModel? Instance;
@@ -102,6 +107,7 @@ namespace UnityEngine
 }
 namespace APIShared
 {
+    public static class APISharedPlugin { public const string PluginGuid = "APIShared_Serp"; }
     public enum NativeCapabilityState { Pending, Available, ValidationFailed }
     public static class NativeCapabilityIds { public const string HudExtrasButtons = "hud-extras-buttons"; }
     public sealed class NativeCapabilityDiagnostic
@@ -113,5 +119,18 @@ namespace APIShared
     {
         internal static void Debug(BepInEx.Logging.ManualLogSource? log, string text) { log?.LogDebug(text); }
         internal static void Error(BepInEx.Logging.ManualLogSource? log, string text) { log?.LogDebug(text); }
+    }
+}
+namespace APIShared.Presentation
+{
+    // The Unity adapter is an external boundary; core HUD tests drive the real HUD callback directly.
+    internal static class UiWorkRuntime
+    {
+        internal static bool TryRegister(string owner, string id, Action callback, int order,
+            out IUiFrameWorkRegistration registration, out string reason)
+        {
+            var scheduler = new UiWorkScheduler(() => 0, 1000, null);
+            return scheduler.TryRegister(owner, id, callback, order, out registration, out reason);
+        }
     }
 }

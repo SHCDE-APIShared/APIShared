@@ -17,7 +17,9 @@ namespace APIShared
         [Key(2)] public int Variant { get; set; }
         /// <summary>Persistent host properties keyed by plugin GUID and property name.</summary>
         [Key(3)] public Dictionary<string, Dictionary<string, byte[]>> Mods { get; set; }
-        /// <summary>Whether the mission was locked by conflicting launch evidence when saved.</summary>
+        /// <summary>Legacy wire field, no longer read. Earlier builds persisted a launch-evidence conflict here,
+        /// which locked the save for every later load. It is now written only for a size-reduced record,
+        /// so that those earlier builds keep such a record locked.</summary>
         [Key(4)] public bool LockedByConflict { get; set; }
         /// <summary>Trail author rules keyed by plugin GUID and host property.</summary>
         [Key(5)] public Dictionary<string, Dictionary<string, TrailCreatorRule>> CreatorRules { get; set; }
@@ -37,7 +39,8 @@ namespace APIShared
     /// <summary>Availability and permission state of one selected savegame.</summary>
     public enum SavegameLoadChoiceState
     {
-        /// <summary>The save or its present metadata cannot be trusted.</summary>
+        /// <summary>The save's APIShared record is unreadable or unsupported. The save still loads,
+        /// like <see cref="Legacy"/>, with the current host settings.</summary>
         Invalid = 0,
         /// <summary>No APIShared record exists; current host settings are mandatory.</summary>
         Legacy = 1,

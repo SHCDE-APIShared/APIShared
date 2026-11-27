@@ -4,12 +4,13 @@ using APIShared;
 using BepInEx;
 using BepInEx.Logging;
 using SHCDESE.API;
+using SHCDESE.API.LowLevel;
 
 namespace ThirdPartyMod
 {
     [BepInPlugin(Guid, "APIShared Example", "1.0.0")]
     [BepInDependency("000shcdese", "2.14.0")]
-    [BepInDependency("APIShared_Serp", "0.9.0")]
+    [BepInDependency("APIShared_Serp", "0.47.0")]
     public sealed class ExamplePlugin : BaseUnityPlugin
     {
         public const string Guid = "Example.Author.APISharedDemo";
@@ -28,12 +29,19 @@ namespace ThirdPartyMod
             MissionExample.Register(Api, Log);
             InterceptionExample.Register(Log);
             BuildingTooltipExample.Register(Log);
+            TooltipExample.Register(Guid, context => "Example information", context => null, Log);
             SaveDataExample.Register(Guid, Log);
             PaintExample.Register(Guid, (int)Enums.GM.GM_BODY_PIKEMAN, Log);
+            // Also opts this page into the explicit search catalog and local result navigation.
             APIShared.ModSettings.LobbyModSettingsPresetRegistration.Register(
                 this, log, "APIShared Example", Settings, "ScriptExtenderUI/APISharedExample.xaml");
             HudExample.RegisterSideButtons(Api, Log);
             Api.WhenReady(OnReady);
+            CrusaderLibrary.Instance.LibraryLoaded += _ => {
+                AllyGoodsExample.Register(Guid, Log);
+                AiMarketSellExample.Register(Log);
+                HealthExample.Register(Log);
+            };
         }
 
         private static void OnReady(ModApiClient client)
@@ -46,6 +54,8 @@ namespace ThirdPartyMod
                 try
                 {
                     PathfindingReplacementExample.Inspect(Log);
+                    NativeSiteExample.Inspect(Log);
+                    UnitIdentityExample.Register(client, Log);
                     if (client.TryGetUnitHudPresentation(out var hud, out var diagnostic))
                         HudExample.Register(hud, Log);
                     else Log(diagnostic.Reason);

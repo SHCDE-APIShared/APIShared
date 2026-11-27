@@ -107,6 +107,27 @@ namespace APISharedTests
         }
 
         [TestMethod]
+        public void PublicOutputFramePublishesAndShadowFrameDeclinesOuterStaging()
+        {
+            int publications = 0;
+            AssassinRouteOutputFrame outer = AssassinPathAPI.BeginRouteOutput(new IntPtr(1), 1, 2, 3, 4, 1,
+                () => true, (bytes, count) => { publications++; return count; }, 1, 0);
+            try
+            {
+                Assert.IsTrue(AssassinPathAPI.HasSingleUnitRoutePublication);
+                AssassinRouteOutputFrame shadow = AssassinPathAPI.BeginRouteOutput(new IntPtr(1), 1, 2, 3, 4, 0, null, null);
+                try { Assert.IsFalse(Stage()); Assert.AreEqual(7, shadow.Complete(7)); }
+                finally { shadow.Leave(); }
+                Assert.ThrowsExactly<InvalidOperationException>(() => shadow.Leave());
+                Assert.IsTrue(Stage());
+                Assert.AreEqual(2, outer.Complete(7));
+                Assert.AreEqual(1, publications);
+            }
+            finally { outer.Leave(); }
+            Assert.IsFalse(AssassinPathAPI.HasSingleUnitRoutePublication);
+        }
+
+        [TestMethod]
         public void ReportingIsOptionalAndInvalidRoutesKeepTheOriginalResult()
         {
             int publications = 0;

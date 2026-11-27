@@ -10,6 +10,7 @@ namespace APIShared.Workshop
     internal sealed class WorkshopStartupGate : SynchronizationContext
     {
         private readonly BlockingCollection<Action> callbacks = new BlockingCollection<Action>();
+
         public override void Post(SendOrPostCallback callback, object state) => callbacks.Add(() => callback(state));
 
         internal static void Run(Func<Task> work)
@@ -29,4 +30,5 @@ namespace APIShared.Workshop
             }
         }
     }
+
 }

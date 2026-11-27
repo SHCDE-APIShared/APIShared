@@ -1,0 +1,15 @@
+<Patch xmlns:n="http://schemas.microsoft.com/winfx/2006/xaml/presentation">
+  <Operation Type="AddNamespace" AttributeName="apiAllyLayout" Value="clr-namespace:APIShared.Presentation;assembly=APIShared" />
+  <Operation Type="SetAttribute" XPath="/n:UserControl/n:Grid/n:Button[@Visibility='{Binding Allies_GoodsViewVis, Converter={StaticResource booleanToVisibilityConverter}}']"
+             AttributeName="apiAllyLayout:AllyGoodsPanelAnchors.Role" Value="GoodsFrame" />
+  <Operation Type="SetAttribute" XPath="//n:Grid[n:Button[@CommandParameter='ConfirmGoods'] and n:Button[@CommandParameter='CancelGoods']]"
+             AttributeName="apiAllyLayout:AllyGoodsPanelAnchors.Role" Value="Footer" />
+  <Operation Type="SetAttribute" XPath="//n:Grid[n:Button[@CommandParameter='ConfirmGoods'] and n:Button[@CommandParameter='CancelGoods']]/n:Button[not(@Command) and @Style='{StaticResource BDR_SH1DEe}']"
+             AttributeName="apiAllyLayout:AllyGoodsPanelAnchors.Role" Value="FooterBackground" />
+  <Operation Type="Add" XPath="//n:Grid[@x:Name='LayoutRoot']">
+    <Content>
+      <Grid x:Name="APISharedAllyGoodsExtensionsHost" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+            Height="0" Visibility="Collapsed" HorizontalAlignment="Stretch" VerticalAlignment="Top" />
+    </Content>
+  </Operation>
+</Patch>

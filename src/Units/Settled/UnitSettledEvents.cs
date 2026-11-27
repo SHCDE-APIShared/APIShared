@@ -67,8 +67,11 @@ namespace APIShared.Units
         public static long DroppedUnits => Tracker.DroppedUnits;
 
         // APISharedPlugin.Awake: callback failures are reported through APIShared's log.
-        internal static void Initialize(ManualLogSource log) =>
+        internal static void Initialize(ManualLogSource log)
+        {
+            UnitSettledScriptExtenderSource.Log = log;
             Tracker.SetErrorSink((registration, error) =>
                 NativeApiLog.Error(log, "Unit-settled callback failed: " + registration + ": " + error));
+        }
     }
 }

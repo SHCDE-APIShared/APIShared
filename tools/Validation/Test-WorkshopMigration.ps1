@@ -28,6 +28,6 @@ foreach ($map in @((New-Map 'missing' @()),(New-Map 'duplicate' @('{"GUID":"APIS
     $rejected = $false; try { Assert-ApiWorkshopMigrationVersion '0.7.1' @($map) 'SerpsMods_Serp' } catch { $rejected = $true }
     if (-not $rejected) { throw 'Unproven historical APIShared accepted.' }
 }
-$template = [IO.File]::ReadAllText((Join-Path $PSScriptRoot '../../Workshop/Bootstrap/Plugin.cs.template'))
-if ($template -match 'installation in APIShared Workshop|Installation unter APIShared Workshop' -or $template -notmatch 'Path.GetFullPath\(loaded.Location\)' -or $template -notmatch 'automatic installation prompts') { throw 'Bootstrap warning/loaded assembly gate regressed.' }
-Write-Host ('PASS: historical APIShared version ordering, ambiguous/missing metadata rejection and central bootstrap gate. Fixtures: ' + $fixture)
+# Generated-bootstrap readiness is exercised by Test-WorkshopBootstrapReadiness,
+# including an already loaded foreign DLL. Warning wording proves no readiness contract.
+Write-Host ('PASS: historical APIShared version ordering and ambiguous/missing metadata rejection. Fixtures: ' + $fixture)

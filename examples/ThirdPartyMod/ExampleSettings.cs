@@ -13,6 +13,16 @@ namespace ThirdPartyMod
 
         private bool enableMod = true;
         private bool showOverlay = true;
+        private bool compactHostSummary;
+
+        // Personal to the host across missions; clients receive it through normal Host sync.
+        // Bind its UI outside the mission-locked host container with CanEditMissionIndependentHostSettings.
+        [SyncHostOnly, MissionIndependent]
+        public bool CompactHostSummary
+        {
+            get => compactHostSummary;
+            set { if (!CanMutateSetting() || value == compactHostSummary) return; compactHostSummary = value; OnPropertyChanged(nameof(CompactHostSummary)); }
+        }
 
         [SyncHostOnly]
         public bool EnableMod
