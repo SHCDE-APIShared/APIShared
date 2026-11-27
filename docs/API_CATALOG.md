@@ -129,6 +129,10 @@ an admitted managed engine call with one ordered callback snapshot. The pair
 also surrounds calls that return zero or throw. For time-based rules use the
 native tick API above. See the [engine-run contract](THIRD_PARTY_GUIDE.md#managed-engine-run-boundaries).
 
+The existing owner also contains an internal, explicitly bound NativeRun
+exclusion foundation. It supplies no public suspension client and does not change
+the observer API. See its [scope and lifetime](WORKER_PRODUCTION_BONUS.md#internal-nativerun-exclusion).
+
 ## Managed IL patches that cannot break other patches
 
 `APIShared.Patching.SafeIlHook.TryInstall` installs a MonoMod IL hook whose
@@ -316,6 +320,7 @@ Rounded fear coefficients and fixed contributions per signed level use [`Economy
 | `APIShared.Presentation.VisibleMapRenderEvents` | Ordered native render preparation and reverse cleanup, original exactly once, native dormant guard | Register after native library initialization; caller thread; [contract](THIRD_PARTY_GUIDE.md#shared-render-and-pause-menu-presentation) |
 | `APIShared.Presentation.IngameMenuActions` | Named two-slot ESC rows, inline custom controls (`TryRegisterContent`), explicit takeovers, original-button overrides (`TryOverrideVanillaAction`) and conditional hiding on both pages (`TryRegisterVanillaSuppression`), cached occupancy, optional tooltips and a scrollable additional-actions page | Unity-thread registration/query/providers/commands; event-driven invalidation, permanent registrations; [contract](THIRD_PARTY_GUIDE.md#esc-menu-rows-and-additional-actions) |
 | `APIShared.Presentation.MissionOverEvents` | End-screen buttons, managed end state and game-over OST; ordered Pre/Accepted/Post with guarded at-most-once deferral | Caller thread; permanent hooks installed on demand; [contract](THIRD_PARTY_GUIDE.md#end-screen-presentation) |
+| `APIShared.Presentation.PaintEvents` | After-paint callbacks for body sprites, tile images, chevrons, tile colours and map draw-list layers; ordered claims to replace a result | Startup registration; painting thread (Unity); order/owner/ID; optional sprite-file filter; first registration hooks that site; no replay; process lifetime |
 | `APIShared.Recruitment.RecruitmentRequestPolicy` | Pure recruitment ceilings and pending-reservation arithmetic | No hook or native affordability guarantee; consumers own reconciliation |
 | `APIShared.Recruitment.RecruitmentMaterialUi` | Shared European weapon-stock HUD bypass predicates | Validated 26-site IL contract; OR combination; process lifetime |
 | `APIShared.Recruitment.RecruitmentAvailability` | One shared pass that disables Vanilla recruit buttons by side-effect-free predicates, with one context per GUI check | Startup-thread registration; GUI-check Post on its Unity caller thread, only in Vanilla recruitment panel modes; already disabled buttons stay untouched; OR combination; process lifetime |
@@ -405,6 +410,7 @@ Member-level documentation is also shipped as `APIShared.xml` beside the DLL.
 | Defeat transitions and current state | [Player contracts](../src/Players/PlayerDefeatContracts.cs) | [Capability](../src/Players/PlayerDefeatService.cs) | [Using snapshots](THIRD_PARTY_GUIDE.md#player-defeat-state) |
 | Player views and control | [Perspective](../src/Players/PlayerPerspectiveAPI.cs), [observer exceptions](../src/Players/ObserverCommandExceptions.cs) | [View identity](../src/Players/ViewIdentity/PlayerViewIdentityRuntime.cs), [input boundaries](../src/Players/Control/ControlInputNative.cs) | â€” |
 | Simulation ticks and Peace Time | [Ticks](../src/Simulation/SimulationTickEvents.cs), [clock](../src/Simulation/SimulationClock.cs), [Peace Time](../src/Simulation/PeaceTimeState.cs) | [Tick source](../src/Simulation/SimulationTickSource.cs) | â€” |
+| Managed engine-run boundary | [Observer](../src/Simulation/EngineRunEvents.cs) | [Existing hook](../src/Units/Selection/MarkedUnitSelectionAPI.cs), [internal gate](../src/Economy/WorkerProductionRunGate.cs), [publication](../src/Economy/WorkerProductionRunPublication.cs) | [Scope and lifetime](WORKER_PRODUCTION_BONUS.md#internal-nativerun-exclusion) |
 | Enemy-unit proximity | [Contracts](../src/Buildings/EnemyProximity/EnemyProximityContracts.cs), [registration](../src/Buildings/EnemyProximity/EnemyProximityPolicies.cs) | [Runtime](../src/Buildings/EnemyProximity/EnemyProximityRuntime.cs) | â€” |
 | Troop HUD | [HUD contracts](../src/Presentation/UnitHud/UnitHudContracts.cs), [action buttons](../src/Presentation/UnitHud/UnitHudActionButtonContracts.cs), [sprite colours](../src/Presentation/UnitHud/UnitHudSpriteColours.cs), [player colours](../src/Players/PlayerColours.cs) | [Service and state](../src/Presentation/UnitHud/UnitHudPresentationService.cs), [hooks](../src/Presentation/UnitHud/UnitHudPresentationService.Hooks.cs), named feature parts beside them | [HUD](../examples/ThirdPartyMod/HudExample.cs) |
 | Side HUD | [Button contracts](../src/Presentation/HudExtras/HudExtrasButtonContracts.cs) | [Service](../src/Presentation/HudExtras/HudExtrasButtonsService.cs), [layout](../src/Presentation/HudExtras/HudExtrasButtonLayout.cs) | [HUD](../examples/ThirdPartyMod/HudExample.cs) |
@@ -442,6 +448,7 @@ Member-level documentation is also shipped as `APIShared.xml` beside the DLL.
 | Recruitment policies | [Request arithmetic](../src/Units/Recruitment/RecruitmentRequestPolicy.cs), [material UI](../src/Units/Recruitment/RecruitmentMaterialUi.cs), [button availability](../src/Units/Recruitment/RecruitmentAvailability.cs) | [Material IL contract](../src/Units/Recruitment/RecruitmentMaterialUiIlContract.cs) | [Interception](../examples/ThirdPartyMod/InterceptionExample.cs) |
 | Troop action buttons | [TroopActionHud](../src/Presentation/TroopActions/TroopActionHud.cs), [button contracts](../src/Presentation/TroopActions/TroopActionButtonContracts.cs) | [Legacy layout](../src/Presentation/TroopActions/TroopActionHudLayout.cs), [paging policy](../src/Presentation/TroopActions/TroopActionPagingPolicy.cs) | [HUD](../examples/ThirdPartyMod/HudExample.cs) |
 | In-game tooltip extensions | [Public service](../src/Presentation/Tooltips/TooltipPresentation.cs), [content and positions](../src/Presentation/Tooltips/TooltipContracts.cs) | Shared renderer for buildings, recruitment, siege construction and repair | [Guide](TOOLTIPS.md), [standalone example](../examples/ThirdPartyMod/TooltipExample.cs) |
+| Shared paint sites | [PaintEvents](../src/Presentation/Paint/PaintEvents.cs), [paint values](../src/Presentation/Paint/PaintContracts.cs) | [Sites](../src/Presentation/Paint/PaintSites.cs), [registry](../src/Presentation/Paint/PaintRegistry.cs), [installation guard](../src/Presentation/Paint/PaintSiteGuard.cs), [guide](PAINT.md) | [Paint](../examples/ThirdPartyMod/PaintExample.cs) |
 | Building tooltip text | [Public broker](../src/Presentation/BuildingTooltip/BuildingTooltipPresentation.cs) | Shared presentation in that file | [Tooltip](../examples/ThirdPartyMod/BuildingTooltipExample.cs) |
 | Situational audio | [Sound contracts](../src/Audio/SoundContracts.cs), [event broker](../src/Audio/SoundEvents.cs), [source contracts](../src/Audio/SoundSourceContracts.cs), [source events](../src/Audio/SoundSourceEvents.cs) | [Audio contracts and implementation](AUDIO.md) | [Sound](../examples/ThirdPartyMod/SoundExample.cs) |
 | Workshop packages | [Owner-bound client](../src/Workshop/WorkshopClient.cs) | [Publishing and deployment](WORKSHOP.md), [installation core](../src/Workshop/Install/WorkshopSafeInstall.cs), [external mod managers](WORKSHOP.md#external-mod-managers-apisharedmodmanagerjson) | [Workshop](../examples/ThirdPartyMod/WorkshopExample.cs) |
@@ -880,6 +887,22 @@ host convention.
 
 The additive typed registration and its paging behavior are described under
 [Vanilla troop-action slots and pages](#vanilla-troop-action-slots-and-pages).
+
+## Shared paint sites
+
+Not in packages up to 0.9.1; check the package you require. [PaintEvents](../src/Presentation/Paint/PaintEvents.cs)
+owns one hook per managed draw method: `SpriteMapping.SetBodySprite`,
+`setGenericBuildingTileGraphic` and `getChevronImage`, `gameTile.setTileColour` and the
+`GameMap.addUpdatePixie`/`Fly`/`Org`/`BuildingAnim` draw-list updates. A site is hooked
+at its first successful registration. Callbacks run after the game's method and the hooks
+installed beneath the broker, by ascending order, ordinal owner GUID and ID, and receive a
+paint value by reference. A registration that replaces the drawn result claims it first;
+the first claim wins and `ClaimOver` layers over a named owner. Sprite-file filters keep
+unrelated paints at one table lookup. Nested body paints report the enclosing tracked layer
+update. Installation refuses a changed signature or an entry redirected outside MonoMod; the
+registration then returns false and consumers keep their own hook. Painting is local
+presentation. See [Shared paint sites](PAINT.md) for per-site composition, limitations and
+measurements, and the [example](../examples/ThirdPartyMod/PaintExample.cs).
 
 ## Native market price queries
 
