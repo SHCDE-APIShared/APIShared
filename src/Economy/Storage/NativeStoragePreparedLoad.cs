@@ -12,16 +12,28 @@ namespace APIShared.Economy
     internal sealed class NativeStoragePreparedLoad
     {
         internal NativeStorageState State { get; private set; }
+        internal long MissionSessionId { get; private set; }
         internal bool Blocked { get; private set; }
         internal bool MayContainCargo { get; private set; }
         internal string Reason { get; private set; }
 
-        internal void Prepare(IReadOnlyList<NativeStorageGoodRegistration> definitions, VersionedSaveLoad load)
+        // Decoder-only callers acquire no world ownership. The runtime supplies the current
+        // executing attempt explicitly; a ready/global context cannot lend its ID to an archive.
+        internal void Prepare(IReadOnlyList<NativeStorageGoodRegistration> definitions, VersionedSaveLoad load) =>
+            Prepare(definitions, load, null);
+
+        internal void Prepare(IReadOnlyList<NativeStorageGoodRegistration> definitions, VersionedSaveLoad load,
+            long? executingSession)
         {
+            MissionSessionId = load?.MissionSessionId ?? 0;
             State = null; Blocked = false; MayContainCargo = true; Reason = string.Empty;
             try
             {
                 if (load == null || definitions == null) throw new InvalidDataException("Storage preparation has no load or registered catalogue.");
+                // Reject before interpreting even NoRecord: an unassociated archive cannot
+                // establish absence for the active world or downgrade conservative save demand.
+                if (executingSession.HasValue && (MissionSessionId <= 0 || MissionSessionId != executingSession.Value))
+                    throw new InvalidDataException("The storage archive has no matching executing mission attempt.");
                 if (load.Status == VersionedSaveLoadStatus.NoRecord || load.Status == VersionedSaveLoadStatus.OutOfScope)
                 {
                     var empty = new NativeStorageState();
@@ -48,6 +60,17 @@ namespace APIShared.Economy
                 throw;
             }
         }
+        // Only Runtime's existing explicit EditorCreated boundary uses this path. It records
+        // that creator's session without pretending that a versioned archive was delivered.
+        internal static NativeStoragePreparedLoad ForBlankWorld(NativeStorageState state, long missionSessionId)
+        {
+            if (state == null || missionSessionId <= 0) throw new ArgumentException("A confirmed blank world is required.");
+            return new NativeStoragePreparedLoad { State = state, MissionSessionId = missionSessionId,
+                MayContainCargo = false, Reason = string.Empty };
+        }
+
+        internal void ReleaseState() => State = null;
+
         private static bool HasLegacyStoresHeader(VersionedSaveLoad load) =>
             load.Status == VersionedSaveLoadStatus.Restored && load.Entries.TryGetValue("stores", out byte[] stores) && stores != null && stores.Length >= 8 &&
             BinaryPrimitives.ReadInt32LittleEndian(stores) == 0x3153474E && BinaryPrimitives.ReadInt32LittleEndian(stores.AsSpan(4)) == 1;

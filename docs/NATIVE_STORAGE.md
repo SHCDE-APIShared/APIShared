@@ -182,6 +182,22 @@ may finish that matching activation; `IsCurrentWorldReady` is a nonmutating
 observation. A new blank editor map can initialize empty without an archive
 callback. A loaded map or save cannot silently take that fallback.
 
+Restoration requires the archive's positive `VersionedSaveLoad.MissionSessionId`
+to match the synchronously executing mission attempt. A ready mission, filename
+or callback order cannot supply a missing association. Unknown (zero), wrong or
+no-longer-executing associations block storage before decoding, including
+`NoRecord`; they do not mean that the current world is empty. Readable original
+records remain passive byte for byte and existing stock remains untouched.
+Storage reads, mutation and capture refuse that world. The same blank-editor
+world cannot clear the refusal by taking the no-archive fallback; a genuinely new
+explicit blank editor world retains its existing initialization path.
+
+This intentionally tightens the previous behavior, which borrowed the globally
+active mission's ID. Integrations that bypass the tracked mission-load owner must
+use a supported tracked load rather than infer an association themselves. This
+is a managed ownership check, not proof of live Extender ordering, native-world
+validity, import, enrollment or private-ledger retirement.
+
 Destroyed, reused, captured or retyped buildings lose their associated virtual
 stock. Reconciliation updates physical rows and private player totals together;
 unchanged ticks perform no snapshot cloning. Registered goods absent from a loaded
