@@ -15,17 +15,18 @@ namespace ThirdPartyMod
             var definition = new LordStatisticColumnDefinition("current-score",
                 () => "Current example score", () => "Current score in points; unknown if unavailable.", icon,
                 request => {
-                    // Request IDs have already been authorized by the renderer. Sample all requested
+                    // Request IDs are authorized for display or ordering. Sample all requested
                     // players together; native providers acquire their normal read lock here.
                     var snapshot = new Dictionary<int, decimal?>();
                     foreach (int playerId in request.PlayerIds) snapshot[playerId] = readCurrentValue(playerId);
                     return snapshot;
                 }, LordStatisticTheme.OtherMods,
-                value => value.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) + " pt");
+                value => value.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) + " pt",
+                canShowValue: view => view.IsOwn || view.IsSpectator, sortHiddenValues: false);
             if (LordStatistics.TryRegister(ownerGuid, definition, out var column, out string reason)) return column;
             report(reason); return null;
             // Keep the returned handle process-wide. Use SetActive(false/true) for feature settings,
-            // RefreshMetadata for language changes; never unregister in the plugin startup teardown.
+            // RefreshMetadata for language or visibility changes.
         }
     }
 }

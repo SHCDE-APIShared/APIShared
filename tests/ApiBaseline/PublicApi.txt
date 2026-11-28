@@ -4035,11 +4035,16 @@ APIShared.Statistics.EngineReadbacks | public static bool TryRegister(string own
 APIShared.Statistics.LordStatisticCatalog | public sealed class APIShared.Statistics.LordStatisticCatalog
 APIShared.Statistics.LordStatisticCatalog | public System.Collections.Generic.IReadOnlyList<APIShared.Statistics.LordStatisticColumn> Columns { get; }
 APIShared.Statistics.LordStatisticCatalog | public long Revision { get; }
+APIShared.Statistics.LordStatisticCell | public struct APIShared.Statistics.LordStatisticCell
+APIShared.Statistics.LordStatisticCell | public decimal? DisplayValue { get; }
+APIShared.Statistics.LordStatisticCell | public decimal? SortValue { get; }
 APIShared.Statistics.LordStatisticColumn | public sealed class APIShared.Statistics.LordStatisticColumn
 APIShared.Statistics.LordStatisticColumn | public APIShared.Statistics.LordStatisticTheme Theme { get; }
 APIShared.Statistics.LordStatisticColumn | public Noesis.ImageSource GetIcon()
+APIShared.Statistics.LordStatisticColumn | public System.Collections.Generic.IReadOnlyDictionary<int, APIShared.Statistics.LordStatisticCell> ReadForView(long sessionId, System.Collections.Generic.IEnumerable<APIShared.Statistics.LordStatisticView> candidates)
 APIShared.Statistics.LordStatisticColumn | public System.Collections.Generic.IReadOnlyDictionary<int, decimal?> Read(long sessionId, System.Collections.Generic.IEnumerable<int> authorizedPlayerIds)
 APIShared.Statistics.LordStatisticColumn | public bool IsActive { get; }
+APIShared.Statistics.LordStatisticColumn | public long Revision { get; }
 APIShared.Statistics.LordStatisticColumn | public string Format(decimal value)
 APIShared.Statistics.LordStatisticColumn | public string GetName()
 APIShared.Statistics.LordStatisticColumn | public string GetTooltip()
@@ -4049,12 +4054,15 @@ APIShared.Statistics.LordStatisticColumn | public void RefreshMetadata()
 APIShared.Statistics.LordStatisticColumn | public void SetActive(bool active)
 APIShared.Statistics.LordStatisticColumnDefinition | public sealed class APIShared.Statistics.LordStatisticColumnDefinition
 APIShared.Statistics.LordStatisticColumnDefinition | public .ctor(string columnId, System.Func<string> name, System.Func<string> tooltip, System.Func<Noesis.ImageSource> icon, System.Func<APIShared.Statistics.LordStatisticRequest, System.Collections.Generic.IReadOnlyDictionary<int, decimal?>> values, APIShared.Statistics.LordStatisticTheme theme = (APIShared.Statistics.LordStatisticTheme)0, System.Func<decimal, string> format = null)
+APIShared.Statistics.LordStatisticColumnDefinition | public .ctor(string columnId, System.Func<string> name, System.Func<string> tooltip, System.Func<Noesis.ImageSource> icon, System.Func<APIShared.Statistics.LordStatisticRequest, System.Collections.Generic.IReadOnlyDictionary<int, decimal?>> values, APIShared.Statistics.LordStatisticTheme theme, System.Func<decimal, string> format, System.Func<APIShared.Statistics.LordStatisticView, bool> canShowValue, bool sortHiddenValues)
 APIShared.Statistics.LordStatisticColumnDefinition | public APIShared.Statistics.LordStatisticTheme Theme { get; }
 APIShared.Statistics.LordStatisticColumnDefinition | public System.Func<APIShared.Statistics.LordStatisticRequest, System.Collections.Generic.IReadOnlyDictionary<int, decimal?>> Values { get; }
+APIShared.Statistics.LordStatisticColumnDefinition | public System.Func<APIShared.Statistics.LordStatisticView, bool> CanShowValue { get; }
 APIShared.Statistics.LordStatisticColumnDefinition | public System.Func<Noesis.ImageSource> Icon { get; }
 APIShared.Statistics.LordStatisticColumnDefinition | public System.Func<decimal, string> Format { get; }
 APIShared.Statistics.LordStatisticColumnDefinition | public System.Func<string> Name { get; }
 APIShared.Statistics.LordStatisticColumnDefinition | public System.Func<string> Tooltip { get; }
+APIShared.Statistics.LordStatisticColumnDefinition | public bool SortHiddenValues { get; }
 APIShared.Statistics.LordStatisticColumnDefinition | public string ColumnId { get; }
 APIShared.Statistics.LordStatisticRequest | public sealed class APIShared.Statistics.LordStatisticRequest
 APIShared.Statistics.LordStatisticRequest | public System.Collections.Generic.IReadOnlyList<int> PlayerIds { get; }
@@ -4064,6 +4072,19 @@ APIShared.Statistics.LordStatisticTheme | Economy = 1
 APIShared.Statistics.LordStatisticTheme | Military = 2
 APIShared.Statistics.LordStatisticTheme | OtherMods = 0
 APIShared.Statistics.LordStatisticTheme | PopulationMood = 3
+APIShared.Statistics.LordStatisticView | public struct APIShared.Statistics.LordStatisticView
+APIShared.Statistics.LordStatisticView | public .ctor(long sessionId, int viewerPlayerId, int playerId, APIShared.GameModes.GameModeKind mode, bool isRealMultiplayer, bool isSpectator, bool isEliminated, bool isAlly, bool hasEnemyDetailsPermission)
+APIShared.Statistics.LordStatisticView | public APIShared.GameModes.GameModeKind Mode { get; }
+APIShared.Statistics.LordStatisticView | public bool CanShowDetails { get; }
+APIShared.Statistics.LordStatisticView | public bool HasEnemyDetailsPermission { get; }
+APIShared.Statistics.LordStatisticView | public bool IsAlly { get; }
+APIShared.Statistics.LordStatisticView | public bool IsEliminated { get; }
+APIShared.Statistics.LordStatisticView | public bool IsOwn { get; }
+APIShared.Statistics.LordStatisticView | public bool IsRealMultiplayer { get; }
+APIShared.Statistics.LordStatisticView | public bool IsSpectator { get; }
+APIShared.Statistics.LordStatisticView | public int PlayerId { get; }
+APIShared.Statistics.LordStatisticView | public int ViewerPlayerId { get; }
+APIShared.Statistics.LordStatisticView | public long SessionId { get; }
 APIShared.Statistics.LordStatistics | public static class APIShared.Statistics.LordStatistics
 APIShared.Statistics.LordStatistics | public static APIShared.Statistics.LordStatisticCatalog GetCatalog()
 APIShared.Statistics.LordStatistics | public static bool TryRegister(string ownerGuid, APIShared.Statistics.LordStatisticColumnDefinition definition, out APIShared.Statistics.LordStatisticColumn column, out string reason)

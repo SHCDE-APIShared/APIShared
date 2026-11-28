@@ -2443,14 +2443,26 @@ no implicit replay. Callbacks and registration handles remain process-lived; dea
 `SetActive`, and use `RefreshMetadata` for changed localized metadata. Do not remove persistent
 registrations during SHCDE's early plugin destruction.
 
-Only visible, selected columns should be read, using the current positive APIShared mission session
-and the authorized subset of player IDs. Treat custom columns as extended information by default.
-Pass no restricted IDs; never expose restricted values through tooltips or sorting. An empty roster,
-inactive provider, invalid session or recursive read does not call the provider. Callbacks execute
-on Unity's main thread outside registry locks, not under the renderer's engine lock. Providers acquire
-their appropriate native read lock and return a fresh snapshot, without mutating the game or HUD.
-The renderer revalidates session/activation after each callback. Retain missing selections as
-removable unknown entries; reconnect when the same key is available again.
+Only visible, selected columns should be read in the current positive APIShared mission session.
+With APIShared 0.79.3 or later, renderers can use `ReadForView` to evaluate each column's rule
+against the local viewer and candidate lords. The standard rule covers the viewer's own lord,
+allies, spectators, eliminated participants, the editor and confirmed host permission.
+A column can supply a custom predicate such as `view => view.IsOwn`. A column can also opt in
+to sorting hidden values using `sortHiddenValues`. That option discloses relative rank.
+Only use `DisplayValue` for cells, formatting, icons and tooltips. Use `SortValue` for ordering.
+The legacy `Read` method still uses the subset explicitly authorized by its caller for columns
+using the standard rule. A column with a custom predicate provides its values through
+`ReadForView` only, because applying that predicate requires viewer context.
+
+The value provider gets one batch containing the IDs permitted for display or sorting.
+A failed visibility predicate excludes the affected lord. An empty authorized roster, inactive
+provider, invalid session or recursive read skips the provider. Callbacks execute on Unity's
+main thread outside registry locks and the renderer's engine lock. Visibility predicates
+must be read-only and non-blocking. Value providers acquire their appropriate native read lock
+and return a fresh snapshot without mutating the game or HUD.
+Renderers revalidate the session, viewer rights and each sampled column's `Revision` before publishing.
+Use `RefreshMetadata` to notify the renderer when a column's visibility rule changes outside
+the regular sampling cycle. Missing selections remain removable and reconnect by stable key.
 
 ### Source-relative popup sizing
 

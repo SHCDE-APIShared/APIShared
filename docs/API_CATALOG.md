@@ -1174,7 +1174,8 @@ informational line for the local player in the active Steam lobby. See the
 [`APIShared.Statistics.LordStatistics`](../src/Statistics/LordStatistics.cs) is a renderer-independent,
 process-lived catalog of third-party numeric columns. It performs no game reads or polling.
 The [contracts](../src/Statistics/LordStatisticColumns.cs) include immutable authorized-player requests,
-nullable decimal batches, logical activation, localized metadata and numeric formatting.
+per-column visibility, optional sorting of hidden values, nullable decimal batches, logical activation,
+localized metadata and numeric formatting.
 See the [integration guide](THIRD_PARTY_GUIDE.md#lord-statistic-columns) and
 [example provider](../examples/ThirdPartyMod/StatisticsExample.cs).
 

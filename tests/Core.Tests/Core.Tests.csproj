@@ -29,6 +29,7 @@
     <Compile Include="../../src/Presentation/UiWork/UiWorkScheduler.cs" Link="Production/UiWorkScheduler.cs" />
     <Compile Include="../../src/ModSettings/UI/SharedToolTipSizing.cs" Link="Production/SharedToolTipSizing.cs" />
     <Compile Include="../../src/Statistics/LordStatisticColumns.cs" Link="Production/LordStatisticColumns.cs" />
+    <Compile Include="../../src/GameModes/GameModeKinds.cs" Link="Production/GameModeKinds.cs" />
     <Compile Include="../../src/Presentation/Tooltips/PopupPixelScale.cs" Link="Production/PopupPixelScale.cs" />
     <Compile Include="../../src/Presentation/IngameMenu/IngameMenuContracts.cs" Link="Production/IngameMenuContracts.cs" />
     <Compile Include="../../src/Presentation/IngameMenu/IngameMenuRegistry.cs" Link="Production/IngameMenuRegistry.cs" />
