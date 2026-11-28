@@ -34,6 +34,9 @@ namespace APIShared.Presentation
     /// example another player's building for a spectator or foreign-control mod. While it reports one, sections see that
     /// building with <see cref="BuildingPanelContext.IsPresented"/> and the acting player, and route owner actions through
     /// <see cref="TrySubmitAction"/> to <see cref="Buildings.BuildingActions"/>.</para>
+    /// <para><see cref="TryRegisterRecruitmentArea"/> replaces Vanilla's recruitment area for one building variant on
+    /// a native type, through the same host and detection; <see cref="TryGetRecruitmentAreaStatus"/> explains which
+    /// variant is shown where several select one building, for the consumers' own settings presentation.</para>
     /// </remarks>
     public static class BuildingPanelSections
     {
@@ -46,6 +49,10 @@ namespace APIShared.Presentation
         private static Grid host;
         private static long generation;
         private static BuildingPanelContext current;
+        private static readonly BuildingPanelRecruitmentAreas areas = new BuildingPanelRecruitmentAreas(Report, ReportOverlap);
+        private static readonly NoesisRecruitmentAreaView areaView = new NoesisRecruitmentAreaView();
+        private static bool areasInitialized;
+        private static string areasInitializationFailure;
 
         /// <summary>Registers a section on the initialized Unity thread after Script Extender readiness. False with
         /// a reason for invalid or duplicate options or unavailable game members. The section joins at the next GUI
@@ -125,6 +132,72 @@ namespace APIShared.Presentation
             }
         }
 
+        /// <summary>Registers a replacement of Vanilla's recruitment area for one building variant, on the initialized
+        /// Unity thread after Script Extender readiness. False with a reason for invalid options, a variant ID this owner
+        /// already registered, or unavailable game members. The replacement joins at the next GUI check.</summary>
+        /// <remarks>
+        /// <para>While a replacement is shown, Vanilla's recruitment panels (barracks, mercenary post, Bedouin stockade,
+        /// engineers' and tunnellers' guilds, cathedral) and the full-panel click mask are collapsed; APIShared features
+        /// that attach to Vanilla's barracks panel hide with it. Their Vanilla visibility returns when another building
+        /// is shown, the panel closes, the replacement is disabled or fails, or the HUD is replaced; a newer Vanilla
+        /// write always wins. Never shown in the map editor. Presented panels are treated like the local selection; the
+        /// selector decides.</para>
+        /// <para>Any number of owners can register variants on the same native type. When several enabled
+        /// replacements select the same open building, one is shown by a fixed precedence that never depends on
+        /// registration order: a replacement with a selector before one for every building of its types, then ordinal
+        /// owner GUID, then ordinal variant ID. Each competing pair is logged once and reported by
+        /// <see cref="TryGetRecruitmentAreaStatus"/>; APIShared shows no popup. A replacement whose factory fails for a
+        /// HUD instance lets the next matching one, or Vanilla, show the area.</para>
+        /// </remarks>
+        public static bool TryRegisterRecruitmentArea(BuildingPanelRecruitmentAreaOptions options,
+            out BuildingPanelRecruitmentAreaRegistration registration, out string reason)
+        {
+            registration = null;
+            if (!EnsureInitialized(out reason) || !EnsureRecruitmentAreas(out reason)) return false;
+            if (!areas.TryRegister(options, out BuildingPanelRecruitmentAreaEntry entry, out reason)) return false;
+            registration = new BuildingPanelRecruitmentAreaRegistration(entry);
+            return true;
+        }
+
+        /// <summary>Unity thread, read-only: explains how one registered recruitment-area variant competes with the
+        /// others in this process, for the owner's settings presentation (for example the effective owner in a
+        /// setting's tooltip). Reading evaluates no selector and changes nothing. False with a reason when the variant
+        /// is not registered or the thread is unsuitable.</summary>
+        public static bool TryGetRecruitmentAreaStatus(string ownerGuid, string variantId,
+            out BuildingPanelRecruitmentAreaStatus status, out string reason)
+        {
+            status = null;
+            if (!UnityMainThreadDispatch.IsMainThread)
+            { reason = "Recruitment-area status requires the initialized Unity thread."; return false; }
+            return areas.TryGetStatus(ownerGuid, variantId, out status, out reason);
+        }
+
+        // First recruitment-area registration: the members its hiding protocol binds, beyond the section contract.
+        private static bool EnsureRecruitmentAreas(out string reason)
+        {
+            if (areasInitialized) { reason = ""; return true; }
+            if (areasInitializationFailure != null) { reason = areasInitializationFailure; return false; }
+            var contract = new ManagedMemberContract()
+                .Field(typeof(MainViewModel), nameof(MainViewModel.IsMapEditorMode), typeof(bool));
+            foreach (string name in NoesisRecruitmentAreaView.VanillaFields)
+                contract.Field(typeof(HUD_Buildings), name, typeof(Grid));
+            var members = new List<MemberInfo>();
+            reason = contract.FindMismatch(members);
+            if (reason == null)
+                foreach (MemberInfo member in members)
+                    if (member is FieldInfo field && !field.IsPublic)
+                    { reason = "Recruitment-area replacements require a public game member: " + member; break; }
+            if (!string.IsNullOrEmpty(reason))
+            {
+                areasInitializationFailure = "Recruitment-area replacements are unavailable: " + reason;
+                reason = areasInitializationFailure;
+                return false;
+            }
+            areasInitialized = true;
+            reason = "";
+            return true;
+        }
+
         private static bool EnsureInitialized(out string reason)
         {
             if (!UnityMainThreadDispatch.IsMainThread)
@@ -157,13 +230,13 @@ namespace APIShared.Presentation
             return true;
         }
 
-        private static bool HasDemand() => registry.Entries.Length != 0;
+        private static bool HasDemand() => registry.Entries.Length != 0 || areas.HasEntries;
 
         private static void OnGuiChecks(PresentationPostEventArgs args)
         {
             if (!args.OriginalCompleted || !UnityMainThreadDispatch.IsMainThread) return;
             BuildingPanelSectionEntry[] entries = registry.Entries;
-            if (entries.Length == 0) return;
+            if (entries.Length == 0 && !areas.HasEntries) return;
             try
             {
                 MainViewModel main = MainViewModel.viewModelLoaded ? MainViewModel.Instance : null;
@@ -178,6 +251,11 @@ namespace APIShared.Presentation
                     Step(entry, context);
                     any |= entry.Shown != null;
                 }
+                if (areas.HasEntries)
+                {
+                    if (!areaView.IsBoundTo(boundHud)) areaView.Bind(boundHud, host);
+                    if (areaView.IsBound) any |= areas.Step(areaView, context, generation, main != null && main.IsMapEditorMode);
+                }
                 SetVisible(host, any);
             }
             catch (Exception error) { Report("update", error); }
@@ -188,6 +266,9 @@ namespace APIShared.Presentation
         private static void Rebind(HUD_Buildings hud, BuildingPanelSectionEntry[] entries)
         {
             Grid oldHost = host;
+            // The old HUD gets its recruitment area back before every control created for it is forgotten.
+            if (areas.HasEntries) areas.Release(areaView.IsBound ? areaView : null);
+            areaView.Unbind();
             foreach (BuildingPanelSectionEntry entry in entries)
             {
                 if (entry.Shown != null) Close(entry);
@@ -332,10 +413,67 @@ namespace APIShared.Presentation
             if (element.Visibility != value) element.Visibility = value;
         }
 
+        private static void ReportOverlap(BuildingPanelRecruitmentAreaEntry shown, BuildingPanelRecruitmentAreaEntry other,
+            BuildingPanelContext context)
+        {
+            NativeApiLog.Info(ApiSharedRuntime.ProcessInstance.Logger, "Building panel recruitment area: variant '" + shown.Id +
+                "' of " + shown.Owner + " is shown for " + context.BuildingType + " building " + context.BuildingId + "; variant '" +
+                other.Id + "' of " + other.Owner + " also selects it and is not shown there. Its other buildings are unaffected.");
+        }
+
         private static void Report(string key, Exception error)
         {
             if (!reported.Add(key)) return;
             NativeApiLog.Error(ApiSharedRuntime.ProcessInstance.Logger, "Building panel section " + key + " failed: " + error);
+        }
+
+        // Noesis side of the replacements for one HUD instance: the controls live in the section host; Vanilla's
+        // recruitment panels and click mask are resolved once per HUD instance, so a check binds no members.
+        private sealed class NoesisRecruitmentAreaView : IBuildingPanelRecruitmentAreaView
+        {
+            internal static readonly string[] VanillaFields = { "RefBarracksPanel", "RefMercPostPanel", "RefBedouinStockadePanel",
+                "RefShowEngineersGuildPanel", "RefShowTunellersGuildPanel", "RefShowCathedralPanel", "RefHUDBuildingFullClickMask" };
+            private HUD_Buildings hud;
+            private Grid areaHost;
+            private Grid[] vanilla;
+            internal bool IsBound => vanilla != null;
+            internal bool IsBoundTo(HUD_Buildings candidate) => ReferenceEquals(hud, candidate);
+
+            internal void Bind(HUD_Buildings candidate, Grid sectionHost)
+            {
+                hud = candidate;
+                areaHost = sectionHost;
+                vanilla = null;
+                if (candidate == null || sectionHost == null) return;
+                var panels = new[] { candidate.RefBarracksPanel, candidate.RefMercPostPanel, candidate.RefBedouinStockadePanel,
+                    candidate.RefShowEngineersGuildPanel, candidate.RefShowTunellersGuildPanel, candidate.RefShowCathedralPanel,
+                    candidate.RefHUDBuildingFullClickMask };
+                foreach (Grid panel in panels)
+                    if (panel == null)
+                    {
+                        Report("recruitment-area-panels", new InvalidOperationException(
+                            "A Vanilla recruitment panel of this building HUD is missing; recruitment areas stay Vanilla."));
+                        return;
+                    }
+                vanilla = panels;
+            }
+
+            internal void Unbind() { hud = null; areaHost = null; vanilla = null; }
+
+            public object Create(BuildingPanelRecruitmentAreaEntry entry, long panelGeneration)
+            {
+                FrameworkElement content = entry.Factory(new BuildingPanelSectionFactoryContext(areaHost, panelGeneration));
+                if (content == null) return null;
+                content.Visibility = Visibility.Collapsed;
+                areaHost.Children.Add(content);
+                return content;
+            }
+
+            public void Remove(object element) => areaHost?.Children.Remove((FrameworkElement)element);
+            public void SetShown(object element, bool shown) => SetVisible((FrameworkElement)element, shown);
+            public int VanillaCount => vanilla.Length;
+            public int GetVanilla(int index) => (int)vanilla[index].Visibility;
+            public void SetVanilla(int index, int visibility) => vanilla[index].Visibility = (Visibility)visibility;
         }
     }
 }

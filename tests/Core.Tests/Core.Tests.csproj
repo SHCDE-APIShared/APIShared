@@ -6,6 +6,7 @@
 
     <Compile Include="../../src/Units/Identity/UnitIdentitySnapshot.cs" Link="Production/UnitIdentitySnapshot.cs" />
     <Compile Include="../../src/Units/Identity/UnitIdentityRegistry.cs" Link="Production/UnitIdentityRegistry.cs" />
+    <Compile Include="../../src/Units/Identity/UnitIdentityPublication.cs" Link="Production/UnitIdentityPublication.cs" />
     <Compile Include="../../src/Units/Identity/UnitIdentityLifetime.cs" Link="Production/UnitIdentityLifetime.cs" />
     <ProjectReference Include="../../Content/APIShared.Content.csproj" />
     <ProjectReference Include="../../tools/AssemblyMetadata/AssemblyMetadata.csproj" />

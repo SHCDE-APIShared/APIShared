@@ -38,7 +38,9 @@ namespace APIShared.Units
     }
 
     // Engine-independent identity state. Runtime serializes every write through the real engine monitor;
-    // published dictionaries and lists are never mutated, so presentation reads take no simulation lock.
+    // published views are never mutated, so presentation reads take no simulation lock. A single mark, unmark
+    // or pending change publishes incrementally (UnitIdentityPublication); binding, restore and broad
+    // reconciliation rebuild once.
     // Only marked slots are reconciled. Missing definitions remain dormant reservations and survive saves.
     internal sealed class UnitIdentityRegistry
     {
@@ -51,21 +53,15 @@ namespace APIShared.Units
         private readonly Dictionary<string, UnitVariantDefinition> definitions = new Dictionary<string, UnitVariantDefinition>(StringComparer.Ordinal);
         private Dictionary<int, UnitIdentityRow> marks = new Dictionary<int, UnitIdentityRow>();
         private readonly List<int> removed = new List<int>();
+        private readonly List<UnitIdentityRow> changedRows = new List<UnitIdentityRow>();
+        // Above this many changes in one reconciliation a single rebuild is cheaper than incremental updates.
+        private const int IncrementalReconcileLimit = 32;
         private object boundWorld;
         private IReadOnlyList<UnitIdentityRow> stagedRestore;
         private long stagedSession;
         private int encodedBytes = 8;
-        private Published published = new Published(null, new Dictionary<int, UnitIdentitySnapshot>(), new Dictionary<string, IReadOnlyList<UnitIdentitySnapshot>>());
+        private UnitIdentityPublication published = UnitIdentityPublication.Empty;
         private static readonly IReadOnlyList<UnitIdentitySnapshot> Empty = Array.AsReadOnly(Array.Empty<UnitIdentitySnapshot>());
-
-        private sealed class Published
-        {
-            internal readonly object World;
-            internal readonly Dictionary<int, UnitIdentitySnapshot> Marks;
-            internal readonly Dictionary<string, IReadOnlyList<UnitIdentitySnapshot>> Members;
-            internal Published(object world, Dictionary<int, UnitIdentitySnapshot> marks, Dictionary<string, IReadOnlyList<UnitIdentitySnapshot>> members)
-            { World = world; Marks = marks; Members = members; }
-        }
 
         internal UnitIdentityRegistry(Func<int, UnitIdentityProbe> reader, Func<object> currentWorld, Func<bool> mutationContext, int peasantType,
             Func<long> currentWorldSession = null)
@@ -116,7 +112,7 @@ namespace APIShared.Units
                 {
                     if (old.Owner != definition.Owner || old.Variant != definition.Id || old.NativeType != definition.NativeType)
                     { reason = "Identity conflict: unit belongs to " + old.Owner + "/" + old.Variant + "."; return false; }
-                    if (old.Pending != pending) { old.Pending = pending; Publish(); }
+                    if (old.Pending != pending) { old.Pending = pending; PublishMark(definition.Key, old, definition.Key); }
                     reason = string.Empty; return true;
                 }
             }
@@ -125,9 +121,11 @@ namespace APIShared.Units
             if (nextCount > MaximumMarks || nextBytes > MaximumBytes)
             { reason = "The identity row or serialized byte limit would be exceeded."; return false; }
             // Only now replace a stale slot: a failed budget check preserves the previous state.
-            marks[slot] = new UnitIdentityRow { Owner = definition.Owner, Variant = definition.Id, NativeType = definition.NativeType,
+            var row = new UnitIdentityRow { Owner = definition.Owner, Variant = definition.Id, NativeType = definition.NativeType,
                 UnitId = slot, GlobalId = globalId, Pending = pending };
-            encodedBytes = nextBytes; Publish(); reason = string.Empty; return true;
+            string previousKey = old == null ? null : PublishedKey(old);
+            marks[slot] = row;
+            encodedBytes = nextBytes; PublishMark(definition.Key, row, previousKey); reason = string.Empty; return true;
         }
 
         internal bool Unmark(UnitVariantDefinition definition, int slot, uint globalId, out string reason)
@@ -137,7 +135,7 @@ namespace APIShared.Units
             if (!marks.TryGetValue(slot, out var old)) return true;
             if (old.GlobalId != globalId || old.Owner != definition.Owner || old.Variant != definition.Id)
             { reason = "Only this variant's exact mark can be removed."; return false; }
-            encodedBytes -= RowBytes(old.Owner, old.Variant); marks.Remove(slot); Publish(); return true;
+            encodedBytes -= RowBytes(old.Owner, old.Variant); marks.Remove(slot); PublishUnmark(definition.Key, slot); return true;
         }
 
         internal bool TryGet(string owner, int slot, uint globalId, out UnitIdentitySnapshot identity)
@@ -146,7 +144,7 @@ namespace APIShared.Units
             var snapshot = Volatile.Read(ref published);
             object current = world();
             if (current == null || !ReferenceEquals(snapshot.World, current) || globalId == 0 ||
-                !snapshot.Marks.TryGetValue(slot, out var found) || found.GlobalId != globalId || found.OwnerGuid != owner ||
+                !snapshot.TryGetMark(slot, out var found) || found.GlobalId != globalId || found.OwnerGuid != owner ||
                 !ReferenceEquals(current, world())) return false;
             identity = found; return true;
         }
@@ -172,7 +170,7 @@ namespace APIShared.Units
         {
             var snapshot = Volatile.Read(ref published);
             object current = world();
-            return current != null && ReferenceEquals(snapshot.World, current) && snapshot.Members.TryGetValue(definition.Key, out var result) &&
+            return current != null && ReferenceEquals(snapshot.World, current) && snapshot.TryGetMembers(definition.Key, out var result) &&
                 ReferenceEquals(current, world()) ? result : Empty;
         }
 
@@ -212,31 +210,49 @@ namespace APIShared.Units
         {
             object current = world();
             if (current == null || !ReferenceEquals(current, boundWorld)) { if (boundWorld != null) Clear(); return; }
-            bool changed = false; removed.Clear();
+            removed.Clear(); changedRows.Clear();
             foreach (var item in marks.Values)
             {
                 if (!read(item.UnitId).Matches(item.GlobalId, item.NativeType, peasant, out bool pending)) removed.Add(item.UnitId);
-                else if (item.Pending != pending) { item.Pending = pending; changed = true; }
+                else if (item.Pending != pending) { item.Pending = pending; changedRows.Add(item); }
             }
-            foreach (int slot in removed) { var old = marks[slot]; encodedBytes -= RowBytes(old.Owner, old.Variant); marks.Remove(slot); }
-            if (changed || removed.Count != 0) Publish();
+            if (removed.Count == 0 && changedRows.Count == 0) return;
+            bool incremental = removed.Count + changedRows.Count <= IncrementalReconcileLimit;
+            foreach (int slot in removed)
+            {
+                var old = marks[slot]; encodedBytes -= RowBytes(old.Owner, old.Variant); marks.Remove(slot);
+                if (incremental) { string key = PublishedKey(old); if (key != null) PublishUnmark(key, slot); }
+            }
+            if (!incremental) { changedRows.Clear(); Publish(); return; }
+            foreach (var item in changedRows) { string key = PublishedKey(item); if (key != null) PublishMark(key, item, key); }
+            changedRows.Clear();
         }
+        // Complete rebuild. Only rows of a registered variant with its carrier are visible; others stay dormant.
         private void Publish()
         {
-            var visible = new Dictionary<int, UnitIdentitySnapshot>();
-            var groups = new Dictionary<string, List<UnitIdentitySnapshot>>(StringComparer.Ordinal);
+            var visible = new List<KeyValuePair<string, UnitIdentitySnapshot>>(marks.Count);
             foreach (var item in marks.Values)
             {
                 string key = UnitVariantDefinition.KeyFor(item.Owner, item.Variant);
                 if (!definitions.TryGetValue(key, out var definition) || definition.NativeType != item.NativeType) continue;
-                var value = item.Snapshot; visible.Add(item.UnitId, value);
-                if (!groups.TryGetValue(key, out var list)) groups.Add(key, list = new List<UnitIdentitySnapshot>());
-                list.Add(value);
+                visible.Add(new KeyValuePair<string, UnitIdentitySnapshot>(key, item.Snapshot));
             }
-            var members = new Dictionary<string, IReadOnlyList<UnitIdentitySnapshot>>(StringComparer.Ordinal);
-            foreach (var group in groups)
-            { group.Value.Sort((a, b) => a.UnitId.CompareTo(b.UnitId)); members.Add(group.Key, group.Value.AsReadOnly()); }
-            Volatile.Write(ref published, new Published(boundWorld, visible, members));
+            Volatile.Write(ref published, UnitIdentityPublication.Build(boundWorld, visible));
+        }
+
+        // One visible row added or replaced at its slot. previousKey is the variant key of the row the slot
+        // published before, or null. Callers pass a row of a registered definition with its own carrier.
+        private void PublishMark(string key, UnitIdentityRow row, string previousKey) =>
+            Volatile.Write(ref published, published.With(boundWorld, key, row.Snapshot, previousKey));
+
+        private void PublishUnmark(string key, int slot) =>
+            Volatile.Write(ref published, published.Without(boundWorld, key, slot));
+
+        // The variant key under which this exact row is currently published, or null for a dormant row.
+        private string PublishedKey(UnitIdentityRow row)
+        {
+            if (!published.TryGetMark(row.UnitId, out var found) || found.GlobalId != row.GlobalId) return null;
+            return UnitVariantDefinition.KeyFor(found.OwnerGuid, found.VariantId);
         }
 
         // BinaryWriter encodes each UTF-8 string's byte length with a 7-bit prefix.

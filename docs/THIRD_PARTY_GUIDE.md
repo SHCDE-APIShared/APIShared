@@ -2559,6 +2559,9 @@ readable from managed and native simulation code. A table can opt in to applying
 to all of the sender's living buildings of the selected type. Register a control's owner commands
 as [building actions](BUILDING_PANELS.md#presenters-and-building-actions) so that spectator and
 foreign-control mods that present another player's panel can use it without reflection.
+For a custom building variant on a native type, such as a garrison on the stone barracks, register a
+[recruitment-area replacement](BUILDING_PANELS.md#recruitment-area-replacements) instead of hiding
+Vanilla's recruitment panels yourself, and explain its effective owner in your settings from its status.
 
 ## Local input and mod keybinds
 
