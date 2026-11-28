@@ -117,6 +117,30 @@ replace only generic messages must inspect the effective original audio/video
 paths as well as Lord/category; an Extender-authored replacement is not a
 placeholder merely because its Vanilla speech Lord is Rat, Snake, Pig or Wolf.
 
+## Notification identity
+
+`NotificationPresentations` observes an individual native notification.
+Identical selectors and media paths can have different identities. IDs are
+process-local and expire on presentation or session changes. They cannot be
+saved or sent to peers.
+
+- On Unity, `TryGetRendered` reports the most recently observed presentation.
+  The simulation may already have prepared another one.
+- `IsRenderedText` checks ownership of the current message-bar assignment.
+  `TryGetRenderedVideo` returns an accepted URI after playback hooks complete.
+  Before changing media, also verify the current HUD and request.
+- `TryGetDispatching` and `TryGetDispatchingSpeech` identify a synchronous
+  submission. Capture the identity alongside the actual accepted resource
+  before handing work to an asynchronous loader.
+- `IsNativeCurrent` confirms identity inside the serialized engine call.
+  It declines calls outside that context. Failed lookups leave the normal game
+  path available.
+
+The observer also carries the selected subtitle through the native queue and
+render buffer. An older message retains its selected text when the same Lord
+queues another line. A confirmed message without custom text falls back to the
+game's translation for that message.
+
 ## Acceptance limits
 
 Offline tests and a consumer's submission confirmations do not establish

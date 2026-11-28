@@ -1,6 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><TargetFramework>net10.0</TargetFramework><AllowUnsafeBlocks>true</AllowUnsafeBlocks><ImplicitUsings>enable</ImplicitUsings></PropertyGroup>
   <ItemGroup>
+    <Compile Include="../../src/World/WorldMutationContracts.cs" Link="Production/WorldMutationContracts.cs" />
+    <Compile Include="../../src/World/WorldMutationRegistry.cs" Link="Production/WorldMutationRegistry.cs" />
+
     <Compile Include="../../src/Units/Identity/UnitIdentitySnapshot.cs" Link="Production/UnitIdentitySnapshot.cs" />
     <Compile Include="../../src/Units/Identity/UnitIdentityRegistry.cs" Link="Production/UnitIdentityRegistry.cs" />
     <Compile Include="../../src/Units/Identity/UnitIdentityPublication.cs" Link="Production/UnitIdentityPublication.cs" />

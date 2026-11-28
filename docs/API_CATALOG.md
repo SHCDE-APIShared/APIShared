@@ -1,5 +1,24 @@
 # API catalog
 
+`UnitRelocationService` (0.79.0+) coordinates one native relocation owner, exact-lifetime simulation-tick requests and ordered type-filtered veto policies. Consumers retain game rules and network authority; availability is based on sticky live integrity, not diagnostic counts. See [shared unit relocation](UNIT_RELOCATION.md).
+
+`UnitMoveEvents`, `WorldMutationEvents` and the bootstrap early-plugin activation contracts below require APIShared **0.78.0** or newer. Earlier private observer builds are not the public0.77 API.
+
+`APIShared.DependencyBootstrap.EarlyPluginActivation` (bootstrap companion assembly) observes the actual selected plugin immediately before construction/Awake. Preloader registration or deferred assembly declarations, identity, deadline and failure contracts: [early activation](DEPENDENCY_BOOTSTRAP.md#early-plugin-activation-observers).
+
+## Effective native unit moves
+
+`APIShared.Units.UnitMoveEvents` supplies final effective move arguments, private
+native-result receipts and guarded single-wrapper calls, preserving independent
+nested orders. See [unit-move ownership, origin, lifetime and result contracts](UNIT_MOVES.md).
+
+## Effective world mutations
+
+`APIShared.WorldMutations.WorldMutationEvents` shares effective native construction,
+editor terrain, moat work and demolition observations, consumer-private invocation
+receipts, outer batches and world generations. See [source, thread, lifetime and
+caller-boundary contracts](WORLD_MUTATIONS.md).
+
 ## Native pooled storage
 
 `ModApiClient.NativeStorage` registers owner-qualified virtual goods in native
@@ -162,6 +181,7 @@ See [Safe managed IL patches](THIRD_PARTY_GUIDE.md#safe-managed-il-patches).
 | --- | --- |
 | `ModApiClient.Automation.Start` | Explicit Unity-thread test run, one active run per process, frame-driven steps and monotonic timeouts |
 | `AutomationRun.LoadSave`, `StartSkirmish` | Local game transitions with a matching managed mission receipt |
+| `StartSkirmish(map, opponents, peaceTimeMinutes, beforeLaunch)` | One synchronous Unity preparation after lobby setup, followed by live room/map revalidation before ordinary Play; existing overload remains unchanged |
 | `WaitForPlayState`, `WaitForTicks`, `SetPause`, `ZoomStep` | Separate current-mission readiness, native time, pause state and applied zoom checks |
 | `ClickNoesis`, `InSimulation`, `TrySpawnBuilding` | Local UI input, short Extender operations under the engine monitor, and confirmed building identity |
 
@@ -1171,6 +1191,12 @@ message or use private mod media / consumer-localized text. `VanillaLordMessages
 resolves original message references without enqueueing a message or using gameplay RNG.
 See the [contract and coverage](LORD_MESSAGES.md) and
 [consumer example](../examples/ThirdPartyMod/LordMessageExample.cs).
+
+`APIShared.Presentation.NotificationPresentations` requires APIShared 0.77.0
+or later. It identifies one native
+notification across Unity playback and the serialized simulation. It lets code
+that acts on the HUD verify that it still owns the same notification. See
+[notification identity](LORD_MESSAGES.md#notification-identity).
 
 ## Packaged Lord presentation
 

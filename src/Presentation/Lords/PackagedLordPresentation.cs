@@ -218,10 +218,15 @@ namespace APIShared.Presentation
             video = audio = ""; result = false;
             var entry = Find(name); if (entry == null) return false;
             PackagedLordPresentationEntry.Clip[] clips;
-            if (!entry.Clips.TryGetValue(type, out clips) || clips.Length == 0) return true;
+            if (!entry.Clips.TryGetValue(type, out clips) || clips.Length == 0)
+            {
+                NotificationEnqueueCapture.RecordSelection(null);
+                return true;
+            }
             // Same SE RNG and selection on every peer, independent of local media availability.
             var selected = clips[DeterministicRandom.Next(0, clips.Length)];
             string text = selected.Text.ResolveText("text", Locale);
+            NotificationEnqueueCapture.RecordSelection(text);
             lock (speechGate) { if (string.IsNullOrEmpty(text)) spoken.Remove(name); else spoken[name] = text; }
             if (entry.AssetProviderGuid == null && !entry.AllowGlobalMedia) return true;
             video = entry.Asset(selected.Video); audio = entry.Asset(selected.Audio);

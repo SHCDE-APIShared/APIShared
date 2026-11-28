@@ -49,12 +49,25 @@ namespace APIShared.DependencyBootstrap
             TestLogging();
             TestEarlyEntry();
             TestRemovedPlugin();
+            EarlyPluginActivationTests.Run();
+            EarlyProviderTests.Run();
+            var pluginInfo=(BepInEx.PluginInfo)Activator.CreateInstance(typeof(BepInEx.PluginInfo),true);
+            var entryName=typeof(BepInEx.PluginInfo).GetProperty("TypeName",BindingFlags.Instance|BindingFlags.Public|BindingFlags.NonPublic);
+            entryName.SetValue(pluginInfo,"Actual.Loader.Entry",null);
+            Require(HookRuntime.ReadSelectedTypeName(pluginInfo)=="Actual.Loader.Entry","Actual private BepInEx entry metadata reader failed");
+            entryName.SetValue(pluginInfo,null,null);bool missingEntry=false;
+            try{HookRuntime.ReadSelectedTypeName(pluginInfo);}catch(InvalidOperationException){missingEntry=true;}
+            Require(missingEntry,"Missing actual entry metadata accepted");
             using (var copy = new DynamicMethodDefinition(Start))
             using (var context = new ILContext(copy.Definition))
             {
                 var before = new BodySnapshot(context);
                 HookRuntime.ModifyChainloader(context);
                 before.AssertPreserved(context, true);
+                var add = context.Body.Instructions.Single(i => IsCall(i,"UnityEngine.GameObject","AddComponent"));
+                var callback = context.Body.Instructions.Single(i => IsCall(i,"APIShared.DependencyBootstrap.HookRuntime","BeforePlugin"));
+                Require(context.Body.Instructions.IndexOf(callback)<context.Body.Instructions.IndexOf(add),
+                    "Early callback moved after original AddComponent");
                 // Compilation is tested again in Unity Mono; never execute this method or install a hook here.
                 var compiled = copy.Generate().CreateDelegate(typeof(Action));
                 // Desktop CLR cannot JIT Unity ECalls; full PrepareDelegate remains mandatory in the game.
@@ -224,7 +237,10 @@ namespace APIShared.DependencyBootstrap
             Require(errors == 2, "Callback failure was not contained exactly once");
             using (var module = ModuleDefinition.ReadModule(typeof(ContractTests).Assembly.Location))
             {
-                var names = new[] { "DependencyBootstrapPatcher", "ReadyGate", "ProbeTrace", "ProbeIdentity" };
+                var names = new[] { "DependencyBootstrapPatcher", "ReadyGate", "ProbeTrace", "ProbeIdentity",
+                    "EarlyPluginActivation", "EarlyPluginActivationBroker", "EarlyPluginActivationRegistration", "EarlyPluginActivationContext", "EarlyPluginIdentity", "EarlyPluginActivationState",
+                    "EarlyPluginActivationProviderAttribute", "EarlyProviderCatalog", "EarlyProviderModule",
+                    "EarlyProviderDeclaration", "EarlyProviderPlugin", "EarlyProviderDependency", "EarlyProviderRejectedException" };
                 var types = module.Types.Where(t => names.Contains(t.Name)).ToArray();
                 Require(types.Length == names.Length, "Early types missing");
                 foreach (var type in types.Concat(types.SelectMany(t => t.NestedTypes)))
@@ -242,6 +258,10 @@ namespace APIShared.DependencyBootstrap
                 }
                 var finish = types.Single(t => t.Name == "DependencyBootstrapPatcher").Methods.Single(m => m.Name == "Finish");
                 Require(!finish.Body.Instructions.Any(i => i.Operand is MethodReference m && m.Name == "InvokeHookRuntime"), "Finish dispatches hooks");
+                var boundary=module.Types.Single(t=>t.Name=="HookRuntime").Methods.Single(m=>m.Name=="BeforePlugin").Body.Instructions;
+                var generic=boundary.Single(i=>i.Operand is MethodReference m && m.DeclaringType.Name=="EarlyPluginActivation" && m.Name=="BeforePlugin");
+                var legacy=boundary.Single(i=>i.OpCode==OpCodes.Ldstr && (string)i.Operand=="SHCDESE");
+                Require(boundary.IndexOf(generic)<boundary.IndexOf(legacy),"Generic callback is incorrectly gated by the legacy SE branch");
             }
             Console.WriteLine("PASS: early entry has no Unity/MonoMod/Chainloader/HookRuntime type tokens; missing/foreign/duplicate/error listener tests.");
         }

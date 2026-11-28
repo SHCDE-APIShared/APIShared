@@ -117,7 +117,7 @@ namespace APIShared.Audio
             bool ignoreMuting, bool ignorePause, int index, EngineInterface.PlayState state)
         {
             // A complete Lord message owns its grouped audio; ordinary unit voices have no group.
-            if (Presentation.LordMessageRuntime.TryForwardSpeech(self, channel, path, volume, ignoreMuting, ignorePause, index)) return;
+            if (Presentation.LordMessageRuntime.TryForwardSpeech(self, channel, path, volume, ignoreMuting, ignorePause, index, state)) return;
             UnitVoiceRuntime.Play(self, channel, path, volume, ignoreMuting, ignorePause, state);
         }
     }

@@ -13,6 +13,7 @@ using MonoMod.Utils;
 using SHCDESE.API;
 using SHCDESE.API.Components.SaveData;
 using SHCDESE.EventAPI.MapLoader;
+using APIShared.Savegames;
 
 namespace APIShared.ScriptExtenderFixes
 {
@@ -28,7 +29,7 @@ namespace APIShared.ScriptExtenderFixes
         internal enum SaveProducerKind { None, Trail, Normal }
         internal struct TrailFrame
         {
-            internal bool Present, AwaitingWrapper, InWrapper, Usable, FactoryStarted, HasPinned;
+            internal bool Present, AwaitingWrapper, InWrapper, Identified, Usable, FactoryStarted, HasPinned;
             internal string SourceMapPath, Destination, PinnedPath;
             internal byte[] RestartInfo;
             // A wrapper can shadow a normal export or an awaiting Trail producer.
@@ -39,6 +40,19 @@ namespace APIShared.ScriptExtenderFixes
         internal static bool TrailManagedReady => trailProducerHook?.IsApplied == true && trailWrapperHook?.IsApplied == true;
         private static readonly List<Patching.SafeIlHook> hooks = new List<Patching.SafeIlHook>();
         private static Patching.SafeIlHook saveFactoryHook;
+        internal static bool FactoryManagedReady => saveFactoryHook?.IsApplied == true;
+        internal static PreCaptureSaveRoute CurrentPreCaptureRoute
+        {
+            get
+            {
+                if (synchronizedSaveDepth != 0) return PreCaptureSaveRoute.Synchronized;
+                if (producer == SaveProducerKind.Normal && normal.Usable)
+                    return normal.IsMapEditorSave ? PreCaptureSaveRoute.EditorMap : PreCaptureSaveRoute.NormalSave;
+                if (producer == SaveProducerKind.Trail && trail.InWrapper && trail.Identified)
+                    return PreCaptureSaveRoute.Trail;
+                return PreCaptureSaveRoute.Unknown;
+            }
+        }
         private static int attempted;
         // Gameplay readiness stays fixed for the process, as before: a rollback in a later rebuild is reported by SafeIlHook and must not flip a feature mid-mission.
         internal static bool ManagedReady { get; private set; }
@@ -219,6 +233,7 @@ namespace APIShared.ScriptExtenderFixes
             {
                 trail.AwaitingWrapper = false;
                 trail.InWrapper = true;
+                trail.Identified = true;
                 trail.Usable = !string.IsNullOrEmpty(prior.SourceMapPath);
             }
             else trail = new TrailFrame { Present = true, InWrapper = true };

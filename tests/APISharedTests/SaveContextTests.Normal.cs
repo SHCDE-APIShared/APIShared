@@ -134,6 +134,9 @@ namespace APISharedTests
             using (var fixture = new NormalControlledMethods(transformed))
             {
                 fixture.Original = () => {
+                    PreCaptureSaveRoute route = !transformed ? PreCaptureSaveRoute.Unknown :
+                        map == 0 ? PreCaptureSaveRoute.NormalSave : PreCaptureSaveRoute.EditorMap;
+                    Assert.AreEqual(route, SaveContextRuntime.CurrentPreCaptureRoute);
                     if (transformed) NormalRead(fixture, map == 0, map != 0, "Relative-\uD800\0inside.sav");
                     else NormalUnavailable(fixture); // Executed old-negative, not a compile/missing-method failure.
                     fixture.Legacy("redirected-native.tmp", map != 0);
@@ -386,6 +389,7 @@ namespace APISharedTests
                 Assert.AreSame(marker, Assert.ThrowsExactly<InvalidOperationException>(() => fixture.Export("thread.sav", 0)));
                 NormalUnavailable(fixture);
                 fixture.Original = () => {
+                    Assert.AreEqual(PreCaptureSaveRoute.Synchronized, SaveContextRuntime.CurrentPreCaptureRoute);
                     Assert.IsTrue(fixture.Reader.TryReadSnapshot(out var value, out var source, out _));
                     Assert.AreEqual(PreCaptureSaveContextSource.SynchronizedPolicy, source);
                     Assert.IsTrue(value.IsSaveFile); Assert.IsFalse(value.IsMapEditorSave); Assert.IsNull(value.FilePath);

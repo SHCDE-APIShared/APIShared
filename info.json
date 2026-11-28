@@ -3,13 +3,52 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.76.0",
+  "Version": "0.79.2",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
   "Manifest": 1,
   "NetworkMode": 1,
   "SerpChangelog": [
+    {
+      "Version": "0.79.2",
+      "Changes": [
+        "Fix Trail exports that could fail because of required mod data registered only for saved games.",
+        "Report unavailable protected save routes during startup and preserve the existing file if required mod data cannot be saved.",
+        "Preserve staged Workshop updates if the game is interrupted while restoring files kept from a previous installation."
+      ]
+    },
+    {
+      "Version": "0.79.1",
+      "Changes": [
+        "Fix a BuildingCosts issue that could block construction even when you had enough resources to cover both the base cost and the extra charge."
+      ]
+    },
+    {
+      "Version": "0.79.0",
+      "Changes": [
+        "Provide one shared native unit-relocation owner with ordered, type-filtered veto policies and explicit logical activation.",
+        "Expose exact-lifetime guarded relocation requests in current simulation ticks, with source/destination occupancy validation and qualified outcomes.",
+        "Keep native hook availability independent of diagnostic deduplication and permanently revoke the service after integrity loss."
+      ]
+    },
+    {
+      "Version": "0.78.0",
+      "Changes": [
+        "Share effective construction, editor terrain, moat-work and demolition observations with private invocation receipts, complete outer batches and native-world identities.",
+        "Expose final effective unit-move arguments and native results, with guarded single-wrapper calls that preserve independent nested orders and ignore mutable Post return replacements.",
+        "Observe selected plugins before activation through guarded bootstrap observers and deferred assembly declarations, with explicit identity and failure contracts.",
+        "Allow automation callers to prepare the actual owned Skirmish lobby before launch."
+      ]
+    },
+    {
+      "Version": "0.77.0",
+      "Changes": [
+        "Keep queued custom-lord subtitles with the matching message, including lords loaded from packaged metadata. Generic game notifications use their own text.",
+        "Refresh the text bar when a new notification replaces one that is still visible.",
+        "Let mods identify individual rendered notifications so they can act on the correct text, video and speech."
+      ]
+    },
     {
       "Version": "0.76.0",
       "Changes": [

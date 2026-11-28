@@ -56,8 +56,10 @@ namespace APIShared.Savegames
         /// <summary>Isolated exceptions from capture, load, legacy reader and migration callbacks.</summary>
         public static long CallbackFailures => VersionedSaveDataRuntime.CallbackFailures;
         /// <summary>Whether the process-owned protected writer and checked atomic transaction are ready.
-        /// Required-record registration must occur after native initialization; this is not a dispatcher.</summary>
-        public static bool IsAtomicWriteAvailable => Economy.WorkerProductionCriticalSaveRuntime.IsAvailable;
+        /// At least one archive-context route must also be available. Registration checks its own scope.
+        /// An individual invocation can still fail to supply a context.</summary>
+        public static bool IsAtomicWriteAvailable => Economy.WorkerProductionCriticalSaveRuntime.IsAvailable &&
+            Economy.WorkerProductionCriticalSaveRuntime.ContextSupport.Supports(VersionedSaveScope.SaveGamesAndMaps);
     }
 
     // Binds the pure registry to Script Extender 2.14.1: ModSaveDataAPI handlers per identifier
@@ -75,11 +77,6 @@ namespace APIShared.Savegames
         private static List<IDisposable> subscriptions;
         private static object loadAttempt;
 
-        internal static bool RequiresAtomicWrite(bool map)
-        {
-            VersionedSaveDataRegistry current; lock (Sync) current = registry;
-            return current != null && current.RequiresAtomicWrite(new VersionedSaveContext(!map, map, ""));
-        }
         internal static VersionedSaveDataRegistry.AtomicSnapshot BeginAtomicSave(VersionedSaveContext context)
         {
             VersionedSaveDataRegistry current; lock (Sync) current = registry;
@@ -95,10 +92,21 @@ namespace APIShared.Savegames
         internal static bool TryRegister(VersionedSaveDataRegistration registration,
             out VersionedSaveDataHandle handle, out string reason)
         {
-            if (registration != null && registration.RequireAtomicWrite && !VersionedSaveData.IsAtomicWriteAvailable)
+            if (registration != null && registration.RequireAtomicWrite)
             {
-                handle = null; reason = "The protected atomic save writer is unavailable; register after native initialization.";
-                return false;
+                if (!Economy.WorkerProductionCriticalSaveRuntime.IsAvailable)
+                {
+                    handle = null;
+                    reason = "The protected atomic save writer is unavailable; register after native initialization.";
+                    return false;
+                }
+                PreCaptureSaveSupport support = Economy.WorkerProductionCriticalSaveRuntime.ContextSupport;
+                if (!support.Supports(registration.Scope))
+                {
+                    handle = null;
+                    reason = $"No atomic save route is available for {registration.Scope}: {support.MissingRoutes()}.";
+                    return false;
+                }
             }
             VersionedSaveDataRegistry current;
             lock (Sync)

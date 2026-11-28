@@ -427,6 +427,16 @@ namespace APISharedTests
             var extender = fixtureAssembly.GetType("SHCDESE.ManagedHooks.ILHooks.ILHooksManager", true);
             var manipulator = extender.GetMethod("OnScreenText_UpdateOST_ILHook", BindingFlags.Instance | BindingFlags.Public);
             Assert.IsNotNull(manipulator);
+            var subtitle = NotificationSubtitleHud.FindDelegate();
+            using (var definition = new DynamicMethodDefinition(subtitle))
+            using (var context = new ILContext(definition.Definition))
+            {
+                context.ReferenceBag = RuntimeILReferenceBag.Instance;
+                context.Invoke(NotificationSubtitleHud.Apply);
+                Type signature = System.Linq.Expressions.Expression.GetDelegateType(
+                    subtitle.DeclaringType, typeof(OnScreenText.OST), typeof(bool));
+                Assert.IsNotNull(definition.Generate().CreateDelegate(signature));
+            }
             // Its empty constructor does not install hooks; execute only its published IL manipulator.
             var owner = Activator.CreateInstance(extender, true);
             {

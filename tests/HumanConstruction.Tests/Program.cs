@@ -103,10 +103,15 @@ internal static class Program
         Check(HumanConstructionCosts.TryBegin(target, 1, true, true, null, _ => 0, out transaction, out _) && transaction == null, "free/editor bypass");
         Check(!HumanConstructionCosts.TryBegin(target, 1, true, false, Amount(wood, 10), _ => 14, out _, out var missing) && missing == wood, "same-good base and extra affordability combined");
         Check(HumanConstructionCosts.TryBegin(target, 1, true, false, Amount(wood, 10), _ => 15, out transaction, out _), "exact affordability");
-        registration.SetCosts(target, Amount(wood, 99));
+        Check(!HumanConstructionCosts.TryBegin(target, 1, true, false, Amount(wood, 10), _ => 10, out _, out _, transaction), "unreserved amounts do not count as available");
         int booked = 0;
         Check(HumanConstructionCosts.Reserve(transaction, values => { booked += values[wood]; return true; }), "positive extras reserved before native construction");
+        Check(HumanConstructionCosts.TryBegin(target, 1, true, false, Amount(wood, 10), _ => 10, out _, out _, transaction), "the active reservation covers its own extras");
+        Check(!HumanConstructionCosts.TryBegin(target, 1, true, false, Amount(wood, 10), _ => 9, out _, out missing, transaction) && missing == wood, "a reservation does not cover missing base costs");
+        Check(!HumanConstructionCosts.TryBegin(target, 2, true, false, Amount(wood, 10), _ => 10, out _, out _, transaction), "another player's reservation does not count");
+        registration.SetCosts(target, Amount(wood, 99));
         Check(HumanConstructionCosts.Commit(transaction, Id(), values => { booked += values[wood]; return true; }) && booked == 5, "transaction freezes charged costs");
+        Check(!HumanConstructionCosts.TryBegin(target, 1, true, false, Amount(wood, 10), _ => 108, out _, out _, transaction), "committed amounts no longer count as reserved");
         Check(!HumanConstructionCosts.Commit(transaction, Id(2), _ => true), "commit cannot repeat");
         registration.SetActive(false); registration.ClearCosts();
         Check(HumanConstructionCosts.TryQuoteRefund(Id(), 1, 1, true, Quote(.5f), out var refund) && refund[wood] == 2, "disabled config does not erase paid claim");

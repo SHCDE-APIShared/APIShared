@@ -21,9 +21,21 @@ namespace APIShared.Automation
     {
         /// <summary>Starts a local Skirmish with the selected map and additional built-in opponents.</summary>
         /// <remarks>Use an unbound step from the main menu. A basename must match exactly one lobby row.
+        /// Opponents use the native one-based AILords enum, translated to Vanilla's zero-based lobby types.
         /// Optional peace time requires the game to offer and retain it. Briefing and ticks are separate.</remarks>
         public IEnumerable<AutomationWait> StartSkirmish(string map, IEnumerable<AILords> opponents,
             int? peaceTimeMinutes = null)
+            => StartSkirmish(map, opponents, peaceTimeMinutes, null);
+
+        /// <summary>Starts a local Skirmish with an optional synchronous preparation immediately before launch.</summary>
+        /// <remarks>Retains the three-argument overload's validation, mission and wait contracts. BeforeLaunch runs
+        /// exactly once on Unity after map/opponent/optional peace-time preparation, before the final live lobby
+        /// identity and selected-map checks and ordinary Play command. It may prepare the consumer's test world,
+        /// but must not block, yield, launch a mission itself or retain transient game pointers. An exception prevents
+        /// Play and fails the automation step. Null performs no additional preparation. There is no callback replay
+        /// or new hook; native time and fresh PlayState still need their separate checks.</remarks>
+        public IEnumerable<AutomationWait> StartSkirmish(string map, IEnumerable<AILords> opponents,
+            int? peaceTimeMinutes, Action beforeLaunch)
         {
             if (string.IsNullOrWhiteSpace(map)) throw new ArgumentException("A map is required.", nameof(map));
             if (peaceTimeMinutes < 0) throw new ArgumentOutOfRangeException(nameof(peaceTimeMinutes));
@@ -57,7 +69,7 @@ namespace APIShared.Automation
 
             foreach (var lord in lords)
             {
-                int type = (int)lord;
+                int type = SkirmishLobbyLordType(lord);
                 int count = CountLord(RequireLobby(room), type);
                 lobby.SkirmishAIAddClick(type.ToString(CultureInfo.InvariantCulture));
                 yield return AutomationWait.Until("opponent added: " + lord, () =>
@@ -85,11 +97,14 @@ namespace APIShared.Automation
                 });
             }
 
-            var ready = RequireLobby(room);
-            if (!string.Equals(LobbySelectedMapHeader.Read(ready)?.filePath,
-                selected.fileHeader.filePath, StringComparison.OrdinalIgnoreCase))
-                throw new InvalidOperationException("The selected Skirmish map changed before launch.");
-            ready.ButtonClicked("Play");
+            CommitSkirmishLaunch(beforeLaunch, () => {
+                var ready = RequireLobby(room);
+                string livePath = LobbySelectedMapHeader.Read(ready)?.filePath;
+                if (string.IsNullOrWhiteSpace(livePath) || !string.Equals(Path.GetFullPath(livePath),
+                    path, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException("The selected Skirmish map changed before launch.");
+                return ready;
+            }, ready => ready.ButtonClicked("Play"));
             yield return AutomationWait.Until("managed local Skirmish start: " + path, () => MatchStart(before, path, false));
             if (peaceTimeMinutes.HasValue && peaceTimeMinutes.Value > 0)
             {
@@ -206,5 +221,23 @@ namespace APIShared.Automation
         private static int CountLord(FRONT_Multiplayer lobby, int type) =>
             lobby.currentLobby.members.Count(member => member.SkirmishMember && !member.SkirmishHumanMember &&
                 !member.dummyToBeKicked && member.GetLordType() == type);
+
+        // Native enum 1..29 and Vanilla lobby 0..28 are distinct ID domains.
+        // Both the add command and its observed roster count use this same value.
+        internal static int SkirmishLobbyLordType(AILords lord)
+        {
+            if (!Enum.IsDefined(typeof(AILords), lord) || lord <= AILords.SK_NULL || lord >= AILords.SK_X1)
+                throw new ArgumentOutOfRangeException(nameof(lord));
+            return checked((int)lord - 1);
+        }
+
+        // The engine/UI operations are injected, not copied into the offline tests.
+        // Preparation cannot bypass the final current-room/map validation.
+        internal static void CommitSkirmishLaunch<T>(Action beforeLaunch, Func<T> revalidate, Action<T> play)
+        {
+            beforeLaunch?.Invoke();
+            T ready = revalidate();
+            play(ready);
+        }
     }
 }

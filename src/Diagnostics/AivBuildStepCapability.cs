@@ -222,7 +222,7 @@ namespace APIShared
         {
             // Published hooks stay installed. An unused observer must not allocate per native call.
             Registration[] snapshot = Volatile.Read(ref registrations);
-            if (!publication.IsReady || snapshot.Length == 0)
+            if (!publication.IsReady || snapshot.Length == 0 && !WorldMutations.WorldMutationRuntime.HasDemand(WorldMutations.WorldMutationSource.All))
                 return hook.Original(aivStateAddress, playerId, frameIndex, restrictedMode, freeOrForced);
             return ExecuteObservedBuildStep(aivStateAddress, playerId, frameIndex, restrictedMode, freeOrForced, snapshot);
         }
@@ -234,8 +234,9 @@ namespace APIShared
         {
             var context = new AivBuildStepContext(
                 aivStateAddress, playerId, frameIndex, restrictedMode, freeOrForced);
-            return Dispatch(context, () =>
-                hook.Original(aivStateAddress, playerId, frameIndex, restrictedMode, freeOrForced), snapshot);
+            return WorldMutations.WorldMutationRuntime.InvokeAiv(context,
+                original => Dispatch(context, original, snapshot),
+                () => hook.Original(aivStateAddress, playerId, frameIndex, restrictedMode, freeOrForced));
         }
 
         internal int DispatchForTest(AivBuildStepContext context, Func<int> original) =>

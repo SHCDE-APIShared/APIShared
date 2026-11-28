@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using APIShared.Savegames;
 using APIShared.NativeSites;
 using APIShared.PlayerControl;
+using APIShared.ScriptExtenderFixes;
 using BepInEx.Logging;
 using RedBird.Abstractions.Hooks;
 using RedBird.Abstractions.Hooks.Transaction;
@@ -43,6 +44,10 @@ namespace APIShared.Economy
         [ThreadStatic] private static bool nativeIoActive;
         [ThreadStatic] private static WorkerProductionSaveIoState nativeIo;
         internal static bool IsAvailable => publication.IsReady && PlayerViewSaveScope.IsReady;
+        internal static PreCaptureSaveSupport ContextSupport => new PreCaptureSaveSupport(
+            SaveContextRuntime.FactoryManagedReady, SaveContextRuntime.NormalManagedReady,
+            SaveContextRuntime.TrailManagedReady, SynchronizedSaveRuntime.IsReady,
+            preCaptureContext?.HasExtenderExportProvider == true);
         internal static long OutcomeToken => sequence;
         internal static bool FailedSince(long token) => sequence != token && lastFailed;
         internal static NativeSiteSpan[] Spans() => new[] {
@@ -116,7 +121,12 @@ namespace APIShared.Economy
         {
             // Nested no-demand writers must not bypass the retained outer transaction.
             if (saving) return Failed("Nested protected save rejected; the previous save remains untouched.");
-            bool requiredRecords = VersionedSaveDataRuntime.RequiresAtomicWrite(map != 0);
+            var registry = VersionedSaveDataRuntime.CurrentRegistry;
+            PreCaptureSaveRoute route = SaveContextRuntime.CurrentPreCaptureRoute;
+            // For an unknown caller all scopes are possible. Trail and Chore 39
+            // both pass zero as the native map argument.
+            bool mapOnly = route == PreCaptureSaveRoute.EditorMap || route == PreCaptureSaveRoute.Trail;
+            bool requiredRecords = registry?.RequiresAtomicWrite(new VersionedSaveContext(!mapOnly, false, null)) == true;
             bool externalCargo = NativeStorageRuntime.Instance.HasExternalCargoSaveDemand ||
                 NativeStorageRuntime.Instance.HasUnreadyArchiveSaveDemand;
             bool criticalCohort = VersionedSaveDataRuntime.HasCriticalWriterDemand;
@@ -124,14 +134,47 @@ namespace APIShared.Economy
             {
                 if (!externalCargo && !criticalCohort && !requiredRecords) return original(archive, sections, map);
                 sequence++; lastFailed = false;
-                return Failed("Enrolled storage/cargo saving requires the available verified critical writer.");
+                return Failed($"Protected saving requires the verified writer. Save route: {route}.");
+            }
+            sequence++; lastFailed = false;
+            VersionedSaveContext logicalContext = default;
+            object protectedWorld = MissionLifecycleService.NativeWorld;
+            long protectedGeneration = WorkerProductionWorldSafety.Generation;
+            bool faulted = WorkerProductionWorldSafety.IsFaulted;
+            if (criticalCohort || requiredRecords)
+            {
+                saving = true;
+                try
+                {
+                    RequireEngineMonitor();
+                    if (faulted) throw new InvalidOperationException("The production world is faulted.");
+                    if (criticalCohort)
+                        CriticalSaveRuntime.RequireCurrentSaveWorld(protectedWorld, protectedGeneration);
+                    logicalContext = ReadRequiredLogicalContext(preCaptureContext);
+                    if (lastFailed) throw new InvalidOperationException("Context acquisition attempted a nested save.");
+                    // An optional query alone doesn't establish the route. Keep
+                    // the transport check even if its reported scope selects no records.
+                    if (route != PreCaptureSaveRoute.Unknown)
+                        requiredRecords = registry?.RequiresAtomicWrite(logicalContext) == true;
+                }
+                catch (Exception error)
+                {
+                    return Failed($"Protected save failed before writing. Save route: {route}. {DescribeCleanupError(error)}");
+                }
+                finally { saving = false; }
             }
             var requirements = new WorkerProductionSaveRequirements(WorkerProductionStateRuntime.IsExtended,
-                WorkerProductionWorldSafety.IsFaulted, WeaponProductionRuntime.HasStoredOutputDemand, externalCargo,
+                faulted, WeaponProductionRuntime.HasStoredOutputDemand, externalCargo,
                 criticalCohort, criticalCohort && NativeStorageRuntime.Instance.HasCriticalWriterEnrollment, requiredRecords);
-            sequence++; lastFailed = false;
             if (!requirements.Transaction) return original(archive, sections, map);
-            return RunTransaction(archive, sections, map, original, requirements);
+            return RunTransaction(archive, sections, map, original, requirements, logicalContext, protectedWorld, protectedGeneration);
+        }
+
+        private static void RequireEngineMonitor()
+        {
+            object engineMonitor = Internal.EngineMonitor.Current;
+            if (engineMonitor == null || !System.Threading.Monitor.IsEntered(engineMonitor))
+                throw new InvalidOperationException("Critical saving requires the actual engine monitor.");
         }
 
         internal static VersionedSaveContext ReadRequiredLogicalContext(PreCaptureSaveContextReader reader)
@@ -145,7 +188,8 @@ namespace APIShared.Economy
         // Keep closure construction wholly behind the existing no-demand guards.
         // The protected writer still owns this single transaction and native ABI.
         private static ulong RunTransaction(IntPtr archive, IntPtr sections, byte map,
-            PlayerViewSaveScope.WriterCall original, WorkerProductionSaveRequirements requirements)
+            PlayerViewSaveScope.WriterCall original, WorkerProductionSaveRequirements requirements,
+            VersionedSaveContext logicalContext, object protectedWorld, long protectedGeneration)
         {
             string temporary = null;
             byte[] oldPath = null;
@@ -159,12 +203,9 @@ namespace APIShared.Economy
             VersionedSaveFactoryFrame factoryFrame = VersionedSaveFactoryFrame.Current;
             CriticalSavePreparation participants = null;
             VersionedSaveDataRegistry.AtomicSnapshot required = null;
-            VersionedSaveContext logicalContext = default;
             bool ownsFactoryFrame = false;
             Exception primary = null;
             WorkerProductionSaveCleanupReport cleanup = default;
-            object protectedWorld = MissionLifecycleService.NativeWorld;
-            long protectedGeneration = WorkerProductionWorldSafety.Generation;
             Action restore = () =>
             {
                 if (!swapped) return;
@@ -176,15 +217,11 @@ namespace APIShared.Economy
             {
                 try
                 {
-                    object engineMonitor = Internal.EngineMonitor.Current;
-                    if (engineMonitor == null || !System.Threading.Monitor.IsEntered(engineMonitor))
-                        throw new InvalidOperationException("Critical saving requires the actual engine monitor.");
+                    RequireEngineMonitor();
                     // A fault is rejected before capture or ANY native file open/truncation.
                     if (requirements.Faulted) throw new InvalidOperationException("The production world is faulted.");
                     if (requirements.CriticalCohort)
                         CriticalSaveRuntime.RequireCurrentSaveWorld(protectedWorld, protectedGeneration);
-                    if (requirements.CriticalCohort || requirements.AtomicRecords)
-                        logicalContext = ReadRequiredLogicalContext(preCaptureContext);
                     if (requirements.CriticalCohort)
                     {
                         factoryFrame = VersionedSaveDataRuntime.BeginCriticalWriterFrame(logicalContext);

@@ -1,5 +1,7 @@
 # Third-party integration guide
 
+For a correction that must run before another plugin's Awake, use the bootstrap companion's [early plugin activation observer](DEPENDENCY_BOOTSTRAP.md#early-plugin-activation-observers). Register from your preloader Finish, never ordinary plugin Awake. It observes an existing loader boundary and does not instantiate, reorder or veto plugins.
+
 ## Native storage for virtual goods
 
 Use [`ModApiClient.NativeStorage`](NATIVE_STORAGE.md) when custom goods must occupy
@@ -67,6 +69,8 @@ See the [compiled example](../examples/ThirdPartyMod/CustomGoodsExample.cs).
 - [Extending APIShared](#extending-apishared)
 - [Declaring native hook sites](#declaring-native-hook-sites)
 - [APIShared interface language](#apishared-interface-language)
+- [Effective native unit moves](UNIT_MOVES.md)
+- [Effective world mutations](WORLD_MUTATIONS.md)
 - [Native simulation ticks](#native-simulation-ticks)
 - [Managed engine-run boundaries](#managed-engine-run-boundaries)
 - [Demand-driven engine readback](#demand-driven-engine-readback)
@@ -195,6 +199,25 @@ responsibility. Internal lobby fallback remains 15 rendered frames; save prepara
 continues every frame only while pending and not already loading.
 
 ## In-game test automation
+
+Use the four-required-argument overload
+`StartSkirmish(map, opponents, peaceTimeMinutes, beforeLaunch)` for deterministic
+consumer preparation after the SDK has selected the map, added opponents and
+applied optional lobby peace time. The synchronous Unity callback runs once,
+then the SDK revalidates the exact live room and selected map before ordinary
+Play. Throwing aborts launch. Keep it short; do not yield, start another mission
+or retain transient native pointers. The existing three-argument overload keeps
+its optional peace argument and delegates with no callback. In particular, a
+third `null` remains unambiguous and argument validation stays deferred until
+enumeration. Do not interleave preparation with unspecified iterator yields:
+old frontend lobby objects may remain visible before the SDK opens a new room.
+
+`AutomationRun.StartSkirmish` accepts the native `AILords` enum (Rat is1),
+and translates it to Vanilla's distinct zero-based lobby type (Rat is0) for
+both adding and confirming opponents. Earlier builds passed the native value
+directly and therefore selected the next lord. This corrects that behavior
+without changing the public signature or accepted enum range; callers must not
+compensate by passing a different enum member. It does not bypass DLC eligibility.
 
 Get the owner-bound client with `ApiShared.ForMod(yourGuid).Automation`. After
 APIShared initialization, explicitly start a run on Unity from your development
@@ -2707,3 +2730,7 @@ false. After a failed rebuild, skip the dependent operation.
 ### Human-only construction extras and refunds
 
 See [Human construction costs](HUMAN_CONSTRUCTION_COSTS.md) for owner registration, effective quotes, reservations, persisted receipts and refund policies. Consumers retain mode authorization. Existing SE Post events alone are not payment commits.
+
+## Shared unit relocation
+
+Use `APIShared.Units.UnitRelocationService` (0.79.0+) for the common native unit-relocation entry. Acquire it explicitly during LibraryLoaded; register read-only policies with a native type filter and explicit `SetEnabled` transitions, then issue exact-lifetime requests only in the existing admitted simulation-tick scope. Do not retain private scanners, hook owners or return-address assumptions. The service supplies no route/job continuation or network authorization. See [the complete contract](UNIT_RELOCATION.md).

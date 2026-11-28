@@ -19,8 +19,7 @@ This pair-gated companion does not repair a failed initial Script Extender deplo
 The separate [Linux first-install patcher](WORKSHOP.md#linux-paths-and-first-install-repair)
 works without APIShared and has no dependency on this companion or its pair manifest.
 
-No public capability, consumer registration or changed dependency declaration is
-required, and no APIShared public type or method is involved. The correction only adds eligible missing providers to a separate local check dictionary.
+The dependency-index correction itself requires no consumer registration or changed dependency declaration. It only adds eligible missing providers to a separate local check dictionary. The optional early-plugin observer below shares the existing loader boundary independently of this SE correction.
 It never overwrites original entries, registers assets, reorders plugins or filters
 the original compatibility result. An unknown BepInEx binary or failed SE contract validation preserves
 the original check. Later successful plugin Awake is not guaranteed.
@@ -185,3 +184,139 @@ Native helper DLLs in patcher packages are distinguished by their PE/CLR header
 before managed assembly metadata is inspected. Invalid/unreadable images and
 renamed competing bootstraps still reject activation. The bootstrap creates no diagnostic files;
 the Workshop installation result file is installation state, not tracing.
+
+
+## Early plugin activation observers
+
+The public `APIShared.DependencyBootstrap.EarlyPluginActivation` contract lives in
+`APIShared.DependencyBootstrap.dll`, not `APIShared.dll`. A consumer preloader
+companion calls `TryRegister(ownerGuid, id, targetGuid, callback, out registration,
+out reason, order)` in its `Finish()`. Reference the bootstrap assembly with
+`Private=false`; ship neither an APIShared copy nor a second loader hook. Keep
+consumer runtime correction code deferred until the callback; Finish must not
+initialize Unity, MonoMod, native hooks or plugin instances. A complete matching
+bootstrap/runtime pair and the supported loader contract are prerequisites.
+
+Registration is process-lifetime and closes at the selected-winner snapshot,
+including when no consumer was registered. Accepted means Pending, not ready.
+The returned object exposes the explicit state/reason: unselected owner/target,
+previous owner failure, unavailable loader/pair, skipped target, completed callback
+or isolated callback failure. There is no late registration, replay, cancellation,
+retry or veto. Startup completion retires targets that never reached AddComponent.
+A callback returning does not prove the target's subsequent Awake succeeded.
+
+The existing APIShared Chainloader hook dispatches synchronously after the real
+loader selected and loaded the target assembly and immediately before its ordinary
+AddComponent(Type). Observers run in ascending order, then ordinal owner GUID and
+registration ID. They execute outside registry locks. Exceptions and even failed
+diagnostics cannot escape to the loader or prevent the next observer. The legacy
+SE/dependency-shadow callback still runs afterwards. No new native hook is involved.
+
+Context contains immutable selected owner/target GUID, plugin version, absolute
+assembly path, entry type and selected inventory, plus the actual loaded Type,
+assembly full name and module MVID. Target type and loaded path must match the
+selected metadata. These facts identify the selected plugin assembly; they do not
+certify every package asset or guarantee a selected owner will later load. An owner
+already in the loader's failure set is refused. Consumers remain responsible for
+validating correction-specific IL/ABI/native contracts and dependency readiness.
+
+An unknown loader, missing or disabled companion/runtime, invalid pair, missed
+selection, or late registration leaves the observer unavailable. Do not repair an
+already published native hook or retry from ordinary plugin Awake. AssemblyLoad
+alone is not equivalent: an already loaded assembly need not produce another event,
+and that event precedes the loader's exact PluginInfos assignment. The service uses
+the existing selected-plugin AddComponent boundary instead.
+
+Source-only staging and desktop tests do not prove Unity-Mono early compilation,
+startup ordering or game behavior. Those require explicit integrated startup tests
+with the same selected package pair before release. No consumer-specific correction
+or mod identifier belongs in this service.
+
+
+### Deferred declarations in a normal consumer DLL
+
+`EarlyPluginActivationProviderAttribute` is an additive alternative to a separate
+consumer preloader companion. Put the assembly attribute in the normal consumer
+DLL, referencing `APIShared.DependencyBootstrap.dll` with `Private=false`:
+
+```csharp
+[assembly: APIShared.DependencyBootstrap.EarlyPluginActivationProvider(
+    "Example.Consumer", "early-observer", "Example.Target",
+    "Example.EarlyProvider", "BeforeTarget", order: 0)]
+
+namespace Example
+{
+    internal static class EarlyProvider
+    {
+        public static void BeforeTarget(
+            APIShared.DependencyBootstrap.EarlyPluginActivationContext context)
+        {
+            // Validate feature-specific managed/native contracts here.
+            // No Unity objects, plugin initialization, or future-Awake assumptions.
+        }
+    }
+}
+```
+
+The owner GUID must name an actual selected plugin entry **in this same DLL**.
+A host cannot lend its selected identity to an unselected payload in another DLL.
+Several selected plugin entries may share a DLL; declaration ownership remains
+explicit. Target GUID must also be selected. Names are CLR full type/method names,
+not assembly-qualified strings. Provider must be declared on that type as a public,
+static, nongeneric method returning void and accepting exactly the public context.
+The type must be nongeneric and its actual Module must be the inspected manifest
+DLL, with matching path and MVID; linked netmodules cannot supply provider code.
+The inspected manifest DLL containing a module initializer is refused. Consumer static initializers and the complete provider call graph remain
+the consumer's responsibility: keep them early-safe and independently audit them.
+
+Discovery reads Cecil metadata only from actual Chainloader winner paths. It does
+not load consumers, enumerate plugin directories or execute custom attributes.
+No consumer is eagerly loaded ahead of the target boundary. Declarations share
+owner-local IDs and deterministic ordering with existing preloader registrations.
+An existing preloader registration wins an ID conflict. Same-DLL owner validation
+precedes duplicate grouping: an invalid declaration in another DLL cannot poison a
+legitimate owner-local ID. Duplicate declarations from that legitimate owner DLL
+are all rejected. Existing TryRegister signatures, deadline,
+callback ordering, failure isolation and lifetime remain unchanged.
+
+At the existing BeforePlugin target boundary, the wrapper verifies the selected
+owner's complete hard-dependency closure, inclusive minimum versions, absence of
+hard cycles and currently known loader failures. Selection is required; plugin
+Awake or already-loaded assemblies are **not** required. This deliberately permits
+a target that precedes the owner's dependencies in the normal startup order.
+It does not promise that the owner or any dependency will later Awake successfully.
+A soft dependency remains optional; the target is selected separately.
+
+The wrapper checks selected module metadata and then calls Assembly.LoadFile on
+the absolute selected owner path. Actual location, assembly identity and MVID must
+match discovery. It binds/prepares the static delegate, checks again and invokes
+once outside registry locks. For names relevant to the owner/target and their selected hard closures, each
+actually loaded assembly must match a complete selected path/identity/MVID record.
+Different selected GUIDs may legitimately use the same simple name at different
+versions/paths; these are matched independently. Unrelated loaded modules do not
+globally gate this provider. Unknown wrong-path/MVID loads for relevant names remain
+refused, and the actual owner LoadFile result is pinned to its own record. Future
+unloaded dependencies remain unloaded by the validator. Normal resolver policy is retained: no global resolver is installed.
+It checks loaded identities again after callback completion. An arbitrary consumer
+can trigger further loads inside its own body; these checks cannot retroactively
+undo a consumer's effects. They do not preauthorize those loads or prove how arbitrary future/transitive
+assembly references will resolve. Early providers
+must avoid such unvalidated side effects and validate their own early call graph.
+MVID is a module identity, not a cryptographic package or IL-integrity certificate.
+
+Rejected metadata/binding yields Unavailable for that declaration; an exception in
+consumer code yields CallbackFailed. Diagnostics never format foreign exceptions
+and cannot stop the next observer or original AddComponent. Missing/duplicate
+metadata is logged and grants no callback. Declarations have no public registration
+object: a consumer needing readiness should retain its own successful callback flag
+and leave its feature inactive if the callback was absent. Never repair a missed
+early boundary by patching an already published native hook from ordinary Awake.
+The declaration does not guarantee Unity/plugin initialization or enable a feature.
+
+The production-source bootstrap fixture emits small independent managed consumer
+assets with Cecil and exercises actual discovery, the existing broker, LoadFile and
+delegate binding. It covers selection/closure/version/failure, identity changes,
+invalid declarations/signatures/module initializers, ordering/conflicts, once-only
+execution and isolated errors. The test driver removes assets after the executable
+exits because Framework may retain file locks. Desktop tests do not replace real
+Unity-Mono startup/provider coexistence acceptance for the exact delivered pair.
