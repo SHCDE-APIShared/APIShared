@@ -19,7 +19,7 @@ namespace APIShared
         /// <summary>Display name of the API plugin.</summary>
         public const string PluginName = "APIShared";
         /// <summary>Current API plugin version.</summary>
-        public const string PluginVersion = "0.79.1";
+        public const string PluginVersion = "0.79.2";
 
         // Services retain this forwarding logger after startup cleanup (failures via RuntimeHealth; Debug only with diagnostics).
         private BepInEx.Logging.ManualLogSource RuntimeLogger => Internal.DebugLogHelper.ForExternalCode(Logger);
@@ -123,6 +123,7 @@ namespace APIShared
                     Networking.NativeChoreRuntime.InitializeDispatch(RuntimeLogger)),
                 new NativeInitializationStep("native field knowledge", () => NativeKnowledge.NativeFieldReader.InitializeCurrent(hash)),
                 new NativeInitializationStep("synchronized save context", () => ScriptExtenderFixes.SynchronizedSaveRuntime.Initialize(context, hash, RuntimeLogger)),
+                new NativeInitializationStep("atomic save route support", () => Savegames.PreCaptureSaveSupport.ReportStartup(RuntimeLogger)),
                 new NativeInitializationStep("pathfinding tables", () => ScriptExtenderReplacements.PathfindingTables.Initialize(
                     context.ModuleHandle, context.Memory.Length, hash, RuntimeLogger)),
                 new NativeInitializationStep("group-move exclusion mark", () => Commands.GroupMoveExclusion.Initialize(hash, RuntimeLogger)),

@@ -1,13 +1,19 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
+using APIShared;
+using APIShared.Economy;
+using APIShared.Internal;
+using APIShared.PlayerControl;
 using APIShared.Savegames;
 using APIShared.ScriptExtenderFixes;
+using BepInEx.Logging;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Mono.Cecil;
 using Mono.Cecil.Cil;
@@ -21,6 +27,99 @@ namespace APISharedTests
 {
     public sealed partial class SaveContextTests
     {
+        [TestMethod]
+        [DataRow(false)]
+        [DataRow(true)]
+        public void TrailWithNoReadableSourceRequiresOnlyRecordsInMapScope(bool maps)
+        {
+            using (var fixture = new TrailControlledMethods())
+            {
+                const BindingFlags stateFlags = BindingFlags.Static | BindingFlags.NonPublic;
+                var registryField = typeof(VersionedSaveDataRuntime).GetField("registry", stateFlags);
+                var writerType = typeof(WorkerProductionCriticalSaveRuntime);
+                var sequenceField = writerType.GetField("sequence", stateFlags);
+                var failedField = writerType.GetField("lastFailed", stateFlags);
+                var contextField = writerType.GetField("preCaptureContext", stateFlags);
+                var logField = writerType.GetField("log", stateFlags);
+                var monitorField = EngineMonitor.Field;
+                var writerPublication = (NativeHookPublicationState)writerType.GetField("publication", stateFlags).GetValue(null);
+                var scopePublication = (NativeHookPublicationState)typeof(PlayerViewSaveScope)
+                    .GetField("publication", stateFlags).GetValue(null);
+                var publicationState = typeof(NativeHookPublicationState).GetField("state",
+                    BindingFlags.Instance | BindingFlags.NonPublic);
+                object previousRegistry = registryField.GetValue(null);
+                object previousSequence = sequenceField.GetValue(null);
+                object previousFailure = failedField.GetValue(null);
+                object previousContext = contextField.GetValue(null);
+                object previousLog = logField.GetValue(null);
+                object previousMonitor = monitorField.GetValue(null);
+                object previousWriter = publicationState.GetValue(writerPublication);
+                object previousScope = publicationState.GetValue(scopePublication);
+                var registry = new VersionedSaveDataRegistry((id, save, load) => true, _ => { }, _ => { });
+                var record = new VersionedSaveDataRegistration("test.owner", "TrailScope", 1, 1,
+                    new[] { "state" }, _ => throw new AssertFailedException("No capture is eligible here."), _ => { })
+                {
+                    RequireAtomicWrite = true,
+                    Scope = maps ? VersionedSaveScope.SaveGamesAndMaps : VersionedSaveScope.SaveGames
+                };
+                Assert.IsTrue(registry.TryRegister(record, out _, out string reason), reason);
+                var log = new ManualLogSource("AtomicTrailScopeFixture");
+                string failure = null;
+                log.LogEvent += (sender, args) => failure = args.Data.ToString();
+                int originals = 0;
+                ulong result = ulong.MaxValue;
+                string destination = Path.GetTempFileName();
+                byte[] previous = { 4, 1, 9 };
+                byte[] replacement = { 7, 2, 3 };
+                try
+                {
+                    File.WriteAllBytes(destination, previous);
+                    registryField.SetValue(null, registry);
+                    contextField.SetValue(null, fixture.Reader);
+                    logField.SetValue(null, log);
+                    monitorField.SetValue(null, fixture.MonitorObject);
+                    // Model completed publication without installing native hooks. The real
+                    // writer must decide and, if necessary, refuse before reading native memory.
+                    writerPublication.Complete();
+                    scopePublication.Complete();
+                    fixture.NativeAction = call =>
+                    {
+                        Assert.IsTrue(call.MonitorHeld && WorkerProductionCriticalSaveRuntime.IsAvailable);
+                        Assert.AreEqual(PreCaptureSaveRoute.Trail, SaveContextRuntime.CurrentPreCaptureRoute);
+                        result = WorkerProductionCriticalSaveRuntime.RunWriter(IntPtr.Zero, IntPtr.Zero, 0,
+                            (archive, sections, map) =>
+                            {
+                                originals++;
+                                File.WriteAllBytes(destination, replacement);
+                                return 1;
+                            });
+                    };
+                    // The producer and wrapper match, but this source is empty after the
+                    // Extender's trailing-NUL trim. The writer's zero map byte is deliberate.
+                    Assert.IsTrue(fixture.Helper("output.trail", fixture.RestartBytes, "\0"));
+                    Assert.AreEqual(maps ? 0UL : 1UL, result);
+                    Assert.AreEqual(maps ? 0 : 1, originals);
+                    CollectionAssert.AreEqual(maps ? previous : replacement, File.ReadAllBytes(destination));
+                    if (maps) StringAssert.Contains(failure, "source-map context");
+                    else Assert.IsNull(failure);
+                    Assert.AreEqual(0, fixture.Provider.Calls);
+                    Assert.AreEqual(PreCaptureSaveRoute.Unknown, SaveContextRuntime.CurrentPreCaptureRoute);
+                }
+                finally
+                {
+                    registryField.SetValue(null, previousRegistry);
+                    sequenceField.SetValue(null, previousSequence);
+                    failedField.SetValue(null, previousFailure);
+                    contextField.SetValue(null, previousContext);
+                    logField.SetValue(null, previousLog);
+                    monitorField.SetValue(null, previousMonitor);
+                    publicationState.SetValue(writerPublication, previousWriter);
+                    publicationState.SetValue(scopePublication, previousScope);
+                    File.Delete(destination);
+                }
+            }
+        }
+
         [TestMethod]
         public void RequiredAtomicCaptureUsesTrailSourceContextForMapRecordsOnly()
         {
@@ -263,6 +362,7 @@ namespace APISharedTests
                 TrailAssertInactive();
                 fixture.NativeAction = call => {
                     Assert.IsTrue(call.MonitorHeld);
+                    Assert.AreEqual(PreCaptureSaveRoute.Unknown, SaveContextRuntime.CurrentPreCaptureRoute);
                     Assert.IsFalse(fixture.Read().Success, "An unidentified direct wrapper cannot borrow an export provider.");
                     Assert.IsFalse(SaveContextRuntime.TryGetTrailSaveContext(out var ignored, out bool active));
                     Assert.IsTrue(active, "The direct wrapper must shadow outside/outer contexts while it executes.");
@@ -366,6 +466,7 @@ namespace APISharedTests
             using (var fixture = new TrailControlledMethods())
             {
                 fixture.NativeAction = call => {
+                    Assert.AreEqual(PreCaptureSaveRoute.Synchronized, SaveContextRuntime.CurrentPreCaptureRoute);
                     TrailAssertRead(fixture.Read(), PreCaptureSaveContextSource.SynchronizedPolicy, true, false, null);
                     fixture.DispatchFactory();
                     // The existing Chore policy is a scope constant, including after

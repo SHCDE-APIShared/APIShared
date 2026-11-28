@@ -1,11 +1,56 @@
 using System;
 using System.Reflection;
+using System.Collections.Generic;
+using BepInEx.Logging;
 using APIShared.ScriptExtenderFixes;
 using SHCDESE.API;
 using SHCDESE.API.Components.SaveData;
 
 namespace APIShared.Savegames
 {
+    internal enum PreCaptureSaveRoute { Unknown, NormalSave, EditorMap, Trail, Synchronized }
+
+    internal readonly struct PreCaptureSaveSupport
+    {
+        private readonly bool factory, normal, trail, synchronized, extender;
+
+        internal PreCaptureSaveSupport(bool factory, bool normal, bool trail, bool synchronized, bool extender)
+        {
+            this.factory = factory;
+            this.normal = normal;
+            this.trail = trail;
+            this.synchronized = synchronized;
+            this.extender = extender;
+        }
+
+        internal bool Supports(VersionedSaveScope scope) => factory &&
+            (normal || synchronized || extender || trail && scope == VersionedSaveScope.SaveGamesAndMaps);
+
+        internal string MissingRoutes()
+        {
+            if (!factory) return "archive factory binding unavailable";
+            var missing = new List<string>();
+            if (!normal) missing.Add("normal game and editor saves");
+            if (!trail) missing.Add("Trail exports");
+            if (!synchronized) missing.Add("synchronized saves");
+            if (missing.Count == 0) return null;
+            return "framework context unavailable for " + string.Join(", ", missing) +
+                (extender ? "; optional Script Extender provider is bound and checked per invocation" :
+                    "; no optional Script Extender provider is bound");
+        }
+
+        internal static void ReportStartup(ManualLogSource log)
+        {
+            if (!Economy.WorkerProductionCriticalSaveRuntime.IsAvailable)
+            {
+                NativeApiLog.Warning(log, "ATOMIC_SAVE_SUPPORT: protected writer unavailable for all save routes.");
+                return;
+            }
+            string missing = Economy.WorkerProductionCriticalSaveRuntime.ContextSupport.MissingRoutes();
+            if (missing != null) NativeApiLog.Warning(log, "ATOMIC_SAVE_SUPPORT: " + missing + ".");
+        }
+    }
+
     // Identifies the metadata producer, not a native save permission or receipt.
     internal enum PreCaptureSaveContextSource
     {
@@ -24,7 +69,7 @@ namespace APIShared.Savegames
     {
         private delegate bool ActiveContextQuery(out SaveContext context);
         private readonly ActiveContextQuery query;
-        private const string Missing = "The optional Script Extender active-save context API is unavailable.";
+        private const string Missing = "No owned early save context is available and the optional Script Extender provider is unavailable.";
         private const string NoContext = "No usable owned save context is available before archive selection.";
         private const string QueryFailed = "The active-save context query failed; context-dependent capture is unavailable.";
 
@@ -114,7 +159,7 @@ namespace APIShared.Savegames
                     reason = string.Empty;
                     return true;
                 }
-                if (normalActive) { reason = NoContext; return false; }
+                if (normalActive) { reason = "The current normal/editor save has no usable context before archive selection."; return false; }
                 if (SaveContextRuntime.TryGetTrailSaveContext(out observed, out bool trailActive))
                 {
                     observed = SaveContextRuntime.NormalizeSnapshot(observed);
@@ -124,7 +169,7 @@ namespace APIShared.Savegames
                     return true;
                 }
                 // An unidentified/nested wrapper must not borrow an outer SE export.
-                if (trailActive) { reason = NoContext; return false; }
+                if (trailActive) { reason = "The current Trail export has no usable source-map context before archive selection."; return false; }
                 if (query == null) { reason = Missing; return false; }
                 if (!query(out observed) || observed == null) { reason = NoContext; return false; }
                 // Share the existing policy; never derive flags/path from a

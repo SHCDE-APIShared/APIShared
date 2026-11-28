@@ -673,8 +673,18 @@ under [Public limits](#public-limits).
 
 `VersionedSaveDataRegistration.RequireAtomicWrite` is additive and defaults to false.
 Register opted-in records after native initialization and inspect
-`VersionedSaveData.IsAtomicWriteAvailable`. Registration fails when the shared protected
-writer is unavailable. Existing registrations retain their capture and retention behavior.
+`VersionedSaveData.IsAtomicWriteAvailable`. It reports whether the protected writer
+and at least one archive context route are available. Registration also checks that
+there is a route for the declared scope and reports why it cannot register. The
+startup log identifies unavailable routes separately. A bound optional Script Extender
+provider is checked again on the actual call.
+
+The writer decides scope using the originating save route. The native map flag alone
+cannot distinguish synchronized saves from Trail exports. A Trail export with only
+save-game-only registrations needs no early context for those records. A required map
+record uses the Trail source path, while file replacement uses the separate output path.
+If a required context is missing for the current invocation, the writer reports the
+failure before capture or file creation.
 
 For an in-scope save, the existing native writer owner holds the actual engine monitor,
 captures each required record once before creating the temporary native file, and reuses

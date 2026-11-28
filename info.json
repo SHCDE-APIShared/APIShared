@@ -3,13 +3,20 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.79.1",
+  "Version": "0.79.2",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
   "Manifest": 1,
   "NetworkMode": 1,
   "SerpChangelog": [
+    {
+      "Version": "0.79.2",
+      "Changes": [
+        "Fix Trail exports that could fail because of required mod data registered only for saved games.",
+        "Report unavailable protected save routes during startup and preserve the existing file if required mod data cannot be saved."
+      ]
+    },
     {
       "Version": "0.79.1",
       "Changes": [

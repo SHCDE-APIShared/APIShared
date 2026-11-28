@@ -18,6 +18,7 @@ namespace APIShared.ScriptExtenderFixes
         internal static readonly NativeDetourBackend Backend = new NativeDetourBackend(
             new NativeDetourOptions { AllowedSchemes = DetourScheme.Indirect, FollowJumps = false });
         private static readonly NativeHookPublicationState publication = new NativeHookPublicationState();
+        internal static bool IsReady => publication.IsReady;
         private static readonly Action callOriginal = CallOriginal;
         private static DetourHandle<SaveCall> handle;
         private static HookTransaction transaction;

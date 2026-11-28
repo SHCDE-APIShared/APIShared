@@ -26,6 +26,21 @@ namespace APISharedTests
     [TestClass, DoNotParallelize]
     public sealed partial class SaveContextTests
     {
+        [TestMethod]
+        [DataRow(false, true, true, true, true, false, false)]
+        [DataRow(true, false, false, false, false, false, false)]
+        [DataRow(true, true, false, false, false, true, true)]
+        [DataRow(true, false, true, false, false, false, true)]
+        [DataRow(true, false, false, true, false, true, true)]
+        [DataRow(true, false, false, false, true, true, true)]
+        public void StartupAtomicSupportKeepsIndependentRoutesAvailable(bool factory, bool normal, bool trail,
+            bool synchronized, bool extender, bool saves, bool savesAndMaps)
+        {
+            var support = new PreCaptureSaveSupport(factory, normal, trail, synchronized, extender);
+            Assert.AreEqual(saves, support.Supports(VersionedSaveScope.SaveGames));
+            Assert.AreEqual(savesAndMaps, support.Supports(VersionedSaveScope.SaveGamesAndMaps));
+        }
+
         private ResolveEventHandler resolve;
         [TestInitialize]
         public void ResolveInstalledExtenderDependencies()

@@ -17,6 +17,7 @@ namespace APIShared.ScriptExtenderFixes
         [ThreadStatic] private static NormalFrame normal;
         // 0=pending, 1=available, 2=failed. A coupled rebuild failure is one-way.
         private static int normalManagedState;
+        internal static bool NormalManagedReady => Volatile.Read(ref normalManagedState) == 1;
         private static Patching.SafeIlHook normalProducerHook;
 
         // Value frames keep unqueried saves free of added snapshots and closures.
