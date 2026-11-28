@@ -158,7 +158,8 @@ namespace APIShared.Buildings
 
         internal static bool TryBegin(ConstructionCostTarget target, int playerId, bool isHuman, bool isFree,
             IReadOnlyDictionary<eGoods, int> baseCosts, Func<eGoods, int> available,
-            out HumanConstructionTransaction transaction, out eGoods missingGood)
+            out HumanConstructionTransaction transaction, out eGoods missingGood,
+            HumanConstructionTransaction existingReservation = null)
         {
             transaction = null; missingGood = eGoods.STORED_NULL;
             if (!isHuman || isFree || playerId <= 0) return true;
@@ -182,6 +183,9 @@ namespace APIShared.Buildings
                 }
                 if (parts.Count == 0) return true;
                 if (available == null) throw new ArgumentNullException(nameof(available));
+                var reserved = existingReservation != null && existingReservation.PlayerId == playerId &&
+                    existingReservation.Epoch == epoch && existingReservation.Reserved && !existingReservation.Finished
+                    ? existingReservation.Positive : HumanConstructionGoods.Empty;
                 var requiredGoods = new HashSet<eGoods>(positive.Keys);
                 if (baseCosts != null) foreach (var item in baseCosts) if (item.Value > 0) requiredGoods.Add(item.Key);
                 foreach (var good in requiredGoods)
@@ -189,7 +193,8 @@ namespace APIShared.Buildings
                     int basic = baseCosts != null && baseCosts.TryGetValue(good, out int value) ? value : 0;
                     // Rebates are paid after success, so cannot finance Vanilla's initial affordability check.
                     long required = (long)Math.Max(0, basic) + (positive.TryGetValue(good, out int extra) ? extra : 0);
-                    if (available(good) < required) { missingGood = good; return false; }
+                    long remaining = required - (reserved.TryGetValue(good, out int alreadyPaid) ? alreadyPaid : 0);
+                    if (available(good) < remaining) { missingGood = good; return false; }
                 }
                 transaction = new HumanConstructionTransaction(playerId, parts.ToArray(), new ReadOnlyDictionary<eGoods, int>(total),
                     new ReadOnlyDictionary<eGoods, int>(positive));

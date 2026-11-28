@@ -33,7 +33,14 @@ namespace APIShared.Buildings
         [ThreadStatic] private static DemolitionFrame demolition;
         [ThreadStatic] private static long demolitionSerial;
         private static readonly Dictionary<ConstructionObjectIdentity, RefundFrame> pending = new Dictionary<ConstructionObjectIdentity, RefundFrame>();
-        private sealed class BuildFrame { internal int Player, ExpectedSpawnDepth; internal ConstructionCostTarget Target; internal ConstructionObjectIdentity Identity; }
+        private sealed class BuildFrame
+        {
+            internal int Player, TileX, TileY, Scale, ExpectedSpawnDepth;
+            internal eMappers Mapper;
+            internal ConstructionCostTarget Target;
+            internal HumanConstructionTransaction Transaction;
+            internal ConstructionObjectIdentity Identity;
+        }
         private sealed class RefundFrame
         {
             internal ConstructionObjectIdentity Identity; internal int Player, Percentage; internal ConstructionCostTarget Target;
@@ -191,12 +198,13 @@ namespace APIShared.Buildings
             }
             return values;
         }
-        private static bool Begin(ConstructionCostTarget target, int player, bool free, out HumanConstructionTransaction transaction)
+        private static bool Begin(ConstructionCostTarget target, int player, bool free, out HumanConstructionTransaction transaction,
+            HumanConstructionTransaction existingReservation = null)
         {
             transaction = null;
             if (!PaidSession || !Human(player) || free || IsFreeConstruction(target, player)) return true;
             return HumanConstructionCosts.TryBegin(target, player, true, false, Base(target),
-                good => GamePlayerManagerAPI.Instance.GetGoodAmount(player,good), out transaction, out _);
+                good => GamePlayerManagerAPI.Instance.GetGoodAmount(player,good), out transaction, out _, existingReservation);
         }
         // Runs under the native simulation lock. Preflight all positive debits before the first write;
         // SE's subtract operation is void, and its native storage operations must remain in this order.
@@ -306,7 +314,13 @@ namespace APIShared.Buildings
             if (!target.SupportsHumanExtraCosts || !PaidSession || !Human(player)) return Invoke(original,args);
             if (!Prepare(target,player,Convert.ToByte(args[7])!=0,out var transaction)) return Zero(original);
             if(transaction==null) return Invoke(original,args);
-            var previous=building; var frame=new BuildFrame{Player=player,Target=target,ExpectedSpawnDepth=buildingSpawnDepth+1}; building=frame;
+            var previous = building;
+            var frame = new BuildFrame
+            {
+                Player = player, Mapper = (eMappers)args[4], TileX = (int)args[2], TileY = (int)args[3], Scale = (int)args[5],
+                Target = target, Transaction = transaction, ExpectedSpawnDepth = buildingSpawnDepth + 1
+            };
+            building = frame;
             object result;
             try { result=Invoke(original,args); }
             catch { Cancel(transaction); throw; }

@@ -3,13 +3,19 @@
   "Author": "Serpens66",
   "Name": "APIShared",
   "Description": "Shared typed native infrastructure and extensible lobby ModSettings preset API for Serps and third-party mods.",
-  "Version": "0.79.0",
+  "Version": "0.79.1",
   "Website": "https://github.com/SHCDE-APIShared/APIShared",
   "MinimumScriptExtenderVersion": "2.14.0",
   "MaximumScriptExtenderVersion": "",
   "Manifest": 1,
   "NetworkMode": 1,
   "SerpChangelog": [
+    {
+      "Version": "0.79.1",
+      "Changes": [
+        "Fix a BuildingCosts issue that could block construction even when you had enough resources to cover both the base cost and the extra charge."
+      ]
+    },
     {
       "Version": "0.79.0",
       "Changes": [

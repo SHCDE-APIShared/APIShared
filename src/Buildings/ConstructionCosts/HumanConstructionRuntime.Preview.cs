@@ -27,7 +27,13 @@ namespace APIShared.Buildings
                 // Quote visibility is not construction eligibility: canceled owner sums and
                 // unreadable payment archives must still use the execution affordability check.
                 // Begin is read-only; Reserve remains exclusive to the simulation command.
-                if (!Begin(target,args.PlayerId,false,out _))
+                var frame = building;
+                // The native build calls this validator with mode 0 after reserving extras.
+                // Standalone probes also use mode 0, so match the active build's arguments.
+                var reservation = args.Unknown2 == 0 && frame != null && frame.Player == args.PlayerId &&
+                    frame.Mapper == args.Mappers && frame.TileX == args.TileX && frame.TileY == args.TileY &&
+                    frame.Scale == args.Unknown1 ? frame.Transaction : null;
+                if (!Begin(target, args.PlayerId, false, out _, reservation))
                 {
                     args.CustomValidationRules = true;
                     args.ForceBlockPlacementState = true;
