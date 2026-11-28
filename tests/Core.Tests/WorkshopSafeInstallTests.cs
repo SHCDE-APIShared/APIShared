@@ -388,6 +388,49 @@ public sealed class WorkshopSafeInstallTests
         AssertClean();
     }
 
+    [TestMethod] public void InterruptedUndoCleanupPreservesTheRestoredStage()
+    {
+        InstallVersionOneWithPlayerFiles();
+        Stage(2);
+        InstallSwap.Fault = step => { if (step == "carried") throw new InstallCrashSimulation(step); };
+        Assert.ThrowsExactly<InstallCrashSimulation>(Apply);
+        InstallSwap.Fault = null;
+        InstallSwap.Recover(paths, paths.Journal(Id), _ => { });
+
+        InstallSwap.Fault = step => { if (step == "undo-restored") throw new InstallCrashSimulation(step); };
+        Assert.ThrowsExactly<InstallCrashSimulation>(Apply);
+        InstallSwap.Fault = null;
+        string container = paths.Container(Id);
+        string undo = Path.Combine(container, "u0");
+        Assert.AreEqual("default-2", File.ReadAllText(Path.Combine(container, "0", "settings.json")));
+        Assert.IsFalse(File.Exists(Path.Combine(undo, "carried.txt")));
+        File.Delete(Path.Combine(undo, "shipped", "settings.json"));
+
+        Preloader();
+        Assert.AreEqual("a2", Read("PkgA/a.dll"));
+        Assert.AreEqual("player settings", Read("PkgA/settings.json"));
+        Assert.AreEqual("player config", Read("PkgA/config/user.cfg"));
+        AssertClean();
+    }
+
+    [TestMethod] public void UnpublishedUndoCannotOverwriteThePristineStage()
+    {
+        InstallVersionOneWithPlayerFiles();
+        Stage(2);
+        string undo = Path.Combine(paths.Container(Id), "u0");
+        // An interrupted backup or manifest write never activated the undo.
+        Write(undo, new Dictionary<string, string> {
+            ["shipped/settings.json"] = "partial backup",
+            ["carried.txt.tmp"] = "settings."
+        });
+        File.Delete(Path.Combine(Target(0), "settings.json"));
+
+        Preloader();
+        Assert.AreEqual("a2", Read("PkgA/a.dll"));
+        Assert.AreEqual("default-2", Read("PkgA/settings.json"));
+        AssertClean();
+    }
+
     [TestMethod] public void ResetRevisionReplacesThePlayerFileExactlyOnce()
     {
         InstallVersionOneWithPlayerFiles();

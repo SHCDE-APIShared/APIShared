@@ -14,7 +14,8 @@
       "Version": "0.79.2",
       "Changes": [
         "Fix Trail exports that could fail because of required mod data registered only for saved games.",
-        "Report unavailable protected save routes during startup and preserve the existing file if required mod data cannot be saved."
+        "Report unavailable protected save routes during startup and preserve the existing file if required mod data cannot be saved.",
+        "Preserve staged Workshop updates if the game is interrupted while restoring files kept from a previous installation."
       ]
     },
     {

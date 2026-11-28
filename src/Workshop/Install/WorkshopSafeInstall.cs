@@ -298,11 +298,11 @@ namespace APIShared.Workshop.Install
                     if (!File.Exists(shipped)) continue;
                     string save = Path.Combine(undo, "shipped", InstallTree.Native(relative));
                     Directory.CreateDirectory(Path.GetDirectoryName(save));
-                    File.Copy(shipped, save, true);
+                    InstallTree.CopyDurable(shipped, save, true);
                 }
                 Directory.CreateDirectory(undo);
                 // Written before the first overwrite: a crash afterwards is undone completely.
-                InstallTree.WriteDurable(Path.Combine(undo, "carried.txt"), string.Join("\r\n", copies.ToArray()) + "\r\n");
+                InstallTree.WriteAtomic(Path.Combine(undo, "carried.txt"), string.Join("\r\n", copies.ToArray()) + "\r\n");
             }
             foreach (string relative in copies)
             {
@@ -333,6 +333,7 @@ namespace APIShared.Workshop.Install
             if (!Directory.Exists(undo)) return;
             string carried = Path.Combine(undo, "carried.txt");
             if (File.Exists(carried))
+            {
                 foreach (string relative in File.ReadAllLines(carried).Where(l => l.Length > 0))
                 {
                     if (!relative.Split('/').All(InstallPlanFile.ValidSegment)) throw new InvalidDataException("Invalid Workshop undo path: " + relative);
@@ -345,9 +346,13 @@ namespace APIShared.Workshop.Install
                          dir = Path.GetDirectoryName(dir))
                         Directory.Delete(dir);
                 }
-            string shipped = Path.Combine(undo, "shipped");
-            if (Directory.Exists(shipped)) InstallTree.CopyOver(shipped, staged);
-            InstallTree.DeleteFileIfExists(Path.Combine(staged, StateName));
+                string shipped = Path.Combine(undo, "shipped");
+                if (Directory.Exists(shipped)) InstallTree.CopyOver(shipped, staged);
+                InstallTree.DeleteFileIfExists(Path.Combine(staged, StateName));
+                // Retire the undo manifest before cleanup can delete any restored original's backup.
+                File.Delete(carried);
+                InstallSwap.Step("undo-restored");
+            }
             InstallTree.Delete(undo);
         }
 
@@ -620,7 +625,7 @@ namespace APIShared.Workshop.Install
         // Test hook: called at each step. Throwing InstallCrashSimulation models process death at
         // that point: no in-process cleanup or recovery runs, exactly as after a real kill.
         internal static Action<string> Fault { get; set; }
-        private static void Step(string name) => Fault?.Invoke(name);
+        internal static void Step(string name) => Fault?.Invoke(name);
 
         private sealed class RootState
         {
